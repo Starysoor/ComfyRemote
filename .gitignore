@@ -1,0 +1,23 @@
+# Build outputs
+build/
+.gradle/
+app/build/
+local.properties
+
+# Signing keys stay local only - never commit
+keystore/
+keystore.properties
+*.jks
+*.keystore
+
+# Plugin artifacts
+out/
+.v2c/
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Kotlin compiler logs
+.kotlin/

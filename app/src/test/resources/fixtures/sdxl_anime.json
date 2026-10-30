@@ -1,0 +1,503 @@
+{
+ "id": "sdxl-illustrious-t2i-001",
+ "revision": 0,
+ "last_node_id": 20,
+ "last_link_id": 21,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "CheckpointLoaderSimple",
+   "pos": [
+    60,
+    60
+   ],
+   "size": [
+    380,
+    98
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      20
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "CLIP",
+     "type": "CLIP",
+     "links": [
+      2,
+      3
+     ],
+     "slot_index": 1
+    },
+    {
+     "name": "VAE",
+     "type": "VAE",
+     "links": [
+      4,
+      5
+     ],
+     "slot_index": 2
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CheckpointLoaderSimple"
+   },
+   "widgets_values": [
+    "Illustrious-XL-v2.0.safetensors"
+   ],
+   "widgets_values_named": {
+    "ckpt_name": "Illustrious-XL-v2.0.safetensors"
+   }
+  },
+  {
+   "id": 2,
+   "type": "CLIPTextEncode",
+   "pos": [
+    500,
+    40
+   ],
+   "size": [
+    420,
+    180
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "title": "正向提示词(Danbooru 标签风格)",
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 2
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      6
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "masterpiece, best quality, very aesthetic, 1girl, silver long hair, sailor uniform, rooftop, sunset, wind, looking at viewer, detailed face, cinematic lighting"
+   ],
+   "widgets_values_named": {
+    "text": "masterpiece, best quality, very aesthetic, 1girl, silver long hair, sailor uniform, rooftop, sunset, wind, looking at viewer, detailed face, cinematic lighting"
+   }
+  },
+  {
+   "id": 3,
+   "type": "CLIPTextEncode",
+   "pos": [
+    500,
+    280
+   ],
+   "size": [
+    420,
+    160
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "title": "负向提示词(保持默认即可)",
+   "inputs": [
+    {
+     "name": "clip",
+     "type": "CLIP",
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "name": "CONDITIONING",
+     "type": "CONDITIONING",
+     "links": [
+      7
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "CLIPTextEncode"
+   },
+   "widgets_values": [
+    "lowres, worst quality, low quality, bad anatomy, bad hands, extra fingers, missing fingers, jpeg artifacts, signature, watermark"
+   ],
+   "widgets_values_named": {
+    "text": "lowres, worst quality, low quality, bad anatomy, bad hands, extra fingers, missing fingers, jpeg artifacts, signature, watermark"
+   }
+  },
+  {
+   "id": 4,
+   "type": "EmptyLatentImage",
+   "pos": [
+    500,
+    500
+   ],
+   "size": [
+    320,
+    106
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      8
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "EmptyLatentImage"
+   },
+   "widgets_values": [
+    832,
+    1216,
+    1
+   ],
+   "widgets_values_named": {
+    "width": 832,
+    "height": 1216,
+    "batch_size": 1
+   }
+  },
+  {
+   "id": 5,
+   "type": "KSampler",
+   "pos": [
+    980,
+    60
+   ],
+   "size": [
+    320,
+    262
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 21
+    },
+    {
+     "name": "positive",
+     "type": "CONDITIONING",
+     "link": 6
+    },
+    {
+     "name": "negative",
+     "type": "CONDITIONING",
+     "link": 7
+    },
+    {
+     "name": "latent_image",
+     "type": "LATENT",
+     "link": 8
+    }
+   ],
+   "outputs": [
+    {
+     "name": "LATENT",
+     "type": "LATENT",
+     "links": [
+      9
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "KSampler"
+   },
+   "widgets_values": [
+    0,
+    "randomize",
+    28,
+    5.5,
+    "euler_ancestral",
+    "normal",
+    1.0
+   ],
+   "widgets_values_named": {
+    "seed": 0,
+    "control_after_generate": "randomize",
+    "steps": 28,
+    "cfg": 5.5,
+    "sampler_name": "euler_ancestral",
+    "scheduler": "normal",
+    "denoise": 1.0
+   }
+  },
+  {
+   "id": 6,
+   "type": "VAEDecode",
+   "pos": [
+    980,
+    380
+   ],
+   "size": [
+    210,
+    46
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "samples",
+     "type": "LATENT",
+     "link": 9
+    },
+    {
+     "name": "vae",
+     "type": "VAE",
+     "link": 4
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      10
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "VAEDecode"
+   }
+  },
+  {
+   "id": 7,
+   "type": "SaveImage",
+   "pos": [
+    980,
+    480
+   ],
+   "size": [
+    420,
+    400
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 10
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "sdxl_illustrious"
+   ],
+   "widgets_values_named": {
+    "filename_prefix": "sdxl_illustrious"
+   }
+  },
+  {
+   "id": 8,
+   "type": "MarkdownNote",
+   "pos": [
+    60,
+    240
+   ],
+   "size": [
+    380,
+    560
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {},
+   "widgets_values": [
+    "## SDXL 动漫 · Illustrious-XL v2.0\n\nOnomaAI 官方开源底模,SDXL 系二次元最大生态(几十万角色/画师 LoRA 在 Civitai 搜 Illustrious/Pony 标签)。\n\n### 参数要点\n- **分辨率**: 832×1216(竖版人像)/ 1216×832(横版)/ 1024×1024\n- **CFG 5-7**(和 Qwen 的 CFG 1.0 完全不同!太高会炸)\n- **步数 25-30**,采样器 euler_ancestral\n- **提示词用英文 Danbooru 标签**: 逗号分隔,如 `1girl, twin tails, maid dress, kitchen`\n- 画师风格: 在提示词加 `artist:xxx` 或直接加画师名标签\n\n### 用 LoRA\n右键 → Add Node → loaders → LoraLoader,插在 Checkpoint 和 KSampler 之间。\nCivitai 下载的 LoRA 放 `models\\loras\\`(和 Qwen 的 LoRA 同目录,互不通用!)。\n\n### 出图慢?\n首次加载要读 7GB 模型(约40秒),之后就快了。"
+   ],
+   "widgets_values_named": {
+    "text": "## SDXL 动漫 · Illustrious-XL v2.0\n\nOnomaAI 官方开源底模,SDXL 系二次元最大生态(几十万角色/画师 LoRA 在 Civitai 搜 Illustrious/Pony 标签)。\n\n### 参数要点\n- **分辨率**: 832×1216(竖版人像)/ 1216×832(横版)/ 1024×1024\n- **CFG 5-7**(和 Qwen 的 CFG 1.0 完全不同!太高会炸)\n- **步数 25-30**,采样器 euler_ancestral\n- **提示词用英文 Danbooru 标签**: 逗号分隔,如 `1girl, twin tails, maid dress, kitchen`\n- 画师风格: 在提示词加 `artist:xxx` 或直接加画师名标签\n\n### 用 LoRA\n右键 → Add Node → loaders → LoraLoader,插在 Checkpoint 和 KSampler 之间。\nCivitai 下载的 LoRA 放 `models\\loras\\`(和 Qwen 的 LoRA 同目录,互不通用!)。\n\n### 出图慢?\n首次加载要读 7GB 模型(约40秒),之后就快了。"
+   },
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 20,
+   "type": "LoraLoaderModelOnly",
+   "pos": [
+    60,
+    950
+   ],
+   "size": [
+    380,
+    82
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "title": "LoRA 槽(不用就强度 0)",
+   "inputs": [
+    {
+     "name": "model",
+     "type": "MODEL",
+     "link": 20
+    },
+    {
+     "name": "lora_name",
+     "type": "COMBO",
+     "widget": {
+      "name": "lora_name"
+     },
+     "link": null
+    },
+    {
+     "name": "strength_model",
+     "type": "FLOAT",
+     "widget": {
+      "name": "strength_model"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "MODEL",
+     "type": "MODEL",
+     "links": [
+      21
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoraLoaderModelOnly"
+   },
+   "widgets_values": [
+    "SDXL-动漫细节精修.safetensors",
+    0.0
+   ],
+   "widgets_values_named": {
+    "lora_name": "SDXL-动漫细节精修.safetensors",
+    "strength_model": 0.0
+   }
+  }
+ ],
+ "links": [
+  [
+   2,
+   1,
+   1,
+   2,
+   0,
+   "CLIP"
+  ],
+  [
+   3,
+   1,
+   1,
+   3,
+   0,
+   "CLIP"
+  ],
+  [
+   4,
+   1,
+   2,
+   6,
+   1,
+   "VAE"
+  ],
+  [
+   5,
+   1,
+   2,
+   7,
+   0,
+   "VAE"
+  ],
+  [
+   6,
+   2,
+   0,
+   5,
+   1,
+   "CONDITIONING"
+  ],
+  [
+   7,
+   3,
+   0,
+   5,
+   2,
+   "CONDITIONING"
+  ],
+  [
+   8,
+   4,
+   0,
+   5,
+   3,
+   "LATENT"
+  ],
+  [
+   9,
+   5,
+   0,
+   6,
+   0,
+   "LATENT"
+  ],
+  [
+   10,
+   6,
+   0,
+   7,
+   0,
+   "IMAGE"
+  ],
+  [
+   20,
+   1,
+   0,
+   20,
+   0,
+   "MODEL"
+  ],
+  [
+   21,
+   20,
+   0,
+   5,
+   0,
+   "MODEL"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {},
+ "version": 0.4
+}
