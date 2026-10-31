@@ -25,6 +25,9 @@ import java.util.concurrent.TimeUnit
 
 open class ComfyException(message: String) : IOException(message)
 
+/** Thrown when ComfyUI rejects a queued prompt (node_errors present). */
+class PromptValidationException(message: String) : ComfyException(message)
+
 data class SysInfo(val version: String, val device: String, val vramGb: String)
 
 data class WorkflowEntry(val path: String, val name: String, val sizeKb: String)
@@ -107,7 +110,12 @@ class ComfyApi(base: String) {
     suspend fun queuePrompt(prompt: JSONObject, clientId: String): String {
         val payload = JSONObject().put("prompt", prompt).put("client_id", clientId)
         val (code, body) = httpPost("/prompt", payload.toString())
-        if (code != 200) throw ComfyException(formatPromptError(code, body))
+        if (code != 200) {
+            val formatted = formatPromptError(code, body)
+            if (body.contains("node_errors") || body.contains("prompt_outputs_failed_validation"))
+                throw PromptValidationException(formatted)
+            throw ComfyException(formatted)
+        }
         val id = JSONObject(body).optString("prompt_id")
         if (id.isEmpty()) throw ComfyException("服务器未返回 prompt_id")
         return id
@@ -169,6 +177,15 @@ class ComfyApi(base: String) {
                 val sub = o.optString("subfolder", "")
                 if (sub.isNotEmpty()) "$sub/$name" else name
             }
+    }
+
+    /** Loads an image from the ComfyUI input directory (for reference thumbnails). */
+    suspend fun fetchInputImage(name: String): Bitmap = withContext(Dispatchers.IO) {
+        val url = "$base/view?filename=${urlEnc(name)}&type=input"
+        client.newCall(Request.Builder().url(url).build()).execute().use { resp ->
+            if (!resp.isSuccessful) throw ComfyException("HTTP ${resp.code}")
+            BitmapFactory.decodeStream(resp.body?.byteStream()) ?: throw ComfyException("decode failed")
+        }
     }
 
     suspend fun interrupt() {

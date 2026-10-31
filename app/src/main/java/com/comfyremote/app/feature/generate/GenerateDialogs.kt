@@ -154,23 +154,13 @@ fun AiResultDialog(initial: String, onDismiss: () -> Unit, onReplace: (String) -
 
 /** Saved prompt snippets; tap applies to the open workflow. */
 @Composable
-fun BookmarksDialog(
+fun BookmarksSheetContent(
     bookmarks: List<PromptPreset>,
-    onDismiss: () -> Unit,
     onApply: (PromptPreset) -> Unit,
     onDelete: (String) -> Unit,
     onSaveCurrent: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(L10n.t("提示词书签", "Prompt bookmarks"), style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onSaveCurrent, enabled = true) { Text(L10n.t("收藏当前", "Save current")) }
-            }
-        },
-        text = {
+    Column {
             if (bookmarks.isEmpty()) {
                 Text(
                     L10n.t("还没有书签。点右上角收藏当前提示词，或在历史详情里收藏。", "No bookmarks yet. Save the current prompts or bookmark from history."),
@@ -203,9 +193,7 @@ fun BookmarksDialog(
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text(L10n.t("关闭", "Close")) } }
-    )
+    }
 }
 
 @Composable

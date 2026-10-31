@@ -307,6 +307,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return a.uploadImage(bytes, "mobile_${System.currentTimeMillis()}_$seq.$ext")
     }
 
+    // ---------- input image thumbnails ----------
+
+    suspend fun loadInputBitmap(name: String): Bitmap? =
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { session.require().fetchInputImage(name) }.getOrNull()
+        }
+
     // ---------- AI prompt expansion ----------
 
     fun openAiSettings() {

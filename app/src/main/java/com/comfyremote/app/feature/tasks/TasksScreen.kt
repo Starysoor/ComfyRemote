@@ -49,6 +49,7 @@ import com.comfyremote.app.MainViewModel
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.generation.label
+import com.comfyremote.app.data.generation.uiLabel
 import com.comfyremote.app.feature.history.decodeSampled
 import com.comfyremote.app.ui.L10n
 import com.comfyremote.app.ui.Mono
@@ -158,7 +159,12 @@ private fun TaskCard(
                 LinearProgressIndicator(progress = p, modifier = Modifier.fillMaxWidth().height(3.dp))
             }
             task.error?.let {
-                Text(it.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    it.uiLabel() + "：${it.message}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis
+                )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(

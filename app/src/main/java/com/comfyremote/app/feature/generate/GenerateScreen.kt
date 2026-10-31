@@ -12,9 +12,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -27,10 +29,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Share
@@ -39,11 +42,14 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -67,22 +73,26 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import com.comfyremote.app.FieldKind
 import com.comfyremote.app.GenState
 import com.comfyremote.app.MainViewModel
 import com.comfyremote.app.UiState
+import com.comfyremote.app.data.generation.ErrorKind
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.generation.ResultImage
 import com.comfyremote.app.feature.history.decodeSampled
 import com.comfyremote.app.ui.L10n
 import com.comfyremote.app.ui.Mono
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -93,12 +103,14 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
     val tasks by vm.tasks.collectAsState()
     val task = tasks.firstOrNull { it.taskId == g.activeTaskId }
     val running = task?.isActive == true
+    val results = task?.results ?: emptyList()
 
     var pendingKey by remember { mutableStateOf<String?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     var viewingIdx by remember { mutableStateOf<Int?>(null) }
     var compareOpen by remember { mutableStateOf(false) }
-    var bookmarksOpen by remember { mutableStateOf(false) }
+    var libraryOpen by remember { mutableStateOf(false) }
+    var selectedResult by rememberSaveable { mutableStateOf(0) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val k = pendingKey
@@ -128,7 +140,6 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
     val textFields = g.fields.filter { it.kind == FieldKind.TEXT }
     val seedFields = g.fields.filter { it.kind == FieldKind.SEED }
     val paramFields = g.fields.filter { it.kind == FieldKind.PARAM }
-    val results = task?.results ?: emptyList()
     var advOpen by rememberSaveable { mutableStateOf(false) }
     var notesOpen by rememberSaveable { mutableStateOf(false) }
 
@@ -138,11 +149,6 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                 title = { Text(g.wfName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) }
-                },
-                actions = {
-                    TextButton(onClick = { bookmarksOpen = true }) {
-                        Text(L10n.t("书签", "Bookmarks"), style = MaterialTheme.typography.labelLarge)
-                    }
                 }
             )
         },
@@ -170,7 +176,20 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
             task?.error?.let { err ->
                 item(key = "error") {
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                        Column(Modifier.padding(12.dp)) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                errorKindLabel(err.kind),
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            err.nodeType?.let {
+                                Text(
+                                    L10n.t("节点：", "Node: ") + it,
+                                    fontFamily = Mono, fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
                             Text(err.message, color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodySmall)
                         }
                     }
@@ -245,34 +264,12 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                     }
                 }
             }
-            if (imageFields.isNotEmpty()) {
-                item(key = "imgheader") {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(L10n.t("参考图片", "Reference images"), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.weight(1f))
-                        if (imageFields.size >= 2) {
-                            TextButton(onClick = { multiPicker.launch("image/*") }) { Text(L10n.t("一次选多张", "Pick multiple")) }
-                        }
-                    }
-                }
-                itemsIndexed(imageFields, key = { _, f -> f.key }) { _, f ->
-                    Card {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(f.label, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                            val cur = g.values[f.key] ?: f.value
-                            Text(L10n.t("当前：", "Current: ") + cur, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = { pendingKey = f.key; picker.launch("image/*") }) { Text(L10n.t("选择图片", "Pick image")) }
-                                OutlinedButton(onClick = {
-                                    pendingKey = f.key
-                                    val dir = File(ctx.cacheDir, "camera").apply { mkdirs() }
-                                    val f2 = File(dir, "cam_${System.currentTimeMillis()}.jpg")
-                                    cameraUri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", f2)
-                                    camera.launch(cameraUri!!)
-                                }) { Text(L10n.t("拍照", "Camera")) }
-                            }
-                        }
-                    }
+            // ---- PROMPT: visual center of the page ----
+            item(key = "promptheader") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(L10n.t("提示词", "Prompt"), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { libraryOpen = true }) { Text(L10n.t("提示词库", "Library"), style = MaterialTheme.typography.labelMedium) }
                 }
             }
             itemsIndexed(textFields, key = { _, f -> f.key }) { _, f ->
@@ -281,18 +278,20 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                         value = g.values[f.key] ?: f.value,
                         onValueChange = { vm.updateValue(f.key, it) },
                         label = { Text(f.label) },
-                        minLines = if (f.multiline) 3 else 1,
-                        maxLines = if (f.multiline) 12 else 2,
+                        minLines = if (f.multiline) 4 else 1,
+                        maxLines = if (f.multiline) 14 else 2,
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (f.multiline) {
-                        val skills = remember(g.wfName, s.skills) { com.comfyremote.app.AiSkillDef.recommendedOrder(s.skills, g.wfName) }
+                        val sorted = remember(g.wfName, s.skills) { com.comfyremote.app.AiSkillDef.recommendedOrder(s.skills, g.wfName) }
+                        val primarySkills = sorted.take(2)
+                        val restSkills = sorted.drop(2)
                         Row(
                             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            skills.forEach { skill ->
+                            primarySkills.forEach { skill ->
                                 val busyKey = "${f.key}|${skill.id}"
                                 TextButton(
                                     onClick = { vm.aiExpand(f.key, g.values[f.key] ?: f.value, skill) },
@@ -307,6 +306,75 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                                     }
                                 }
                             }
+                            if (restSkills.isNotEmpty()) {
+                                var moreOpen by remember { mutableStateOf(false) }
+                                Box {
+                                    TextButton(onClick = { moreOpen = true }, enabled = s.aiBusy == null && !running) {
+                                        Text(L10n.t("更多 ▾", "More ▾"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                                        restSkills.forEach { skill ->
+                                            DropdownMenuItem(
+                                                text = { Text(skill.label) },
+                                                onClick = { moreOpen = false; vm.aiExpand(f.key, g.values[f.key] ?: f.value, skill) }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // ---- reference image slots ----
+            if (imageFields.isNotEmpty()) {
+                item(key = "imgheader") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(L10n.t("参考图片", "Reference images"), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.weight(1f))
+                        if (imageFields.size >= 2) {
+                            TextButton(onClick = { multiPicker.launch("image/*") }) { Text(L10n.t("一次选多张", "Pick multiple")) }
+                        }
+                    }
+                }
+                itemsIndexed(imageFields, key = { _, f -> f.key }) { _, f ->
+                    val cur = g.values[f.key] ?: f.value
+                    Column {
+                        Text(f.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (cur.isNotBlank()) {
+                                Box {
+                                    InputThumb(vm, cur, Modifier.size(92.dp).clickable {
+                                        pendingKey = f.key; picker.launch("image/*")
+                                    })
+                                    Surface(
+                                        shape = androidx.compose.foundation.shape.CircleShape,
+                                        color = MaterialTheme.colorScheme.errorContainer,
+                                        modifier = Modifier.size(20.dp).align(Alignment.TopEnd).clickable { vm.updateValue(f.key, "") }
+                                    ) {
+                                        Text(
+                                            "×", Modifier.padding(1.dp),
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            fontSize = 12.sp, textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            } else {
+                                Box(
+                                    Modifier.size(92.dp)
+                                        .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                                        .clickable { pendingKey = f.key; picker.launch("image/*") },
+                                    contentAlignment = Alignment.Center
+                                ) { Text("+", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            }
+                            OutlinedButton(onClick = {
+                                pendingKey = f.key
+                                val dir = File(ctx.cacheDir, "camera").apply { mkdirs() }
+                                val f2 = File(dir, "cam_${System.currentTimeMillis()}.jpg")
+                                cameraUri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", f2)
+                                camera.launch(cameraUri!!)
+                            }, modifier = Modifier.size(92.dp)) { Text(L10n.t("拍照", "Cam"), fontSize = 11.sp) }
                         }
                     }
                 }
@@ -359,6 +427,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                     }
                 }
             }
+            // ---- results: image first ----
             if (results.isNotEmpty()) {
                 item(key = "resheader") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -373,25 +442,71 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                         }
                     }
                 }
-                itemsIndexed(results, key = { i, _ -> "res$i" }) { idx, res ->
+                item(key = "resbig") {
+                    val idx = selectedResult.coerceIn(results.indices)
+                    val res = results[idx]
                     val bmp by produceState<Bitmap?>(null, res.localPath) {
-                        value = withContext(kotlinx.coroutines.Dispatchers.IO) { decodeSampled(res.localPath, 1600) }
+                        value = withContext(Dispatchers.IO) { decodeSampled(res.localPath, 1600) }
                     }
                     bmp?.let {
-                        Column {
-                            Image(
-                                it.asImageBitmap(), null,
-                                Modifier.fillMaxWidth().clickable { viewingIdx = idx },
-                                contentScale = ContentScale.FillWidth
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(L10n.t("结果 ", "Result ") + "${idx + 1}" + L10n.t("（点击放大）", " (tap to zoom)"), style = MaterialTheme.typography.bodySmall)
-                                Spacer(Modifier.weight(1f))
-                                TextButton(onClick = { shareImage(ctx, res.localPath) }) {
-                                    Icon(Icons.Default.Share, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(L10n.t("分享", "Share"))
-                                }
-                                TextButton(onClick = { it.let { b -> vm.saveResult(b) } }) { Text(L10n.t("保存到相册", "Save to gallery")) }
+                        Image(
+                            it.asImageBitmap(), null,
+                            Modifier.fillMaxWidth().clickable { viewingIdx = idx },
+                            contentScale = ContentScale.FillWidth
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Box(Modifier.fillMaxWidth()) {
+                        Text(
+                            "${idx + 1} / ${results.size}",
+                            fontFamily = Mono, fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                }
+                item(key = "resthumbs") {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        itemsIndexed(results, key = { i, r -> "th$i-${r.localPath}" }) { idx, res ->
+                            val bmp by produceState<Bitmap?>(null, res.localPath) {
+                                value = withContext(Dispatchers.IO) { decodeSampled(res.localPath, 200) }
                             }
+                            bmp?.let {
+                                Image(
+                                    it.asImageBitmap(), null,
+                                    Modifier
+                                        .size(72.dp)
+                                        .then(
+                                            if (idx == selectedResult) Modifier.border(2.dp, MaterialTheme.colorScheme.primary)
+                                            else Modifier
+                                        )
+                                        .clickable { selectedResult = idx },
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
+                    }
+                }
+                item(key = "resmeta") {
+                    Column {
+                        task?.seedInfo?.takeIf { it.isNotBlank() }?.let {
+                            Text("seed: $it", fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                item(key = "resactions") {
+                    val idx = selectedResult.coerceIn(results.indices)
+                    val res = results[idx]
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = { shareImage(ctx, res.localPath) }) {
+                            Icon(Icons.Default.Share, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(L10n.t("分享", "Share"))
+                        }
+                        val bmp by produceState<Bitmap?>(null, res.localPath) {
+                            value = withContext(Dispatchers.IO) { decodeSampled(res.localPath, 1600) }
+                        }
+                        TextButton(onClick = { bmp?.let { vm.saveResult(it) } }) { Text(L10n.t("保存到相册", "Save to gallery")) }
+                        if (!running) {
+                            TextButton(onClick = { vm.generate() }) { Text(L10n.t("再生成", "Re-run")) }
                         }
                     }
                 }
@@ -401,7 +516,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
     viewingIdx?.let { idx ->
         results.getOrNull(idx)?.let { res ->
             val bmp by produceState<Bitmap?>(null, res.localPath) {
-                value = withContext(kotlinx.coroutines.Dispatchers.IO) { decodeSampled(res.localPath, 1600) }
+                value = withContext(Dispatchers.IO) { decodeSampled(res.localPath, 1600) }
             }
             bmp?.let {
                 ImageViewerDialog(
@@ -424,14 +539,30 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
     if (compareOpen && results.size >= 2) {
         CompareDialog(results, onDismiss = { compareOpen = false })
     }
-    if (bookmarksOpen) {
-        BookmarksDialog(
-            bookmarks = s.bookmarks,
-            onDismiss = { bookmarksOpen = false },
-            onApply = { vm.applyBookmark(it); bookmarksOpen = false },
-            onDelete = { vm.deleteBookmark(it) },
-            onSaveCurrent = { vm.addBookmarkFromCurrent() }
-        )
+    if (libraryOpen) {
+        ModalBottomSheet(onDismissRequest = { libraryOpen = false }) {
+            BookmarksSheetContent(
+                bookmarks = s.bookmarks,
+                onApply = { vm.applyBookmark(it); libraryOpen = false },
+                onDelete = { vm.deleteBookmark(it) },
+                onSaveCurrent = { vm.addBookmarkFromCurrent() }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InputThumb(vm: MainViewModel, name: String, modifier: Modifier) {
+    val bmp by produceState<Bitmap?>(null, name) {
+        value = vm.loadInputBitmap(name)
+    }
+    if (bmp != null) {
+        Image(bmp!!.asImageBitmap(), null, modifier, contentScale = ContentScale.Crop)
+    } else {
+        Box(modifier, contentAlignment = Alignment.Center) {
+            Text("?", fontFamily = Mono, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -444,4 +575,14 @@ private fun statusLabel(task: GenerationTask?): String = when (task?.phase) {
     GenerationPhase.CANCELLED -> L10n.t("已取消", "Cancelled")
     GenerationPhase.SUCCEEDED -> L10n.t("完成", "Done")
     GenerationPhase.FAILED -> L10n.t("失败", "Failed")
+}
+
+fun errorKindLabel(kind: ErrorKind): String = when (kind) {
+    ErrorKind.EXECUTION -> L10n.t("执行错误", "Execution error")
+    ErrorKind.CONNECTION -> L10n.t("连接错误", "Connection error")
+    ErrorKind.PROMPT_VALIDATION -> L10n.t("参数校验失败", "Validation failed")
+    ErrorKind.TIMEOUT -> L10n.t("等待超时", "Timed out")
+    ErrorKind.DOWNLOAD -> L10n.t("下载失败", "Download failed")
+    ErrorKind.CANCELLED -> L10n.t("已取消", "Cancelled")
+    ErrorKind.UNKNOWN -> L10n.t("未知错误", "Unknown error")
 }

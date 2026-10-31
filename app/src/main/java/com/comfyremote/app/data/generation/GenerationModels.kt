@@ -79,3 +79,14 @@ fun GenerationTask.label(): String = when (phase) {
     GenerationPhase.SUCCEEDED -> com.comfyremote.app.ui.L10n.t("完成", "Done")
     GenerationPhase.FAILED -> com.comfyremote.app.ui.L10n.t("失败", "Failed")
 }
+
+/** Localized error kind label for UI display. */
+fun com.comfyremote.app.data.generation.GenerationError.uiLabel(): String = when (kind) {
+    ErrorKind.EXECUTION -> com.comfyremote.app.ui.L10n.t("执行错误", "Execution error")
+    ErrorKind.CONNECTION -> com.comfyremote.app.ui.L10n.t("连接错误", "Connection error")
+    ErrorKind.PROMPT_VALIDATION -> com.comfyremote.app.ui.L10n.t("参数校验失败", "Validation failed")
+    ErrorKind.TIMEOUT -> com.comfyremote.app.ui.L10n.t("等待超时", "Timed out")
+    ErrorKind.DOWNLOAD -> com.comfyremote.app.ui.L10n.t("下载失败", "Download failed")
+    ErrorKind.CANCELLED -> com.comfyremote.app.ui.L10n.t("已取消", "Cancelled")
+    ErrorKind.UNKNOWN -> com.comfyremote.app.ui.L10n.t("未知错误", "Unknown error")
+}

@@ -136,9 +136,6 @@ fun WorkflowsScreen(vm: MainViewModel, s: UiState) {
                         Text("${s.workflows.size}", fontFamily = Mono, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                     }
                 },
-                navigationIcon = {
-                    IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) }
-                },
                 actions = {
                     IconButton(onClick = { vm.back() }) {
                         Icon(androidx.compose.material.icons.Icons.Default.Settings, L10n.t("服务器", "Server"))
