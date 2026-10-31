@@ -37,6 +37,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -46,6 +47,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -118,6 +120,7 @@ fun App(vm: MainViewModel) {
     Box(Modifier.fillMaxSize()) {
         when (s.screen) {
             Screen.CONNECT -> ConnectScreen(vm, s)
+            Screen.AI_SETTINGS -> AiSettingsScreen(vm, s)
             Screen.WORKFLOWS -> WorkflowsScreen(vm, s)
             Screen.GENERATE -> GenerateScreen(vm, s)
             Screen.HISTORY -> HistoryScreen(vm, s)
@@ -190,6 +193,71 @@ fun ConnectScreen(vm: MainViewModel, s: UiState) {
                 }
             }
         }
+        Spacer(Modifier.height(20.dp))
+        TextButton(onClick = { vm.openAiSettings() }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            Text("AI 提示词扩写设置（Base URL / Key / 模型）", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+// ============================ AI SETTINGS ============================
+
+@Composable
+fun AiSettingsScreen(vm: MainViewModel, s: UiState) {
+    BackHandler { vm.back() }
+    Column(
+        Modifier.fillMaxSize().imePadding().padding(24.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("AI 提示词扩写", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "兼容 OpenAI 接口格式，填哪家都行。示例 Base URL：\n· DeepSeek: https://api.deepseek.com/v1\n· 智谱 GLM: https://open.bigmodel.cn/api/paas/v4\n· OpenAI: https://api.openai.com/v1\n· 本地 Ollama: http://电脑IP:11434/v1",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(16.dp))
+        OutlinedTextField(
+            value = s.aiBase, onValueChange = vm::updateAiBase,
+            label = { Text("Base URL") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(10.dp))
+        OutlinedTextField(
+            value = s.aiKey, onValueChange = vm::updateAiKey,
+            label = { Text("API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(10.dp))
+        OutlinedTextField(
+            value = s.aiModel, onValueChange = vm::updateAiModel,
+            label = { Text("模型名（如 deepseek-chat / glm-4-flash）") },
+            singleLine = true, modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(
+                onClick = { vm.testAi() },
+                enabled = !s.aiTesting,
+                modifier = Modifier.weight(1f).height(50.dp)
+            ) { Text(if (s.aiTesting) "测试中…" else "测试连接") }
+            Button(
+                onClick = { vm.saveAiSettings() },
+                modifier = Modifier.weight(1f).height(50.dp)
+            ) { Text("保存") }
+        }
+        s.aiTest?.let {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                it,
+                color = if (it.startsWith("成功")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Key 仅保存在手机本地（应用私有目录）。生成页每个提示词框下方会出现「✨ 扩写」和「🏷 标签」两个按钮，按工作流类型自动排序。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -517,14 +585,40 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                 }
             }
             itemsIndexed(textFields, key = { _, f -> f.key }) { _, f ->
-                OutlinedTextField(
-                    value = g.values[f.key] ?: f.value,
-                    onValueChange = { vm.updateValue(f.key, it) },
-                    label = { Text(f.label) },
-                    minLines = if (f.multiline) 3 else 1,
-                    maxLines = if (f.multiline) 12 else 2,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column {
+                    OutlinedTextField(
+                        value = g.values[f.key] ?: f.value,
+                        onValueChange = { vm.updateValue(f.key, it) },
+                        label = { Text(f.label) },
+                        minLines = if (f.multiline) 3 else 1,
+                        maxLines = if (f.multiline) 12 else 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (f.multiline) {
+                        val skills = remember(g.wfName) { AiSkill.recommendedFor(g.wfName) }
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            skills.forEach { skill ->
+                                val busyKey = "${f.key}|${skill.name}"
+                                TextButton(
+                                    onClick = { vm.aiExpand(f.key, g.values[f.key] ?: f.value, skill) },
+                                    enabled = s.aiBusy == null && !g.running
+                                ) {
+                                    if (s.aiBusy == busyKey) {
+                                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("生成中…")
+                                    } else {
+                                        Text(skill.label, style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             if (seedFields.isNotEmpty()) {
                 item(key = "seeds") {
@@ -613,6 +707,44 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
             )
         }
     }
+    s.aiResult?.let { result ->
+        AiResultDialog(
+            initial = result.text,
+            onDismiss = { vm.aiDismiss() },
+            onReplace = { vm.aiApply(replace = true, it) },
+            onAppend = { vm.aiApply(replace = false, it) }
+        )
+    }
+}
+
+@Composable
+fun AiResultDialog(initial: String, onDismiss: () -> Unit, onReplace: (String) -> Unit, onAppend: (String) -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("AI 生成结果", style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    minLines = 4,
+                    maxLines = 12,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "可直接修改后再应用；「追加」会拼在原提示词后面",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onReplace(text) }) { Text("替换") } },
+        dismissButton = {
+            TextButton(onClick = { onAppend(text) }) { Text("追加") }
+        }
+    )
 }
 
 @Composable

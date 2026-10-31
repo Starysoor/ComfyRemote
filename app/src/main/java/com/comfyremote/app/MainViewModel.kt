@@ -30,7 +30,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
-enum class Screen { CONNECT, WORKFLOWS, GENERATE, HISTORY }
+enum class Screen { CONNECT, AI_SETTINGS, WORKFLOWS, GENERATE, HISTORY }
 
 data class GenState(
     val wfName: String,
@@ -63,6 +63,15 @@ data class UiState(
     val busy: String? = null,
     val gen: GenState? = null,
     val history: List<HistoryItem> = emptyList(),
+    // AI prompt-expansion settings (edited on the settings screen)
+    val aiBase: String = "",
+    val aiKey: String = "",
+    val aiModel: String = "",
+    val aiTest: String? = null,
+    val aiTesting: Boolean = false,
+    // "$fieldKey|${skill.name}" while a request is in flight
+    val aiBusy: String? = null,
+    val aiResult: AiResult? = null,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -410,6 +419,99 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return a.uploadImage(bytes, "mobile_${System.currentTimeMillis()}_$seq.$ext")
     }
 
+    // ---------- AI prompt expansion ----------
+
+    fun openAiSettings() {
+        mutateState {
+            it.copy(
+                screen = Screen.AI_SETTINGS,
+                aiBase = prefs.getString("aiBase", "") ?: "",
+                aiKey = prefs.getString("aiKey", "") ?: "",
+                aiModel = prefs.getString("aiModel", "") ?: "",
+                aiTest = null,
+            )
+        }
+    }
+
+    fun updateAiBase(v: String) = mutateState { it.copy(aiBase = v) }
+    fun updateAiKey(v: String) = mutateState { it.copy(aiKey = v) }
+    fun updateAiModel(v: String) = mutateState { it.copy(aiModel = v) }
+
+    fun saveAiSettings() {
+        val s = _state.value
+        prefs.edit()
+            .putString("aiBase", s.aiBase.trim())
+            .putString("aiKey", s.aiKey.trim())
+            .putString("aiModel", s.aiModel.trim())
+            .apply()
+        Toast.makeText(getApplication(), "AI 设置已保存", Toast.LENGTH_SHORT).show()
+    }
+
+    fun testAi() {
+        val s = _state.value
+        val base = s.aiBase.trim()
+        val key = s.aiKey.trim()
+        val model = s.aiModel.trim()
+        if (base.isEmpty() || key.isEmpty() || model.isEmpty()) {
+            mutateState { it.copy(aiTest = "请先填写完整三项") }
+            return
+        }
+        mutateState { it.copy(aiTesting = true, aiTest = null) }
+        viewModelScope.launch {
+            try {
+                val reply = AiClient.chat(base, key, model, "你是连通性测试。收到任何消息都只回复：连接成功", "ping")
+                mutateState { it.copy(aiTesting = false, aiTest = "成功：${reply.take(80)}") }
+            } catch (e: Exception) {
+                mutateState { it.copy(aiTesting = false, aiTest = "失败：${e.message}".take(200)) }
+            }
+        }
+    }
+
+    private fun aiConfigured(): Triple<String, String, String>? {
+        val base = prefs.getString("aiBase", "")?.trim().orEmpty()
+        val key = prefs.getString("aiKey", "")?.trim().orEmpty()
+        val model = prefs.getString("aiModel", "")?.trim().orEmpty()
+        if (base.isEmpty() || key.isEmpty() || model.isEmpty()) {
+            Toast.makeText(getApplication(), "请先在连接页配置 AI 扩写设置", Toast.LENGTH_LONG).show()
+            return null
+        }
+        return Triple(base, key, model)
+    }
+
+    fun aiExpand(fieldKey: String, currentText: String, skill: AiSkill) {
+        val cfg = aiConfigured() ?: return
+        if (currentText.isBlank()) {
+            Toast.makeText(getApplication(), "先写几个字，AI 才知道往哪个方向扩写", Toast.LENGTH_SHORT).show()
+            return
+        }
+        mutateState { it.copy(aiBusy = "$fieldKey|${skill.name}") }
+        viewModelScope.launch {
+            try {
+                val out = AiClient.chat(cfg.first, cfg.second, cfg.third, skill.systemPrompt, currentText)
+                mutateState { it.copy(aiBusy = null, aiResult = AiResult(fieldKey, out)) }
+            } catch (e: Exception) {
+                mutateState { it.copy(aiBusy = null) }
+                Toast.makeText(getApplication(), "AI 调用失败：${e.message}".take(180), Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    fun aiApply(replace: Boolean, newText: String) {
+        val r = _state.value.aiResult ?: return
+        mutateGen { g ->
+            val f = g.fields.firstOrNull { it.key == r.fieldKey }
+            val merged = if (replace) newText
+            else {
+                val cur = g.values[r.fieldKey] ?: f?.value ?: ""
+                if (cur.isBlank()) newText else "$cur, $newText"
+            }
+            g.copy(values = g.values + (r.fieldKey to merged))
+        }
+        aiDismiss()
+    }
+
+    fun aiDismiss() = mutateState { it.copy(aiResult = null) }
+
     // ---------- history ----------
 
     fun reopenFromHistory(item: HistoryItem) {
@@ -476,6 +578,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (_state.value.gen?.running == true) cancelGenerate()
                 mutateState { it.copy(screen = Screen.WORKFLOWS) }
             }
+            Screen.AI_SETTINGS -> mutateState { it.copy(screen = Screen.CONNECT) }
             Screen.HISTORY -> mutateState { it.copy(screen = Screen.WORKFLOWS) }
             Screen.WORKFLOWS -> mutateState { it.copy(screen = Screen.CONNECT) }
             else -> {}
