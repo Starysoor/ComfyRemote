@@ -143,11 +143,6 @@ fun WorkflowsScreen(vm: MainViewModel, s: UiState) {
                     IconButton(onClick = { vm.back() }) {
                         Icon(androidx.compose.material.icons.Icons.Default.Settings, L10n.t("服务器", "Server"))
                     }
-                    TextButton(onClick = { vm.openHistory() }) {
-                        Text(L10n.t("历史", "History"), style = MaterialTheme.typography.labelLarge)
-                        Spacer(Modifier.width(4.dp))
-                        Text("${s.history.size}", fontFamily = Mono, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-                    }
                     IconButton(onClick = { vm.loadWorkflows() }) { Icon(Icons.Default.Refresh, L10n.t("刷新", "Refresh")) }
                 }
             )

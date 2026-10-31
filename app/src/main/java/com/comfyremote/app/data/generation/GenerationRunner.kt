@@ -33,7 +33,11 @@ class GenerationRunner(
         onUpdate: (GenerationTask) -> Unit,
     ): GenerationTask {
         var current = task
-        fun update(t: GenerationTask) { current = t; onUpdate(t) }
+        fun update(t: GenerationTask) {
+            if (current.isTerminal && !t.isTerminal) return  // late WS event after finish
+            current = t
+            onUpdate(t)
+        }
 
         val a: ComfyApi = session.require()
         val request = task.request
@@ -42,7 +46,7 @@ class GenerationRunner(
         update(current.copy(phase = GenerationPhase.QUEUEING, startedAt = System.currentTimeMillis()))
         val (prompt, seedsUsed) = WorkflowConverter.buildPrompt(
             com.comfyremote.app.ConvertedWorkflow(
-                request.convertedPrompt, emptyList(), emptyList()
+                request.convertedPrompt, request.fields, emptyList()
             ),
             request.fieldValues,
             request.randomSeed,
