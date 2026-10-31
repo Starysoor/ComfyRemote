@@ -23,7 +23,10 @@ data class GhRelease(
 object Updater {
 
     private const val REPO = "Starysoor/ComfyRemote"
+    // HTTP/1.1 only: HTTP/2 connection reuse breaks on some networks between
+    // api.github.com and the S3 redirect target ("SETTINGS preface" errors).
     private val http = OkHttpClient.Builder()
+        .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(180, TimeUnit.SECONDS)
         .build()
@@ -57,7 +60,9 @@ object Updater {
             for (i in 0 until assets.length()) {
                 val a = assets.optJSONObject(i) ?: continue
                 if (a.optString("name").endsWith(".apk")) {
-                    apkUrl = a.optString("browser_download_url")
+                    // API asset URL (not browser_download_url): with Accept octet-stream it
+                    // 302-redirects to a pre-signed S3 URL, which works for private repos.
+                    apkUrl = a.optString("url")
                     apkSize = a.optLong("size")
                     break
                 }
@@ -84,7 +89,11 @@ object Updater {
                 .header("Accept", "application/octet-stream")
                 .build()
             http.newCall(req).execute().use { r ->
-                if (!r.isSuccessful) throw ComfyException("下载失败 HTTP ${r.code}")
+                if (!r.isSuccessful) {
+                    val errBody = r.body?.string()?.take(200)
+                    android.util.Log.e("Updater", "download failed code=${r.code} url=${release.apkUrl} body=$errBody")
+                    throw ComfyException("下载失败 HTTP ${r.code}: ${errBody ?: "(无响应体)"}")
+                }
                 val total = r.body?.contentLength() ?: -1L
                 val input = r.body?.byteStream() ?: throw ComfyException("下载失败：空响应")
                 tmp.outputStream().use { out ->
