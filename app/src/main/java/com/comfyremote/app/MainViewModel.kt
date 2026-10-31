@@ -94,7 +94,19 @@ data class UiState(
     val update: UpdateUi? = null,
     val ghToken: String = "",
     val servers: List<ServerEntry> = emptyList(),
+    val pendingShare: Boolean = false,
 )
+
+
+/** True when ComfyUI marked this prompt as user-interrupted (not a real error). */
+fun historyCancelled(entry: JSONObject): Boolean {
+    val msgs = entry.optJSONObject("status")?.optJSONArray("messages") ?: return false
+    for (i in 0 until msgs.length()) {
+        val m = msgs.optJSONArray(i) ?: continue
+        if (m.optString(0) == "execution_interrupted") return true
+    }
+    return false
+}
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -113,6 +125,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var converted: ConvertedWorkflow? = null
     private var currentWfPath = ""
     private var genJob: Job? = null
+    private var pendingShare: Uri? = null
 
     init {
         _state.value = _state.value.copy(
@@ -160,6 +173,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun mutateGen(f: (GenState) -> GenState) {
         mutateState { s -> s.copy(gen = s.gen?.let(f)) }
+    }
+
+    /** Live progress on the foreground-service notification (id 1), tap -> app. */
+    private fun updateRunningNotification(statusText: String?, progress: Float?) {
+        val ctx = getApplication<Application>()
+        val nm = NotificationManagerCompat.from(ctx)
+        if (!nm.areNotificationsEnabled()) return
+        val pi = android.app.PendingIntent.getActivity(
+            ctx, 0,
+            Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val notif = NotificationCompat.Builder(ctx, CHANNEL_RUNNING)
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setContentTitle(L10n.t("ComfyUI 生成中", "ComfyUI generating"))
+            .setContentText(statusText ?: L10n.t("处理中…", "Working…"))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .apply {
+                if (progress != null) setProgress(100, (progress * 100).toInt(), false)
+                else setProgress(0, 0, true)
+            }
+            .setContentIntent(pi)
+            .build()
+        runCatching { nm.notify(1, notif) }
     }
 
     // ---------- connect / workflows ----------
@@ -256,6 +294,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         )
                     )
                 }
+                tryConsumePendingShare()
             } catch (e: Exception) {
                 mutateState { it.copy(busy = null, wfError = L10n.t("加载失败：", "Load failed: ") + (e.message ?: "error")) }
             }
@@ -284,6 +323,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(running = true, error = null, results = emptyList(), resultPaths = emptyList(),
                 preview = null, status = L10n.t("排队中…", "Queued…"), progress = null)
         }
+        updateRunningNotification(L10n.t("排队中…", "Queued…"), null)
         val clientId = UUID.randomUUID().toString()
         val values = g.values
         val randomSeed = g.randomSeed
@@ -308,6 +348,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val entry = pollHistory(a, pid)
                 wsJob.cancel()
 
+                if (historyCancelled(entry)) {
+                    mutateGen { it.copy(running = false, status = L10n.t("已取消", "Cancelled"), progress = null) }
+                    return@launch
+                }
                 extractError(entry)?.let { err ->
                     mutateGen { it.copy(running = false, error = err, status = L10n.t("失败", "Failed")) }
                     return@launch
@@ -363,12 +407,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     ?.optInt("queue_remaining", -1) ?: -1
                 if (q >= 0) mutateGen { it.copy(queueInfo = L10n.t("队列中任务: ", "Queue: ") + q) }
             }
-            "execution_start" -> if (data?.optString("prompt_id") == pid)
+            "execution_start" -> if (data?.optString("prompt_id") == pid) {
                 mutateGen { it.copy(status = L10n.t("执行中…", "Running…"), progress = 0f) }
+                updateRunningNotification(L10n.t("执行中…", "Running…"), 0f)
+            }
             "executing" -> if (data?.optString("prompt_id") == pid) {
                 val node = data.optString("node")
-                if (node.isNotEmpty() && node != "null") mutateGen { s ->
-                    s.copy(status = L10n.t("执行节点 ", "Node ") + "#" + node + " " + (s.nodeTitles[node] ?: ""), progress = null)
+                if (node.isNotEmpty() && node != "null") {
+                    val st = L10n.t("执行节点 ", "Node ") + "#" + node + " " + (_state.value.gen?.nodeTitles?.get(node) ?: "")
+                    updateRunningNotification(st, null)
+                    mutateGen { g -> g.copy(status = st, progress = null) }
                 }
             }
             "progress" -> {
@@ -376,7 +424,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (data != null && data.has("value") && (p.isNullOrEmpty() || p == pid)) {
                     val v = data.optDouble("value", 0.0)
                     val m = data.optDouble("max", 1.0).coerceAtLeast(1e-6)
-                    mutateGen { it.copy(progress = (v / m).toFloat().coerceIn(0f, 1f)) }
+                    val prog = (v / m).toFloat().coerceIn(0f, 1f)
+                    updateRunningNotification(null, prog)
+                    mutateGen { it.copy(progress = prog) }
                 }
             }
         }
@@ -473,12 +523,41 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun uploadOne(a: ComfyApi, uri: Uri, seq: Int): String {
         val ctx = getApplication<Application>()
-        val bytes = withContext(Dispatchers.IO) {
+        val raw = withContext(Dispatchers.IO) {
             ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         } ?: throw ComfyException(L10n.t("读取图片失败", "Failed to read image"))
-        val ext = ctx.contentResolver.getType(uri)
-            ?.substringAfterLast('/', "png")?.takeIf { it.length in 2..5 } ?: "png"
+        val (bytes, ext) = withContext(Dispatchers.IO) { prepareForUpload(raw, ctx.contentResolver.getType(uri)) }
         return a.uploadImage(bytes, "mobile_${System.currentTimeMillis()}_$seq.$ext")
+    }
+
+    /** Downscales big camera/gallery photos to 1536px JPEG so uploads finish fast. */
+    private fun prepareForUpload(bytes: ByteArray, mime: String?): Pair<ByteArray, String> {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0) return Pair(bytes, mime?.substringAfterLast('/', "png")?.takeIf { it.length in 2..5 } ?: "png")
+        val maxDim = maxOf(bounds.outWidth, bounds.outHeight)
+        if (maxDim <= 1536) return Pair(bytes, mime?.substringAfterLast('/', "png")?.takeIf { it.length in 2..5 } ?: "png")
+        val opts = android.graphics.BitmapFactory.Options().apply {
+            inSampleSize = (maxDim / 1536).coerceAtLeast(1)
+        }
+        val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+            ?: return Pair(bytes, "jpg")
+        val rotation = runCatching {
+            when (android.media.ExifInterface(java.io.ByteArrayInputStream(bytes))
+                .getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1)) {
+                android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                else -> 0f
+            }
+        }.getOrDefault(0f)
+        val oriented = if (rotation != 0f) {
+            val m = android.graphics.Matrix().apply { postRotate(rotation) }
+            android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
+        } else bmp
+        val bos = java.io.ByteArrayOutputStream()
+        oriented.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, bos)
+        return Pair(bos.toByteArray(), "jpg")
     }
 
     // ---------- AI prompt expansion ----------
@@ -770,6 +849,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         mutateState { it.copy(screen = Screen.HISTORY) }
     }
 
+    /** Receives an image shared from the system gallery/other apps. */
+    fun handleSendIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) return
+        val uri = androidx.core.content.IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java) ?: return
+        pendingShare = uri
+        mutateState { it.copy(pendingShare = true) }
+        tryConsumePendingShare()
+    }
+
+    /** Fills the first reference-image slot of the open workflow with the shared image. */
+    fun tryConsumePendingShare() {
+        val uri = pendingShare ?: return
+        val g = _state.value.gen ?: return
+        if (g.running) return
+        if (g.fields.none { it.kind == FieldKind.IMAGE }) return
+        pendingShare = null
+        mutateState { it.copy(pendingShare = false) }
+        uploadImagesBatch(listOf(uri))
+    }
+
     fun back() {
         when (_state.value.screen) {
             Screen.GENERATE -> {
@@ -798,10 +897,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>()
         val nm = NotificationManagerCompat.from(ctx)
         if (!nm.areNotificationsEnabled()) return
+        val pi = android.app.PendingIntent.getActivity(
+            ctx, 0,
+            Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
         val notif: Notification = NotificationCompat.Builder(ctx, CHANNEL_DONE)
             .setSmallIcon(android.R.drawable.ic_menu_gallery)
             .setContentTitle(L10n.t("生成完成", "Generation finished"))
             .setContentText("$wfName · " + L10n.t("${count} 张图", "${count} image(s)"))
+            .setContentIntent(pi)
             .setAutoCancel(true)
             .build()
         runCatching { nm.notify(2, notif) }

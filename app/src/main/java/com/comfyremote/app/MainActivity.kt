@@ -119,8 +119,14 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        vm.handleSendIntent(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        vm.handleSendIntent(intent)
         setContent {
             ComfyTheme {
                 Surface(Modifier.fillMaxSize()) { App(vm) }
@@ -847,6 +853,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
     var pendingKey by remember { mutableStateOf<String?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     var viewingIdx by remember { mutableStateOf<Int?>(null) }
+    var compareOpen by remember { mutableStateOf(false) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val k = pendingKey
@@ -867,6 +874,10 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
         if (Build.VERSION.SDK_INT >= 33) notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
     BackHandler { vm.back() }
+
+    LaunchedEffect(s.pendingShare, g.fields) {
+        if (s.pendingShare) vm.tryConsumePendingShare()
+    }
 
     val imageFields = g.fields.filter { it.kind == FieldKind.IMAGE }
     val textFields = g.fields.filter { it.kind == FieldKind.TEXT }
@@ -1097,11 +1108,17 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
             }
             if (g.results.isNotEmpty()) {
                 item(key = "resheader") {
-                    Text(
-                        L10n.t("生成结果（", "Results (") + "${g.results.size}" + L10n.t("）", ")"),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            L10n.t("生成结果（", "Results (") + "${g.results.size}" + L10n.t("）", ")"),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (g.results.size >= 2) {
+                            TextButton(onClick = { compareOpen = true }) { Text(L10n.t("对比", "Compare")) }
+                        }
+                    }
                 }
                 itemsIndexed(g.results, key = { i, _ -> "res$i" }) { idx, bmp ->
                     Column {
@@ -1142,6 +1159,9 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
             onAppend = { vm.aiApply(replace = false, it) }
         )
     }
+    if (compareOpen && g.results.size >= 2) {
+        CompareDialog(g.results, onDismiss = { compareOpen = false })
+    }
 }
 
 @Composable
@@ -1172,6 +1192,48 @@ fun AiResultDialog(initial: String, onDismiss: () -> Unit, onReplace: (String) -
             TextButton(onClick = { onAppend(text) }) { Text(L10n.t("追加", "Append")) }
         }
     )
+}
+
+/** Side-by-side A/B comparison of two results. */
+@Composable
+fun CompareDialog(results: List<Bitmap>, onDismiss: () -> Unit) {
+    var a by remember { mutableStateOf(0) }
+    var b by remember { mutableStateOf(1) }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.fillMaxSize().background(Color(0xFF0A0A0C))) {
+            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(L10n.t("对比", "Compare"), color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, L10n.t("关闭", "Close"), tint = Color.White) }
+            }
+            Row(Modifier.weight(1f).fillMaxWidth()) {
+                Image(results[a.coerceIn(results.indices)].asImageBitmap(), null,
+                    Modifier.weight(1f).fillMaxSize().padding(2.dp), contentScale = ContentScale.Fit)
+                Image(results[b.coerceIn(results.indices)].asImageBitmap(), null,
+                    Modifier.weight(1f).fillMaxSize().padding(2.dp), contentScale = ContentScale.Fit)
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("A", fontFamily = Mono, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(8.dp))
+                var ea by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(onClick = { ea = true }) { Text("A: ${a + 1}") }
+                    DropdownMenu(expanded = ea, onDismissRequest = { ea = false }) {
+                        results.indices.forEach { i -> DropdownMenuItem(text = { Text("${i + 1}") }, onClick = { a = i; ea = false }) }
+                    }
+                }
+                Spacer(Modifier.width(20.dp))
+                Text("B", fontFamily = Mono, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(8.dp))
+                var eb by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(onClick = { eb = true }) { Text("B: ${b + 1}") }
+                    DropdownMenu(expanded = eb, onDismissRequest = { eb = false }) {
+                        results.indices.forEach { i -> DropdownMenuItem(text = { Text("${i + 1}") }, onClick = { b = i; eb = false }) }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
