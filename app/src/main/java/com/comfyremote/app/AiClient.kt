@@ -21,8 +21,9 @@ data class AiSkillDef(
     companion object {
         const val DEFAULT_NATURAL_ID = "builtin_natural"
         const val DEFAULT_TAGS_ID = "builtin_tags"
-
-        fun defaults(): List<AiSkillDef> = listOf(NATURAL_DEFAULT, TAGS_DEFAULT)
+        const val DEFAULT_EN_ID = "builtin_en_expand"
+        const val DEFAULT_NEG_ID = "builtin_negative"
+        const val DEFAULT_TRANSLATE_ID = "builtin_translate"
 
         val NATURAL_DEFAULT = AiSkillDef(
             DEFAULT_NATURAL_ID, "AI 扩写",
@@ -41,6 +42,38 @@ data class AiSkillDef(
                     "只输出一行标签，不要任何解释或句号。",
             true,
         )
+
+        val EN_EXPAND_DEFAULT = AiSkillDef(
+            DEFAULT_EN_ID, "AI 英文扩写",
+            "You are a prompt engineer for text-to-image models that understand natural language (Flux, SD 3.5, etc.). Expand the user's short idea into a 60~120 word English scene description: cover the subject, environment, composition, lighting, mood and camera language with concrete nouns and verbs; avoid empty adjective stacking.\n" +
+                    "Output only the English description itself, no explanations, no quotes.",
+            true,
+        )
+
+        val NEGATIVE_DEFAULT = AiSkillDef(
+            DEFAULT_NEG_ID, "AI 负面",
+            "你是 Stable Diffusion 系列的负面提示词专家。根据用户的正向提示词（可能是标签或自然语言），输出与之匹配的英文负面提示词：包含画质劣化（lowres, blurry, jpeg artifacts 等）、解剖与手部错误（bad hands, extra fingers 等）、常见干扰物（watermark, signature, text 等）。不要包含与正向内容冲突或重复的描述，不要出现人物主体相关标签。\n" +
+                    "只输出一行逗号分隔的英文负面标签，不要任何解释。",
+            true,
+        )
+
+        val TRANSLATE_DEFAULT = AiSkillDef(
+            DEFAULT_TRANSLATE_ID, "AI 翻译",
+            "你是专业的文生图提示词翻译。把用户输入的中文提示词忠实翻译成英文：保留原有结构与细节，不添加、不删减、不改写风格；专有名词与已成型的英文标签（如 1girl）原样保留；如果输入已是英文则原样返回。\n" +
+                    "只输出翻译结果本身，不要任何解释。",
+            true,
+        )
+
+        fun defaults(): List<AiSkillDef> = listOf(NATURAL_DEFAULT, TAGS_DEFAULT, EN_EXPAND_DEFAULT, NEGATIVE_DEFAULT, TRANSLATE_DEFAULT)
+
+        /** Ensures every built-in skill exists (appends missing ones, keeps user edits). */
+        fun mergeBuiltins(stored: List<AiSkillDef>): List<AiSkillDef> {
+            val out = stored.toMutableList()
+            for (d in defaults()) {
+                if (out.none { it.id == d.id }) out.add(d)
+            }
+            return out
+        }
 
         private val TAGGED_WORKFLOWS = listOf("SDXL", "Anima", "Illustrious", "Pony")
 
@@ -65,7 +98,7 @@ object AiSkills {
             if (label.isEmpty()) continue
             out.add(AiSkillDef(o.optString("id"), label, o.optString("prompt"), o.optBoolean("builtin", false)))
         }
-        if (out.isEmpty()) AiSkillDef.defaults() else out
+        AiSkillDef.mergeBuiltins(out)
     }.getOrDefault(AiSkillDef.defaults())
 
     fun save(prefs: SharedPreferences, skills: List<AiSkillDef>) {

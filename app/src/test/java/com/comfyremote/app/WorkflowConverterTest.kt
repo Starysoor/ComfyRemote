@@ -108,6 +108,30 @@ class WorkflowConverterTest {
     }
 
     @Test
+    fun subgraphWorkflowProducesExplicitWarning() {
+        val base = JSONObject(readRes("fixtures/sdxl_anime.json"))
+        val wf = JSONObject(base.toString())
+        wf.put("definitions", JSONObject().put("subgraphs", org.json.JSONArray().put(JSONObject().put("id", "s1"))))
+        val conv = WorkflowConverter.convert(wf.toString(), info())
+        assertTrue(conv.warnings.any { it.contains("子图") || it.contains("Subgraph") })
+        // normal workflow has no such warning
+        val clean = WorkflowConverter.convert(readRes("fixtures/sdxl_anime.json"), info())
+        assertTrue(clean.warnings.none { it.contains("子图") })
+    }
+
+    @Test
+    fun mergeBuiltinsAppendsMissingDefaultsAndKeepsEdits() {
+        val edited = AiSkillDef(AiSkillDef.DEFAULT_NATURAL_ID, "自定义扩写", "my prompt", true)
+        val stored = listOf(edited)
+        val merged = AiSkillDef.mergeBuiltins(stored)
+        assertEquals(5, merged.size)
+        assertEquals("my prompt", merged.first { it.id == AiSkillDef.DEFAULT_NATURAL_ID }.systemPrompt)
+        assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_EN_ID })
+        assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_NEG_ID })
+        assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_TRANSLATE_ID })
+    }
+
+    @Test
     fun convertedPromptStillValidatesAgainstObjectInfo() {
         // every converted node must exist in object_info and only use known inputs
         val info = info()

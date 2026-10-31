@@ -54,6 +54,13 @@ object WorkflowConverter {
         val wf = JSONObject(wfJson)
         val warnings = mutableListOf<String>()
 
+        // New frontends can collapse nodes into subgraphs; the subgraph-internal
+        // nodes are absent from this JSON, so conversion would be incomplete.
+        val defs = wf.optJSONObject("definitions")
+        if (defs != null && (defs.optJSONArray("subgraphs")?.length() ?: 0) > 0) {
+            warnings.add("此工作流包含子图（Subgraph），手机端无法完整转换：请在电脑网页版中右键子图 → Expand 展开后重新保存")
+        }
+
         val nodesArr = wf.optJSONArray("nodes")
             ?: return apiFormatFields(wf, info)
 

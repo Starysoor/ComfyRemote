@@ -23,6 +23,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import java.util.concurrent.TimeUnit
+import okhttp3.OkHttpClient
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -95,6 +100,11 @@ data class UiState(
     val ghToken: String = "",
     val servers: List<ServerEntry> = emptyList(),
     val pendingShare: Boolean = false,
+    val scanning: Boolean = false,
+    val scanProgress: Int? = null,
+    val scanFound: List<ServerEntry> = emptyList(),
+    val scanError: String? = null,
+    val bookmarks: List<Bookmark> = emptyList(),
 )
 
 
@@ -107,6 +117,9 @@ fun historyCancelled(entry: JSONObject): Boolean {
     }
     return false
 }
+
+/** A saved prompt snippet (from history or the current editor). */
+data class Bookmark(val id: String, val title: String, val prompts: List<LabeledText>, val time: Long)
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -132,6 +145,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             servers = loadServers(),
             history = history.load(),
             skills = AiSkills.load(prefs),
+            bookmarks = loadBookmarks(),
         )
         maybeAutoCheckUpdate()
     }
@@ -867,6 +881,152 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         pendingShare = null
         mutateState { it.copy(pendingShare = false) }
         uploadImagesBatch(listOf(uri))
+    }
+
+    // ---------- LAN scan ----------
+
+    private val scanHttp = OkHttpClient.Builder()
+        .connectTimeout(400, TimeUnit.MILLISECONDS)
+        .readTimeout(1200, TimeUnit.MILLISECONDS)
+        .build()
+
+    private fun localSubnetPrefix(): String? = runCatching {
+        val e = java.net.NetworkInterface.getNetworkInterfaces()
+        while (e.hasMoreElements()) {
+            val nif = e.nextElement()
+            if (!nif.isUp || nif.isLoopback) continue
+            val addrs = nif.inetAddresses
+            while (addrs.hasMoreElements()) {
+                val a = addrs.nextElement()
+                if (a is java.net.Inet4Address && a.isSiteLocalAddress) {
+                    return a.hostAddress!!.substringBeforeLast('.') + '.'
+                }
+            }
+        }
+        null
+    }.getOrNull()
+
+    private suspend fun isComfyAt(ip: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val socket = java.net.Socket()
+            socket.connect(java.net.InetSocketAddress(ip, 8188), 400)
+            socket.close()
+            scanHttp.newCall(
+                okhttp3.Request.Builder().url("http://$ip:8188/system_stats").build()
+            ).execute().use { r ->
+                r.isSuccessful && JSONObject(r.body?.string() ?: "").optJSONObject("system")
+                    ?.has("comfyui_version") == true
+            }
+        }.getOrDefault(false)
+    }
+
+    fun scanLan() {
+        if (_state.value.scanning) return
+        viewModelScope.launch {
+            val prefix = withContext(Dispatchers.IO) { localSubnetPrefix() }
+            if (prefix == null) {
+                mutateState { it.copy(scanError = L10n.t("无法确定 Wi-Fi 网段（未连接或使用流量）", "Unknown subnet - not on Wi-Fi")) }
+                return@launch
+            }
+            mutateState { it.copy(scanning = true, scanProgress = 0, scanFound = emptyList(), scanError = null) }
+            val found = java.util.Collections.synchronizedList(mutableListOf<ServerEntry>())
+            val jobs = mutableListOf<Job>()
+            for (i in 1..254) {
+                val ip = "$prefix$i"
+                jobs += launch(Dispatchers.IO) {
+                    if (isComfyAt(ip)) {
+                        found.add(ServerEntry(ip, "http://$ip:8188"))
+                        mutateState { it.copy(scanFound = found.toList()) }
+                    }
+                    mutateState { s -> s.copy(scanProgress = (s.scanProgress ?: 0) + 1) }
+                }
+            }
+            jobs.joinAll()
+            mutateState {
+                it.copy(
+                    scanning = false,
+                    scanError = if (it.scanFound.isEmpty()) L10n.t("未发现 ComfyUI（确认手机与电脑在同一 Wi-Fi）", "No ComfyUI found - check that both devices are on the same Wi-Fi") else null
+                )
+            }
+        }
+    }
+
+    // ---------- prompt bookmarks ----------
+
+    private fun loadBookmarks(): List<Bookmark> = runCatching {
+        val arr = JSONArray(prefs.getString("bookmarks", null) ?: return@runCatching emptyList())
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val prompts = mutableListOf<LabeledText>()
+            val pa = o.optJSONArray("prompts")
+            if (pa != null) for (j in 0 until pa.length()) {
+                val po = pa.optJSONObject(j) ?: continue
+                prompts.add(LabeledText(po.optString("label"), po.optString("value")))
+            }
+            Bookmark(o.optString("id"), o.optString("title"), prompts, o.optLong("time"))
+        }
+    }.getOrDefault(emptyList()).sortedByDescending { it.time }
+
+    private fun persistBookmarks(list: List<Bookmark>) {
+        val arr = JSONArray()
+        list.forEach { b ->
+            arr.put(JSONObject()
+                .put("id", b.id).put("title", b.title).put("time", b.time)
+                .put("prompts", JSONArray().apply { b.prompts.forEach { pp -> put(JSONObject().put("label", pp.label).put("value", pp.value)) } }))
+        }
+        prefs.edit().putString("bookmarks", arr.toString()).apply()
+    }
+
+    fun addBookmark(title: String, prompts: List<LabeledText>) {
+        val trimmed = prompts.filter { it.value.isNotBlank() }
+        if (trimmed.isEmpty()) return
+        val bm = Bookmark("bm_${System.currentTimeMillis()}", title, trimmed, System.currentTimeMillis())
+        val list = (listOf(bm) + loadBookmarks()).take(30)
+        persistBookmarks(list)
+        mutateState { it.copy(bookmarks = list) }
+        Toast.makeText(getApplication(), L10n.t("已收藏提示词", "Prompt bookmarked"), Toast.LENGTH_SHORT).show()
+    }
+
+    fun addBookmarkFromCurrent() {
+        val g = _state.value.gen ?: return
+        val texts = g.fields.filter { it.kind == FieldKind.TEXT }
+            .map { LabeledText(it.label, g.values[it.key] ?: it.value) }
+            .filter { it.value.isNotBlank() }
+        if (texts.isEmpty()) {
+            Toast.makeText(getApplication(), L10n.t("当前没有可收藏的提示词", "Nothing to bookmark yet"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        addBookmark(texts.first().value.take(28), texts)
+    }
+
+    fun addBookmarkFromHistory(item: HistoryItem) {
+        if (item.prompts.isEmpty()) {
+            Toast.makeText(getApplication(), L10n.t("该记录没有完整提示词可收藏", "No saved prompts for this entry"), Toast.LENGTH_SHORT).show()
+            return
+        }
+        addBookmark(item.summary.take(28), item.prompts)
+    }
+
+    fun deleteBookmark(id: String) {
+        val list = loadBookmarks().filter { it.id != id }
+        persistBookmarks(list)
+        mutateState { it.copy(bookmarks = list) }
+    }
+
+    /** Fills the workflow text fields in stored order. */
+    fun applyBookmark(bm: Bookmark) {
+        mutateGen { g ->
+            var newValues = g.values
+            var applied = 0
+            g.fields.filter { it.kind == FieldKind.TEXT }.forEach { f ->
+                bm.prompts.getOrNull(applied)?.let { pp ->
+                    newValues = newValues + (f.key to pp.value)
+                    applied++
+                }
+            }
+            g.copy(values = newValues)
+        }
+        Toast.makeText(getApplication(), L10n.t("已应用书签", "Bookmark applied"), Toast.LENGTH_SHORT).show()
     }
 
     fun back() {

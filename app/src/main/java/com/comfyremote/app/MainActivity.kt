@@ -257,6 +257,38 @@ fun ConnectScreen(vm: MainViewModel, s: UiState) {
                 }
             }
         }
+        // LAN scan
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { vm.scanLan() }, enabled = !s.scanning) {
+                Text(
+                    if (s.scanning) (L10n.t("扫描中 ", "Scanning ") + "${s.scanProgress ?: 0}" + L10n.t("/254", "/254"))
+                    else L10n.t("扫描局域网 ComfyUI", "Scan LAN for ComfyUI"),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        s.scanFound.forEach { found ->
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                    .clickable { url = found.url }
+            ) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(7.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(L10n.t("发现 ComfyUI", "ComfyUI found"), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                        Text(found.url, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+            }
+        }
+        s.scanError?.let {
+            Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
         // update banner
         s.update?.release?.let { rel ->
             Spacer(Modifier.height(12.dp))
@@ -756,12 +788,12 @@ fun HistoryScreen(vm: MainViewModel, s: UiState) {
         }
     }
     viewing?.let { item ->
-        HistoryDetailDialog(item, onClose = { viewing = null }, onSave = { bmp -> vm.saveResult(bmp) }, onShare = { p -> shareImage(ctx, p) })
+        HistoryDetailDialog(item, onClose = { viewing = null }, onSave = { bmp -> vm.saveResult(bmp) }, onShare = { p -> shareImage(ctx, p) }, onBookmark = { vm.addBookmarkFromHistory(it) })
     }
 }
 
 @Composable
-fun HistoryDetailDialog(item: HistoryItem, onClose: () -> Unit, onSave: (Bitmap) -> Unit, onShare: (String) -> Unit) {
+fun HistoryDetailDialog(item: HistoryItem, onClose: () -> Unit, onSave: (Bitmap) -> Unit, onShare: (String) -> Unit, onBookmark: (HistoryItem) -> Unit) {
     val clipboard = LocalClipboardManager.current
     val ctx = LocalContext.current
     fun copy(text: String) {
@@ -854,6 +886,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     var viewingIdx by remember { mutableStateOf<Int?>(null) }
     var compareOpen by remember { mutableStateOf(false) }
+    var bookmarksOpen by remember { mutableStateOf(false) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val k = pendingKey
@@ -892,6 +925,11 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                 title = { Text(g.wfName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) }
+                },
+                actions = {
+                    TextButton(onClick = { bookmarksOpen = true }) {
+                        Text(L10n.t("书签", "Bookmarks"), style = MaterialTheme.typography.labelLarge)
+                    }
                 }
             )
         },
@@ -1162,6 +1200,15 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
     if (compareOpen && g.results.size >= 2) {
         CompareDialog(g.results, onDismiss = { compareOpen = false })
     }
+    if (bookmarksOpen) {
+        BookmarksDialog(
+            bookmarks = s.bookmarks,
+            onDismiss = { bookmarksOpen = false },
+            onApply = { vm.applyBookmark(it); bookmarksOpen = false },
+            onDelete = { vm.deleteBookmark(it) },
+            onSaveCurrent = { vm.addBookmarkFromCurrent() }
+        )
+    }
 }
 
 @Composable
@@ -1191,6 +1238,62 @@ fun AiResultDialog(initial: String, onDismiss: () -> Unit, onReplace: (String) -
         dismissButton = {
             TextButton(onClick = { onAppend(text) }) { Text(L10n.t("追加", "Append")) }
         }
+    )
+}
+
+/** Saved prompt snippets; tap applies to the open workflow. */
+@Composable
+fun BookmarksDialog(
+    bookmarks: List<Bookmark>,
+    onDismiss: () -> Unit,
+    onApply: (Bookmark) -> Unit,
+    onDelete: (String) -> Unit,
+    onSaveCurrent: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(L10n.t("提示词书签", "Prompt bookmarks"), style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onSaveCurrent, enabled = true) { Text(L10n.t("收藏当前", "Save current")) }
+            }
+        },
+        text = {
+            if (bookmarks.isEmpty()) {
+                Text(
+                    L10n.t("还没有书签。点右上角收藏当前提示词，或在历史详情里收藏。", "No bookmarks yet. Save the current prompts or bookmark from history."),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                LazyColumn(Modifier.heightIn(max = 380.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(bookmarks, key = { it.id }) { bm ->
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.fillMaxWidth().clickable { onApply(bm) }
+                        ) {
+                            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(bm.title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        bm.prompts.firstOrNull()?.value ?: "",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2, overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                IconButton(onClick = { onDelete(bm.id) }) {
+                                    Icon(Icons.Default.Delete, L10n.t("删除", "Delete"), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(L10n.t("关闭", "Close")) } }
     )
 }
 

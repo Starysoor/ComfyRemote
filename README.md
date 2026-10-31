@@ -19,6 +19,8 @@ Android remote client for your PC's ComfyUI: pick a workflow, type a prompt, gen
 - **History** — every run is stored locally with full prompts + seeds, thumbnails, one-tap re-generate, A/B result comparison
 - **Auto-update** — the app checks GitHub Releases and updates itself (no token needed, the repo is public)
 - **img2img** — album multi-select, camera, or **share an image straight from your gallery** into the reference slot; large photos are auto-downscaled for fast upload
+- **LAN discovery** — one tap scans the local subnet for running ComfyUI servers
+- **Prompt bookmarks** — save current prompts or bookmark from history; tap to refill the editor
 - **Bilingual UI** (Chinese/English, follows system) and light/dark themes
 
 ## <a id="中文"></a>中文
