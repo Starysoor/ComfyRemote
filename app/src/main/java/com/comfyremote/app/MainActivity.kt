@@ -15,9 +15,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -32,6 +36,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -102,6 +107,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import com.comfyremote.app.ui.ComfyTheme
+import com.comfyremote.app.ui.L10n
 import com.comfyremote.app.ui.Mono
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -154,10 +160,11 @@ fun App(vm: MainViewModel) {
 
 // ============================ CONNECT ============================
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ConnectScreen(vm: MainViewModel, s: UiState) {
     var url by rememberSaveable(s.url) { mutableStateOf(s.url) }
-    val ctx = LocalContext.current
+    var managing by remember { mutableStateOf<ServerEntry?>(null) }
     Column(
         Modifier.fillMaxSize().imePadding().padding(horizontal = 28.dp).padding(bottom = 24.dp),
         verticalArrangement = Arrangement.Center,
@@ -174,8 +181,8 @@ fun ConnectScreen(vm: MainViewModel, s: UiState) {
         OutlinedTextField(
             value = url,
             onValueChange = { url = it },
-            label = { Text("服务器地址") },
-            supportingText = { Text("模拟器: http://10.0.2.2:8188；手机: Tailscale IP 或电脑局域网 IP（ComfyUI 需 --listen 0.0.0.0）") },
+            label = { Text(L10n.t("服务器地址", "Server address")) },
+            supportingText = { Text(L10n.t("模拟器: http://10.0.2.2:8188；手机: Tailscale IP 或电脑局域网 IP（ComfyUI 需 --listen 0.0.0.0）", "Emulator: http://10.0.2.2:8188; phone: Tailscale/LAN IP (ComfyUI needs --listen 0.0.0.0)")) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
@@ -186,9 +193,39 @@ fun ConnectScreen(vm: MainViewModel, s: UiState) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 s.servers.forEach { srv ->
-                    AssistChip(onClick = { url = srv }, label = { Text(srv, maxLines = 1, overflow = TextOverflow.Ellipsis) })
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                        modifier = Modifier.combinedClickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = LocalIndication.current,
+                            onClick = { url = srv.url },
+                            onLongClick = { managing = srv }
+                        )
+                    ) {
+                        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            Text(
+                                srv.name, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 200.dp)
+                            )
+                            if (srv.name != srv.url) {
+                                Text(
+                                    srv.url, fontFamily = Mono, fontSize = 9.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 200.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
+            Text(
+                L10n.t("长按可重命名或删除", "Long-press to rename or remove"),
+                fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.align(Alignment.Start).padding(top = 4.dp)
+            )
         }
         Spacer(Modifier.height(16.dp))
         Button(
@@ -196,7 +233,7 @@ fun ConnectScreen(vm: MainViewModel, s: UiState) {
             enabled = !s.connecting,
             shape = MaterialTheme.shapes.medium,
             modifier = Modifier.fillMaxWidth().height(52.dp)
-        ) { Text(if (s.connecting) "连接中…" else "连  接", letterSpacing = 1.sp) }
+        ) { Text(if (s.connecting) L10n.t("连接中…", "Connecting…") else L10n.t("连  接", "Connect"), letterSpacing = 1.sp) }
         Spacer(Modifier.height(14.dp))
         s.connError?.let {
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -223,19 +260,19 @@ fun ConnectScreen(vm: MainViewModel, s: UiState) {
                 modifier = Modifier.fillMaxWidth().clickable { vm.openUpdateScreen() }
             ) {
                 Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("新版本 ${rel.tag} 可用", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text(L10n.t("新版本 ${rel.tag} 可用", "New version ${rel.tag} available"), fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     Spacer(Modifier.weight(1f))
-                    Text("更新 →", color = MaterialTheme.colorScheme.onPrimaryContainer, fontFamily = Mono, fontSize = 12.sp)
+                    Text(L10n.t("更新 →", "Update →"), color = MaterialTheme.colorScheme.onPrimaryContainer, fontFamily = Mono, fontSize = 12.sp)
                 }
             }
         }
         Spacer(Modifier.height(26.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             TextButton(onClick = { vm.openAiSettings() }) {
-                Text("AI 设置", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(L10n.t("AI 设置", "AI settings"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             TextButton(onClick = { vm.openUpdateScreen() }) {
-                Text("检查更新", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(L10n.t("检查更新", "Check updates"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Spacer(Modifier.height(2.dp))
@@ -243,6 +280,40 @@ fun ConnectScreen(vm: MainViewModel, s: UiState) {
             "v${vm.currentVersionPublic()}",
             fontFamily = Mono, fontSize = 10.sp, letterSpacing = 1.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        )
+    }
+    managing?.let { srv ->
+        var alias by remember(srv) { mutableStateOf(srv.name) }
+        AlertDialog(
+            onDismissRequest = { managing = null },
+            title = { Text(L10n.t("管理服务器", "Manage server"), style = MaterialTheme.typography.titleMedium) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(srv.url, fontFamily = Mono, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(
+                        value = alias,
+                        onValueChange = { alias = it },
+                        label = { Text(L10n.t("别名", "Alias")) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (alias.isNotBlank()) vm.renameServer(srv.url, alias.trim())
+                    managing = null
+                }) { Text(L10n.t("重命名", "Rename")) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        vm.removeServer(srv.url)
+                        managing = null
+                    }) { Text(L10n.t("删除", "Remove"), color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = { managing = null }) { Text(L10n.t("取消", "Cancel")) }
+                }
+            }
         )
     }
 }
@@ -256,20 +327,20 @@ fun AiSettingsScreen(vm: MainViewModel, s: UiState) {
     var addingSkill by remember { mutableStateOf(false) }
     var thinkingOpen by remember { mutableStateOf(false) }
     val thinkingLabels = mapOf(
-        "default" to "跟随模型默认",
-        "glm_off" to "GLM · 关闭思考",
-        "glm_on" to "GLM · 开启思考",
-        "low" to "推理强度 low",
-        "medium" to "推理强度 medium",
-        "high" to "推理强度 high",
+        "default" to L10n.t("跟随模型默认", "Model default"),
+        "glm_off" to L10n.t("GLM · 关闭思考", "GLM · thinking off"),
+        "glm_on" to L10n.t("GLM · 开启思考", "GLM · thinking on"),
+        "low" to "reasoning: low",
+        "medium" to "reasoning: medium",
+        "high" to "reasoning: high",
     )
     Column(
         Modifier.fillMaxSize().imePadding().padding(24.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text("AI 提示词扩写", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Text(L10n.t("AI 提示词扩写", "AI prompt expansion"), fontSize = 24.sp, fontWeight = FontWeight.Bold)
         Text(
-            "兼容 OpenAI 接口格式。示例：DeepSeek https://api.deepseek.com/v1 · 智谱 https://open.bigmodel.cn/api/paas/v4 · OpenAI https://api.openai.com/v1 · 本地 Ollama http://电脑IP:11434/v1",
+            L10n.t("兼容 OpenAI 接口格式。示例：DeepSeek https://api.deepseek.com/v1 · 智谱 https://open.bigmodel.cn/api/paas/v4 · OpenAI https://api.openai.com/v1 · 本地 Ollama http://电脑IP:11434/v1", "OpenAI-compatible endpoints. e.g. DeepSeek https://api.deepseek.com/v1 · Zhipu https://open.bigmodel.cn/api/paas/v4 · OpenAI https://api.openai.com/v1 · local Ollama http://PC-IP:11434/v1"),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -283,7 +354,7 @@ fun AiSettingsScreen(vm: MainViewModel, s: UiState) {
         )
         OutlinedTextField(
             value = s.aiModel, onValueChange = vm::updateAiModel,
-            label = { Text("模型名（如 deepseek-chat / glm-4-flash）") },
+            label = { Text(L10n.t("模型名（如 deepseek-chat / glm-4-flash）", "Model (e.g. deepseek-chat / glm-4-flash)")) },
             singleLine = true, modifier = Modifier.fillMaxWidth()
         )
         // ---- generation tunables ----
@@ -291,7 +362,7 @@ fun AiSettingsScreen(vm: MainViewModel, s: UiState) {
             OutlinedTextField(
                 value = s.aiTemp,
                 onValueChange = { vm.updateAiTemp(it.filter { c -> c.isDigit() || c == '.' }) },
-                label = { Text("温度 0~2") },
+                label = { Text(L10n.t("温度 0~2", "Temperature 0-2")) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.weight(1f)
@@ -299,8 +370,8 @@ fun AiSettingsScreen(vm: MainViewModel, s: UiState) {
             OutlinedTextField(
                 value = s.aiMaxTok,
                 onValueChange = { vm.updateAiMaxTok(it) },
-                label = { Text("最大输出 tokens") },
-                supportingText = { Text("空=不限", fontSize = 10.sp) },
+                label = { Text(L10n.t("最大输出 tokens", "Max output tokens")) },
+                supportingText = { Text(L10n.t("空=不限", "empty = uncapped"), fontSize = 10.sp) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.weight(1f)
@@ -309,7 +380,7 @@ fun AiSettingsScreen(vm: MainViewModel, s: UiState) {
         // thinking mode dropdown
         Box {
             OutlinedButton(onClick = { thinkingOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                Text("思考模式：${thinkingLabels[s.aiThinking] ?: s.aiThinking}", modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
+                Text(L10n.t("思考模式：", "Thinking mode: ") + (thinkingLabels[s.aiThinking] ?: s.aiThinking), modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
                 Text("▾", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             DropdownMenu(expanded = thinkingOpen, onDismissRequest = { thinkingOpen = false }) {
@@ -321,17 +392,17 @@ fun AiSettingsScreen(vm: MainViewModel, s: UiState) {
         OutlinedTextField(
             value = s.aiExtra,
             onValueChange = { vm.updateAiExtra(it) },
-            label = { Text("附加请求参数（JSON，可选）") },
-            supportingText = { Text("会合并进请求体顶层，如 {\"top_p\":0.9}；思考模式的字段也写在这里") },
+            label = { Text(L10n.t("附加请求参数（JSON，可选）", "Extra request params (JSON, optional)")) },
+            supportingText = { Text(L10n.t("会合并进请求体顶层，如 {\"top_p\":0.9}；思考模式的字段也写在这里", "Merged into the request body, e.g. {\"top_p\":0.9}; thinking-mode fields live here too")) },
             minLines = 2,
             maxLines = 5,
             modifier = Modifier.fillMaxWidth()
         )
         // ---- skills management ----
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("扩写技能（${s.skills.size}）", fontWeight = FontWeight.Bold)
+            Text(L10n.t("扩写技能（", "Skills (") + "${s.skills.size}" + L10n.t("）", ")"), fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = { addingSkill = true }) { Text("＋ 新增") }
+            TextButton(onClick = { addingSkill = true }) { Text(L10n.t("＋ 新增", "+ New")) }
         }
         s.skills.forEach { skill ->
             Surface(
@@ -343,10 +414,10 @@ fun AiSettingsScreen(vm: MainViewModel, s: UiState) {
                     Text(skill.label, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.width(8.dp))
                     if (skill.builtin) {
-                        Text("内置", fontFamily = Mono, fontSize = 9.sp, color = MaterialTheme.colorScheme.primary)
+                        Text(L10n.t("内置", "built-in"), fontFamily = Mono, fontSize = 9.sp, color = MaterialTheme.colorScheme.primary)
                     }
                     Spacer(Modifier.weight(1f))
-                    Text("编辑 ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(L10n.t("编辑 ›", "Edit ›"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -355,21 +426,21 @@ fun AiSettingsScreen(vm: MainViewModel, s: UiState) {
                 onClick = { vm.testAi() },
                 enabled = !s.aiTesting,
                 modifier = Modifier.weight(1f).height(50.dp)
-            ) { Text(if (s.aiTesting) "测试中…" else "测试连接") }
+            ) { Text(if (s.aiTesting) L10n.t("测试中…", "Testing…") else L10n.t("测试连接", "Test connection")) }
             Button(
                 onClick = { vm.saveAiSettings() },
                 modifier = Modifier.weight(1f).height(50.dp)
-            ) { Text("保存") }
+            ) { Text(L10n.t("保存", "Save")) }
         }
         s.aiTest?.let {
             Text(
                 it,
-                color = if (it.startsWith("成功")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                color = if (it.startsWith(L10n.t("成功", "OK"))) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall
             )
         }
         Text(
-            "Key 与技能仅保存在手机本地。思考模式对不支持的 API 会报错——用「跟随模型默认」即可。",
+            L10n.t("Key 与技能仅保存在手机本地。思考模式对不支持的 API 会报错——用「跟随模型默认」即可。", "Key and skills stay on this device. Thinking mode may error on APIs that do not support it - keep Model default."),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -406,26 +477,26 @@ fun SkillEditDialog(
     var prompt by remember(skill) { mutableStateOf(skill?.systemPrompt ?: "") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (skill == null) "新增技能" else "编辑技能", style = MaterialTheme.typography.titleMedium) },
+        title = { Text(if (skill == null) L10n.t("新增技能", "New skill") else L10n.t("编辑技能", "Edit skill"), style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = label,
                     onValueChange = { label = it },
-                    label = { Text("按钮名称") },
+                    label = { Text(L10n.t("按钮名称", "Button label")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = prompt,
                     onValueChange = { prompt = it },
-                    label = { Text("系统提示词（技能的内容）") },
+                    label = { Text(L10n.t("系统提示词（技能的内容）", "System prompt (the skill content)")) },
                     minLines = 6,
                     maxLines = 14,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    "提示词写你想要的行为即可，内容自己负责。",
+                    L10n.t("提示词写你想要的行为即可，内容自己负责。", "Describe the behavior you want; you are responsible for the content."),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -435,13 +506,13 @@ fun SkillEditDialog(
             TextButton(
                 onClick = { if (label.isNotBlank() && prompt.isNotBlank()) onSave(AiSkillDef(skill?.id ?: "custom_${System.currentTimeMillis()}", label.trim(), prompt, skill?.builtin ?: false)) },
                 enabled = label.isNotBlank() && prompt.isNotBlank()
-            ) { Text("保存") }
+            ) { Text(L10n.t("保存", "Save")) }
         },
         dismissButton = {
             Row {
-                if (onReset != null) TextButton(onClick = onReset) { Text("恢复默认") }
-                if (onDelete != null) TextButton(onClick = onDelete) { Text("删除", color = MaterialTheme.colorScheme.error) }
-                TextButton(onClick = onDismiss) { Text("取消") }
+                if (onReset != null) TextButton(onClick = onReset) { Text(L10n.t("恢复默认", "Reset")) }
+                if (onDelete != null) TextButton(onClick = onDelete) { Text(L10n.t("删除", "Delete"), color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = onDismiss) { Text(L10n.t("取消", "Cancel")) }
             }
         }
     )
@@ -452,21 +523,22 @@ fun SkillEditDialog(
 @Composable
 fun UpdateScreen(vm: MainViewModel, s: UiState) {
     BackHandler { vm.back() }
+    val context = LocalContext.current
     val u = s.update
     Column(
         Modifier.fillMaxSize().imePadding().padding(28.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        Text("软件更新", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Text(L10n.t("软件更新", "Software update"), fontSize = 24.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
-        Text("当前版本 v${vm.currentVersionPublic()}", fontFamily = Mono, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(L10n.t("当前版本 v", "Current version v") + vm.currentVersionPublic(), fontFamily = Mono, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(
             value = s.ghToken,
             onValueChange = { vm.updateGhToken(it) },
-            label = { Text("GitHub Token（可选）") },
+            label = { Text(L10n.t("GitHub Token（可选）", "GitHub Token (optional)")) },
             supportingText = {
-                Text("仓库公开时无需填写。若仍是私有：GitHub → Settings → Developer settings → Fine-grained tokens，仅授权 ComfyRemote 仓库、Contents:Read-only")
+                Text(L10n.t("仓库公开时无需填写。若仍是私有：GitHub → Settings → Developer settings → Fine-grained tokens，仅授权 ComfyRemote 仓库、Contents:Read-only", "Not needed for a public repo. If still private: GitHub → Settings → Developer settings → Fine-grained tokens, scoped to ComfyRemote with Contents:Read-only"))
             },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
@@ -478,7 +550,7 @@ fun UpdateScreen(vm: MainViewModel, s: UiState) {
                 enabled = u?.downloading != true,
                 shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.weight(1f).height(50.dp)
-            ) { Text("检查更新") }
+            ) { Text(L10n.t("检查更新", "Check updates")) }
         }
         Spacer(Modifier.height(18.dp))
         when {
@@ -502,7 +574,7 @@ fun UpdateScreen(vm: MainViewModel, s: UiState) {
                             LinearProgressIndicator(progress = u.progress ?: 0f, modifier = Modifier.fillMaxWidth())
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                "下载中 ${(u.progress ?: 0f) * 100}%".let { if (u.progress == null) "下载中…" else it },
+                                (L10n.t("下载中 ", "Downloading ") + "${(u.progress ?: 0f) * 100}%").let { if (u.progress == null) L10n.t("下载中…", "Downloading…") else it },
                                 fontFamily = Mono, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         } else {
@@ -510,21 +582,27 @@ fun UpdateScreen(vm: MainViewModel, s: UiState) {
                                 onClick = { vm.downloadUpdate() },
                                 shape = MaterialTheme.shapes.medium,
                                 modifier = Modifier.fillMaxWidth().height(48.dp)
-                            ) { Text("下载并安装") }
+                            ) { Text(L10n.t("下载并安装", "Download & install")) }
+                            val clipboard = LocalClipboardManager.current
+                            TextButton(onClick = {
+                                clipboard.setText(AnnotatedString(rel.browserUrl))
+                                android.widget.Toast.makeText(context, L10n.t("链接已复制", "Link copied"), android.widget.Toast.LENGTH_SHORT).show()
+                            }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                                Text(L10n.t("复制下载链接（浏览器打开更快）", "Copy download link (faster in a browser)"), style = MaterialTheme.typography.labelMedium)
+                            }
                         }
                     }
                 }
             }
             u?.status != null -> Text(
                 u.status,
-                color = if (u.status.startsWith("检查失败") || u.status.startsWith("下载失败") || u.status.startsWith("请先"))
-                    MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (u.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall
             )
         }
         Spacer(Modifier.height(20.dp))
         Text(
-            "首次安装时系统会请求「允许安装未知应用」权限，同意一次即可。更新包签名与本应用一致，正常覆盖安装不会丢数据。",
+            L10n.t("首次安装时系统会请求「允许安装未知应用」权限，同意一次即可。更新包签名与本应用一致，正常覆盖安装不会丢数据。", "Android will ask for the install-unknown-apps permission once. Updates share this app signature, so existing data is kept."),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
         )
@@ -544,21 +622,21 @@ fun WorkflowsScreen(vm: MainViewModel, s: UiState) {
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
                 title = {
                     Row(verticalAlignment = Alignment.Bottom) {
-                        Text("工作流", fontWeight = FontWeight.Bold)
+                        Text(L10n.t("工作流", "Workflows"), fontWeight = FontWeight.Bold)
                         Spacer(Modifier.width(8.dp))
                         Text("${s.workflows.size}", fontFamily = Mono, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                    IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) }
                 },
                 actions = {
                     TextButton(onClick = { vm.openHistory() }) {
-                        Text("历史", style = MaterialTheme.typography.labelLarge)
+                        Text(L10n.t("历史", "History"), style = MaterialTheme.typography.labelLarge)
                         Spacer(Modifier.width(4.dp))
                         Text("${s.history.size}", fontFamily = Mono, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                     }
-                    IconButton(onClick = { vm.loadWorkflows() }) { Icon(Icons.Default.Refresh, "刷新") }
+                    IconButton(onClick = { vm.loadWorkflows() }) { Icon(Icons.Default.Refresh, L10n.t("刷新", "Refresh")) }
                 }
             )
         }
@@ -572,7 +650,7 @@ fun WorkflowsScreen(vm: MainViewModel, s: UiState) {
                 ) {
                     Text(s.wfError!!, color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.height(8.dp))
-                    Button(onClick = { vm.loadWorkflows() }) { Text("重试") }
+                    Button(onClick = { vm.loadWorkflows() }) { Text(L10n.t("重试", "Retry")) }
                 }
                 else -> LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
                     items(s.workflows, key = { it.path }) { wf ->
@@ -619,16 +697,16 @@ fun HistoryScreen(vm: MainViewModel, s: UiState) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("历史记录（${s.history.size}）") },
+                title = { Text(L10n.t("历史记录（", "History (") + "${s.history.size}" + L10n.t("）", ")")) },
                 navigationIcon = {
-                    IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                    IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) }
                 }
             )
         }
     ) { pad ->
         if (s.history.isEmpty()) {
             Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("还没有生成记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(L10n.t("还没有生成记录", "No generations yet"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(Modifier.padding(pad), contentPadding = PaddingValues(12.dp)) {
@@ -651,7 +729,7 @@ fun HistoryScreen(vm: MainViewModel, s: UiState) {
                                 Column(Modifier.weight(1f)) {
                                     Text(item.wfName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(
-                                        SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(item.time)) + " · " + item.images.size + " 张",
+                                        SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(item.time)) + " · " + item.images.size + L10n.t(" 张", " image(s)"),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -659,10 +737,10 @@ fun HistoryScreen(vm: MainViewModel, s: UiState) {
                                 }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                TextButton(onClick = { vm.reopenFromHistory(item) }) { Text("重新生成") }
+                                TextButton(onClick = { vm.reopenFromHistory(item) }) { Text(L10n.t("重新生成", "Re-generate")) }
                                 Spacer(Modifier.weight(1f))
                                 IconButton(onClick = { vm.deleteHistoryItem(item.id) }) {
-                                    Icon(Icons.Default.Delete, "删除", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Icon(Icons.Default.Delete, L10n.t("删除", "Delete"), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }
@@ -682,16 +760,16 @@ fun HistoryDetailDialog(item: HistoryItem, onClose: () -> Unit, onSave: (Bitmap)
     val ctx = LocalContext.current
     fun copy(text: String) {
         clipboard.setText(AnnotatedString(text))
-        android.widget.Toast.makeText(ctx, "已复制", android.widget.Toast.LENGTH_SHORT).show()
+        android.widget.Toast.makeText(ctx, L10n.t("已复制", "Copied"), android.widget.Toast.LENGTH_SHORT).show()
     }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.fillMaxSize().background(Color(0xFF0A0A0C))) {
             Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(item.wfName, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                IconButton(onClick = onClose) { Icon(Icons.Default.Close, "关闭", tint = Color.White) }
+                IconButton(onClick = onClose) { Icon(Icons.Default.Close, L10n.t("关闭", "Close"), tint = Color.White) }
             }
             Text(
-                SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(item.time)) + " · " + item.images.size + " 张",
+                SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(item.time)) + " · " + item.images.size + L10n.t(" 张", " image(s)"),
                 color = Color.White.copy(alpha = 0.6f), fontFamily = Mono, fontSize = 11.sp,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
@@ -705,16 +783,16 @@ fun HistoryDetailDialog(item: HistoryItem, onClose: () -> Unit, onSave: (Bitmap)
                     ) {
                         Column(Modifier.padding(14.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("提示词", fontWeight = FontWeight.SemiBold, color = Color.White)
+                                Text(L10n.t("提示词", "Prompts"), fontWeight = FontWeight.SemiBold, color = Color.White)
                                 Spacer(Modifier.weight(1f))
                                 if (item.prompts.isNotEmpty()) {
                                     TextButton(onClick = { copy(item.prompts.joinToString("\n") { it.value }) }) {
-                                        Text("复制全部", style = MaterialTheme.typography.labelMedium)
+                                        Text(L10n.t("复制全部", "Copy all"), style = MaterialTheme.typography.labelMedium)
                                     }
                                 }
                             }
                             if (item.prompts.isEmpty()) {
-                                Text("（此记录未保存完整提示词）", color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodySmall)
+                                Text(L10n.t("（此记录未保存完整提示词）", "(No saved prompts for this entry)"), color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodySmall)
                             }
                             item.prompts.forEach { p ->
                                 Text(p.label, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
@@ -723,7 +801,7 @@ fun HistoryDetailDialog(item: HistoryItem, onClose: () -> Unit, onSave: (Bitmap)
                                     Text(p.value, color = Color.White.copy(alpha = 0.92f), style = MaterialTheme.typography.bodySmall)
                                 }
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                    TextButton(onClick = { copy(p.value) }) { Text("复制", style = MaterialTheme.typography.labelMedium) }
+                                    TextButton(onClick = { copy(p.value) }) { Text(L10n.t("复制", "Copy"), style = MaterialTheme.typography.labelMedium) }
                                 }
                                 Spacer(Modifier.height(6.dp))
                             }
@@ -732,7 +810,7 @@ fun HistoryDetailDialog(item: HistoryItem, onClose: () -> Unit, onSave: (Bitmap)
                                     Text("SEED", fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
                                     Spacer(Modifier.width(8.dp))
                                     Text(item.seeds, fontFamily = Mono, fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f), modifier = Modifier.weight(1f))
-                                    TextButton(onClick = { copy(item.seeds) }) { Text("复制", style = MaterialTheme.typography.labelMedium) }
+                                    TextButton(onClick = { copy(item.seeds) }) { Text(L10n.t("复制", "Copy"), style = MaterialTheme.typography.labelMedium) }
                                 }
                             }
                         }
@@ -747,9 +825,9 @@ fun HistoryDetailDialog(item: HistoryItem, onClose: () -> Unit, onSave: (Bitmap)
                     bmp?.let {
                         Image(it.asImageBitmap(), null, Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
                         Row {
-                            Text("第 ${idx + 1} 张", color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f).padding(8.dp))
-                            TextButton(onClick = { onSave(it) }) { Text("保存到相册") }
-                            TextButton(onClick = { onShare(p) }) { Text("分享") }
+                            Text(L10n.t("第 ", "Image ") + "${idx + 1}" + L10n.t(" 张", ""), color = Color.White, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f).padding(8.dp))
+                            TextButton(onClick = { onSave(it) }) { Text(L10n.t("保存到相册", "Save to gallery")) }
+                            TextButton(onClick = { onShare(p) }) { Text(L10n.t("分享", "Share")) }
                         }
                         Spacer(Modifier.height(12.dp))
                     }
@@ -802,7 +880,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
             TopAppBar(
                 title = { Text(g.wfName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
-                    IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                    IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) }
                 }
             )
         },
@@ -812,13 +890,13 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                     onClick = { vm.cancelGenerate() },
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).height(52.dp)
-                ) { Text("取消生成") }
+                ) { Text(L10n.t("取消生成", "Cancel")) }
             } else {
                 Button(
                     onClick = { vm.generate() },
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).height(52.dp)
-                ) { Text("生  成", fontSize = 16.sp, letterSpacing = 2.sp, fontWeight = FontWeight.SemiBold) }
+                ) { Text(L10n.t("生  成", "Generate"), fontSize = 16.sp, letterSpacing = 2.sp, fontWeight = FontWeight.SemiBold) }
             }
         }
     ) { pad ->
@@ -844,7 +922,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                     Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                (g.status ?: "待生成").uppercase(),
+                                ((g.status ?: L10n.t("待生成", "Ready"))).uppercase(),
                                 fontFamily = Mono, fontSize = 12.sp, letterSpacing = 1.sp,
                                 color = if (g.running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.SemiBold
@@ -876,9 +954,9 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                                 Modifier.fillMaxWidth().clickable { notesOpen = !notesOpen }.padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("工作流说明", fontWeight = FontWeight.Bold)
+                                Text(L10n.t("工作流说明", "Workflow notes"), fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.weight(1f))
-                                Text(if (notesOpen) "收起" else "展开", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                Text(if (notesOpen) L10n.t("收起", "Hide") else L10n.t("展开", "Show"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                             }
                             if (notesOpen) {
                                 Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp)) {
@@ -898,7 +976,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
             g.preview?.let { pb ->
                 item(key = "preview") {
                     Column {
-                        Text("实时预览", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Text(L10n.t("实时预览", "Live preview"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         Image(pb.asImageBitmap(), null, Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
                     }
                 }
@@ -906,10 +984,10 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
             if (imageFields.isNotEmpty()) {
                 item(key = "imgheader") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("参考图片", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                        Text(L10n.t("参考图片", "Reference images"), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.weight(1f))
                         if (imageFields.size >= 2) {
-                            TextButton(onClick = { multiPicker.launch("image/*") }) { Text("一次选多张") }
+                            TextButton(onClick = { multiPicker.launch("image/*") }) { Text(L10n.t("一次选多张", "Pick multiple")) }
                         }
                     }
                 }
@@ -918,16 +996,16 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(f.label, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                             val cur = g.values[f.key] ?: f.value
-                            Text("当前：$cur", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(L10n.t("当前：", "Current: ") + cur, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = { pendingKey = f.key; picker.launch("image/*") }) { Text("选择图片") }
+                                Button(onClick = { pendingKey = f.key; picker.launch("image/*") }) { Text(L10n.t("选择图片", "Pick image")) }
                                 OutlinedButton(onClick = {
                                     pendingKey = f.key
                                     val dir = File(ctx.cacheDir, "camera").apply { mkdirs() }
                                     val f2 = File(dir, "cam_${System.currentTimeMillis()}.jpg")
                                     cameraUri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", f2)
                                     camera.launch(cameraUri!!)
-                                }) { Text("拍照") }
+                                }) { Text(L10n.t("拍照", "Camera")) }
                             }
                         }
                     }
@@ -959,7 +1037,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                                     if (s.aiBusy == busyKey) {
                                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
                                         Spacer(Modifier.width(6.dp))
-                                        Text("生成中…")
+                                        Text(L10n.t("生成中…", "Working…"))
                                     } else {
                                         Text(skill.label, style = MaterialTheme.typography.labelMedium)
                                     }
@@ -975,9 +1053,9 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = g.randomSeed, onCheckedChange = { vm.toggleRandomSeed() })
                             Column {
-                                Text("每次生成使用随机种子")
+                                Text(L10n.t("每次生成使用随机种子", "Randomize seed every run"))
                                 if (g.randomSeed) Text(
-                                    "生成后自动回填上次种子，关闭即可复现",
+                                    L10n.t("生成后自动回填上次种子，关闭即可复现", "Last seed is filled back in after each run; untick to reproduce"),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -987,7 +1065,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                             OutlinedTextField(
                                 value = g.values[f.key] ?: f.value,
                                 onValueChange = { vm.updateValue(f.key, it.filter { c -> c.isDigit() }) },
-                                label = { Text(f.label + (if (g.randomSeed) "（本次将随机）" else "")) },
+                                label = { Text(f.label + (if (g.randomSeed) L10n.t("（本次将随机）", " (randomized)") else "")) },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.fillMaxWidth()
@@ -1004,9 +1082,9 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                                 Modifier.fillMaxWidth().clickable { advOpen = !advOpen }.padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("高级参数（${paramFields.size}）", fontWeight = FontWeight.Bold)
+                                Text(L10n.t("高级参数（", "Advanced (") + "${paramFields.size}" + L10n.t("）", ")"), fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.weight(1f))
-                                Text(if (advOpen) "收起" else "展开", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                Text(if (advOpen) L10n.t("收起", "Hide") else L10n.t("展开", "Show"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                             }
                             if (advOpen) {
                                 Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1020,7 +1098,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
             if (g.results.isNotEmpty()) {
                 item(key = "resheader") {
                     Text(
-                        "生成结果（${g.results.size}）",
+                        L10n.t("生成结果（", "Results (") + "${g.results.size}" + L10n.t("）", ")"),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -1033,13 +1111,13 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                             contentScale = ContentScale.FillWidth
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("结果 ${idx + 1}（点击放大）", style = MaterialTheme.typography.bodySmall)
+                            Text(L10n.t("结果 ", "Result ") + "${idx + 1}" + L10n.t("（点击放大）", " (tap to zoom)"), style = MaterialTheme.typography.bodySmall)
                             Spacer(Modifier.weight(1f))
                             val p = g.resultPaths.getOrNull(idx)
                             if (p != null) TextButton(onClick = { shareImage(ctx, p) }) {
-                                Icon(Icons.Default.Share, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("分享")
+                                Icon(Icons.Default.Share, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(L10n.t("分享", "Share"))
                             }
-                            TextButton(onClick = { vm.saveResult(bmp) }) { Text("保存到相册") }
+                            TextButton(onClick = { vm.saveResult(bmp) }) { Text(L10n.t("保存到相册", "Save to gallery")) }
                         }
                     }
                 }
@@ -1071,7 +1149,7 @@ fun AiResultDialog(initial: String, onDismiss: () -> Unit, onReplace: (String) -
     var text by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("AI 生成结果", style = MaterialTheme.typography.titleMedium) },
+        title = { Text(L10n.t("AI 生成结果", "AI result"), style = MaterialTheme.typography.titleMedium) },
         text = {
             Column {
                 OutlinedTextField(
@@ -1083,15 +1161,15 @@ fun AiResultDialog(initial: String, onDismiss: () -> Unit, onReplace: (String) -
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "可直接修改后再应用；「追加」会拼在原提示词后面",
+                    L10n.t("可直接修改后再应用；「追加」会拼在原提示词后面", "Edit freely before applying; Append joins it onto the existing prompt"),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onReplace(text) }) { Text("替换") } },
+        confirmButton = { TextButton(onClick = { onReplace(text) }) { Text(L10n.t("替换", "Replace")) } },
         dismissButton = {
-            TextButton(onClick = { onAppend(text) }) { Text("追加") }
+            TextButton(onClick = { onAppend(text) }) { Text(L10n.t("追加", "Append")) }
         }
     )
 }
@@ -1107,7 +1185,7 @@ fun ParamField(f: PromptField, value: String, onChange: (String) -> Unit) {
             var expanded by remember { mutableStateOf(false) }
             Box {
                 OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text(value.ifEmpty { "选择…" }, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
+                    Text(value.ifEmpty { L10n.t("选择…", "Choose…") }, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
                     Text("▾", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -1182,12 +1260,12 @@ fun ImageViewerDialog(bitmap: Bitmap, onClose: () -> Unit, onSave: () -> Unit, o
                 Modifier.align(Alignment.TopEnd).padding(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                IconButton(onClick = onShare) { Icon(Icons.Default.Share, "分享", tint = Color.White) }
-                IconButton(onClick = onSave) { Icon(Icons.Default.Add, "保存到相册", tint = Color.White) }
-                IconButton(onClick = onClose) { Icon(Icons.Default.Close, "关闭", tint = Color.White) }
+                IconButton(onClick = onShare) { Icon(Icons.Default.Share, L10n.t("分享", "Share"), tint = Color.White) }
+                IconButton(onClick = onSave) { Icon(Icons.Default.Add, L10n.t("保存到相册", "Save"), tint = Color.White) }
+                IconButton(onClick = onClose) { Icon(Icons.Default.Close, L10n.t("关闭", "Close"), tint = Color.White) }
             }
             Text(
-                "双击复位 · 双指缩放",
+                L10n.t("双击复位 · 双指缩放", "Double-tap to reset · pinch to zoom"),
                 color = Color.White.copy(alpha = 0.6f),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
@@ -1208,6 +1286,6 @@ fun shareImage(context: Context, path: String) {
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "分享图片"))
+        context.startActivity(Intent.createChooser(intent, L10n.t("分享图片", "Share image")))
     }
 }

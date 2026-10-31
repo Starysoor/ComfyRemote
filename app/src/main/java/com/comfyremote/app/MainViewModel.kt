@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import com.comfyremote.app.ui.L10n
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
@@ -35,8 +36,12 @@ enum class Screen { CONNECT, AI_SETTINGS, UPDATE, WORKFLOWS, GENERATE, HISTORY }
 /** One labeled prompt text kept in history (full text, copyable). */
 data class LabeledText(val label: String, val value: String)
 
+/** A saved server address with a user-editable alias. */
+data class ServerEntry(val name: String, val url: String)
+
 data class UpdateUi(
     val status: String? = null,
+    val isError: Boolean = false,
     val release: GhRelease? = null,
     val downloading: Boolean = false,
     val progress: Float? = null,
@@ -63,7 +68,6 @@ data class GenState(
 data class UiState(
     val screen: Screen = Screen.CONNECT,
     val url: String,
-    val servers: List<String> = emptyList(),
     val connecting: Boolean = false,
     val connError: String? = null,
     val sysInfo: String? = null,
@@ -89,6 +93,7 @@ data class UiState(
     val aiResult: AiResult? = null,
     val update: UpdateUi? = null,
     val ghToken: String = "",
+    val servers: List<ServerEntry> = emptyList(),
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -111,11 +116,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         _state.value = _state.value.copy(
-            servers = strList(prefs.getString("servers", null)),
+            servers = loadServers(),
             history = history.load(),
             skills = AiSkills.load(prefs),
         )
         maybeAutoCheckUpdate()
+    }
+
+    /** Loads saved servers; migrates the legacy string-array format, defaulting alias = url. */
+    private fun loadServers(): List<ServerEntry> = runCatching {
+        val v2 = prefs.getString("serversV2", null)
+        if (v2 != null) {
+            val arr = JSONArray(v2)
+            return (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                ServerEntry(o.optString("name"), o.optString("url"))
+            }
+        }
+        strList(prefs.getString("servers", null)).map { ServerEntry(it, it) }
+    }.getOrDefault(emptyList())
+
+    private fun persistServers(list: List<ServerEntry>) {
+        val arr = JSONArray()
+        list.forEach { arr.put(JSONObject().put("name", it.name).put("url", it.url)) }
+        prefs.edit().putString("serversV2", arr.toString()).apply()
+    }
+
+    fun renameServer(url: String, alias: String) {
+        val list = _state.value.servers.map { if (it.url == url) it.copy(name = alias) else it }
+        persistServers(list)
+        mutateState { it.copy(servers = list) }
+    }
+
+    fun removeServer(url: String) {
+        val list = _state.value.servers.filter { it.url != url }
+        persistServers(list)
+        mutateState { it.copy(servers = list) }
     }
 
     private fun mutateState(f: (UiState) -> UiState) {
@@ -149,16 +185,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 loadWorkflows()
             } catch (e: Exception) {
-                mutateState { it.copy(connecting = false, connError = "连接失败：${e.message}") }
+                mutateState { it.copy(connecting = false, connError = L10n.t("连接失败：", "Connection failed: ") + (e.message ?: "error")) }
             }
         }
     }
 
-    private fun rememberServer(url: String): List<String> {
-        val list = (_state.value.servers - url) + url
-        val kept = list.takeLast(5)
-        prefs.edit().putString("servers", JSONArray(kept.toList()).toString()).apply()
-        return kept.reversed()
+    private fun rememberServer(url: String): List<ServerEntry> {
+        val exists = _state.value.servers.any { it.url == url }
+        val list = if (exists) _state.value.servers
+        else (_state.value.servers + ServerEntry(url, url)).takeLast(5)
+        persistServers(list)
+        return list
     }
 
     fun loadWorkflows() {
@@ -169,7 +206,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val list = a.listWorkflows()
                 mutateState { it.copy(loadingWf = false, workflows = list) }
             } catch (e: Exception) {
-                mutateState { it.copy(loadingWf = false, wfError = "获取工作流失败：${e.message}") }
+                mutateState { it.copy(loadingWf = false, wfError = L10n.t("获取工作流失败：", "Failed to list workflows: ") + (e.message ?: "error")) }
             }
         }
     }
@@ -200,7 +237,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun openWorkflow(entry: WorkflowEntry) {
         val a = api ?: return
         viewModelScope.launch {
-            mutateState { it.copy(busy = "正在加载工作流…") }
+            mutateState { it.copy(busy = L10n.t("正在加载工作流…", "Loading workflow…")) }
             try {
                 val info = loadObjectInfo(a)
                 val json = a.fetchWorkflow(entry.path)
@@ -220,7 +257,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
             } catch (e: Exception) {
-                mutateState { it.copy(busy = null, wfError = "加载失败：${e.message}") }
+                mutateState { it.copy(busy = null, wfError = L10n.t("加载失败：", "Load failed: ") + (e.message ?: "error")) }
             }
         }
     }
@@ -245,7 +282,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         ContextCompat.startForegroundService(ctx, Intent(ctx, GenService::class.java))
         mutateGen {
             it.copy(running = true, error = null, results = emptyList(), resultPaths = emptyList(),
-                preview = null, status = "排队中…", progress = null)
+                preview = null, status = L10n.t("排队中…", "Queued…"), progress = null)
         }
         val clientId = UUID.randomUUID().toString()
         val values = g.values
@@ -272,7 +309,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 wsJob.cancel()
 
                 extractError(entry)?.let { err ->
-                    mutateGen { it.copy(running = false, error = err, status = "失败") }
+                    mutateGen { it.copy(running = false, error = err, status = L10n.t("失败", "Failed")) }
                     return@launch
                 }
 
@@ -305,13 +342,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 mutateGen { cur ->
                     cur.copy(
                         running = false, progress = 1f,
-                        status = if (results.isEmpty()) "完成（没有输出图片）" else "完成",
+                        status = if (results.isEmpty()) L10n.t("完成（没有输出图片）", "Done (no output images)") else L10n.t("完成", "Done"),
                         results = results, resultPaths = paths
                     )
                 }
                 notifyDone(g.wfName, results.size)
             } catch (e: Exception) {
-                mutateGen { it.copy(running = false, error = e.message ?: e.toString(), status = "失败") }
+                mutateGen { it.copy(running = false, error = e.message ?: e.toString(), status = L10n.t("失败", "Failed")) }
             } finally {
                 ctx.stopService(Intent(ctx, GenService::class.java))
             }
@@ -324,14 +361,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             "status" -> {
                 val q = data?.optJSONObject("status")?.optJSONObject("exec_info")
                     ?.optInt("queue_remaining", -1) ?: -1
-                if (q >= 0) mutateGen { it.copy(queueInfo = "队列中任务: $q") }
+                if (q >= 0) mutateGen { it.copy(queueInfo = L10n.t("队列中任务: ", "Queue: ") + q) }
             }
             "execution_start" -> if (data?.optString("prompt_id") == pid)
-                mutateGen { it.copy(status = "执行中…", progress = 0f) }
+                mutateGen { it.copy(status = L10n.t("执行中…", "Running…"), progress = 0f) }
             "executing" -> if (data?.optString("prompt_id") == pid) {
                 val node = data.optString("node")
                 if (node.isNotEmpty() && node != "null") mutateGen { s ->
-                    s.copy(status = ("执行节点 #$node " + (s.nodeTitles[node] ?: "")).trim(), progress = null)
+                    s.copy(status = L10n.t("执行节点 ", "Node ") + "#" + node + " " + (s.nodeTitles[node] ?: ""), progress = null)
                 }
             }
             "progress" -> {
@@ -352,13 +389,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             a.historyEntry(promptId)?.let { return it }
             delay(4000)
         }
-        throw ComfyException("等待结果超时（30 分钟），请稍后在历史记录或服务器 output 目录查看")
+        throw ComfyException(L10n.t("等待结果超时（30 分钟），结果可在服务器 output 目录查看", "Timed out after 30 minutes; check the server output folder"))
     }
 
     private fun extractError(entry: JSONObject): String? {
         val status = entry.optJSONObject("status") ?: return null
         if (status.optString("status_str") != "error") return null
-        val sb = StringBuilder("执行出错")
+        val sb = StringBuilder(L10n.t("执行出错", "Execution error"))
         status.optJSONArray("messages")?.let { msgs ->
             for (i in 0 until msgs.length()) {
                 val m = msgs.optJSONArray(i) ?: continue
@@ -396,14 +433,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun uploadImage(key: String, uri: Uri) {
         val a = api ?: return
         viewModelScope.launch {
-            mutateState { it.copy(busy = "上传图片…") }
+            mutateState { it.copy(busy = L10n.t("上传图片…", "Uploading…")) }
             try {
                 val uploaded = uploadOne(a, uri, 0)
                 mutateGen { g -> g.copy(values = g.values + (key to uploaded)) }
                 mutateState { it.copy(busy = null) }
             } catch (e: Exception) {
                 mutateState { it.copy(busy = null) }
-                Toast.makeText(getApplication(), "上传失败：${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(getApplication(), L10n.t("上传失败：", "Upload failed: ") + (e.message ?: "error"), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -413,11 +450,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val a = api ?: return
         if (uris.isEmpty()) return
         viewModelScope.launch {
-            mutateState { it.copy(busy = "上传图片（0/${uris.size}）…") }
+            mutateState { it.copy(busy = L10n.t("上传图片（0/${uris.size}）…", "Uploading (0/${uris.size})…")) }
             try {
                 val uploaded = mutableListOf<String>()
                 uris.forEachIndexed { i, uri ->
-                    mutateState { it.copy(busy = "上传图片（${i + 1}/${uris.size}）…") }
+                    mutateState { it.copy(busy = L10n.t("上传图片（${i + 1}/${uris.size}）…", "Uploading (${i + 1}/${uris.size})…")) }
                     uploaded.add(uploadOne(a, uri, i))
                 }
                 mutateGen { g ->
@@ -429,7 +466,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 mutateState { it.copy(busy = null) }
             } catch (e: Exception) {
                 mutateState { it.copy(busy = null) }
-                Toast.makeText(getApplication(), "上传失败：${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(getApplication(), L10n.t("上传失败：", "Upload failed: ") + (e.message ?: "error"), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -438,7 +475,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>()
         val bytes = withContext(Dispatchers.IO) {
             ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-        } ?: throw ComfyException("读取图片失败")
+        } ?: throw ComfyException(L10n.t("读取图片失败", "Failed to read image"))
         val ext = ctx.contentResolver.getType(uri)
             ?.substringAfterLast('/', "png")?.takeIf { it.length in 2..5 } ?: "png"
         return a.uploadImage(bytes, "mobile_${System.currentTimeMillis()}_$seq.$ext")
@@ -495,7 +532,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .putString("aiExtra", s.aiExtra.trim())
             .putString("aiThinking", s.aiThinking)
             .apply()
-        Toast.makeText(getApplication(), "AI 设置已保存", Toast.LENGTH_SHORT).show()
+        Toast.makeText(getApplication(), L10n.t("AI 设置已保存", "AI settings saved"), Toast.LENGTH_SHORT).show()
     }
 
     // ---------- skill management ----------
@@ -544,7 +581,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val key = s.aiKey.trim()
         val model = s.aiModel.trim()
         if (base.isEmpty() || key.isEmpty() || model.isEmpty()) {
-            mutateState { it.copy(aiTest = "请先填写完整三项") }
+            mutateState { it.copy(aiTest = L10n.t("请先填写完整三项", "Please fill in all three fields")) }
             return
         }
         mutateState { it.copy(aiTesting = true, aiTest = null) }
@@ -552,12 +589,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val reply = AiClient.chat(
                     base, key, model,
-                    "你是连通性测试。收到任何消息都只回复：连接成功",
+                    L10n.t("你是连通性测试。收到任何消息都只回复：连接成功", "Connectivity test. Reply with exactly: OK"),
                     "ping", aiTunables(),
                 )
-                mutateState { it.copy(aiTesting = false, aiTest = "成功：${reply.take(80)}") }
+                mutateState { it.copy(aiTesting = false, aiTest = L10n.t("成功：", "OK: ") + reply.take(80)) }
             } catch (e: Exception) {
-                mutateState { it.copy(aiTesting = false, aiTest = "失败：${e.message}".take(200)) }
+                mutateState { it.copy(aiTesting = false, aiTest = L10n.t("失败：", "Failed: ") + (e.message ?: "error").take(200)) }
             }
         }
     }
@@ -567,7 +604,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val key = prefs.getString("aiKey", "")?.trim().orEmpty()
         val model = prefs.getString("aiModel", "")?.trim().orEmpty()
         if (base.isEmpty() || key.isEmpty() || model.isEmpty()) {
-            Toast.makeText(getApplication(), "请先在连接页配置 AI 扩写设置", Toast.LENGTH_LONG).show()
+            Toast.makeText(getApplication(), L10n.t("请先在连接页配置 AI 扩写设置", "Configure AI settings first (from the connect screen)"), Toast.LENGTH_LONG).show()
             return null
         }
         return Triple(base, key, model)
@@ -576,7 +613,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun aiExpand(fieldKey: String, currentText: String, skill: AiSkillDef) {
         val cfg = aiConfigured() ?: return
         if (currentText.isBlank()) {
-            Toast.makeText(getApplication(), "先写几个字，AI 才知道往哪个方向扩写", Toast.LENGTH_SHORT).show()
+            Toast.makeText(getApplication(), L10n.t("先写几个字，AI 才知道往哪个方向扩写", "Type a few words first so the AI knows the direction"), Toast.LENGTH_SHORT).show()
             return
         }
         mutateState { it.copy(aiBusy = "$fieldKey|${skill.id}") }
@@ -586,7 +623,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 mutateState { it.copy(aiBusy = null, aiResult = AiResult(fieldKey, out)) }
             } catch (e: Exception) {
                 mutateState { it.copy(aiBusy = null) }
-                Toast.makeText(getApplication(), "AI 调用失败：${e.message}".take(180), Toast.LENGTH_LONG).show()
+                Toast.makeText(getApplication(), (L10n.t("AI 调用失败：", "AI call failed: ") + (e.message ?: "error")).take(180), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -633,12 +670,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun checkUpdate() {
         val token = _state.value.ghToken.trim().ifBlank { null }
         prefs.edit().putString("ghToken", token ?: "").apply()
-        mutateState { it.copy(update = UpdateUi(status = "正在检查…")) }
+        mutateState { it.copy(update = UpdateUi(status = L10n.t("正在检查…", "Checking…"))) }
         viewModelScope.launch {
             try {
                 doCheckUpdate(token)
             } catch (e: Exception) {
-                mutateState { it.copy(update = UpdateUi(status = "检查失败：${e.message}".take(200))) }
+                mutateState { it.copy(update = UpdateUi(status = L10n.t("检查失败：", "Check failed: ") + (e.message ?: "error").take(200), isError = true)) }
             }
         }
     }
@@ -650,7 +687,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (Updater.compareVersions(rel.tag, cur) > 0) {
             mutateState { it.copy(update = UpdateUi(release = rel)) }
         } else {
-            mutateState { it.copy(update = UpdateUi(status = "已是最新（v$cur）")) }
+            mutateState { it.copy(update = UpdateUi(status = L10n.t("已是最新（v", "Up to date (v") + cur + L10n.t("）", ")"))) }
         }
     }
 
@@ -668,7 +705,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 mutateState { it.copy(update = it.update?.copy(downloading = false, progress = 1f)) }
                 Updater.installApk(ctx, dest)
             } catch (e: Exception) {
-                mutateState { it.copy(update = UpdateUi(status = "下载失败：${e.message}".take(200))) }
+                mutateState { it.copy(update = UpdateUi(status = L10n.t("下载失败：", "Download failed: ") + (e.message ?: "error").take(200), isError = true)) }
             }
         }
     }
@@ -678,7 +715,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun reopenFromHistory(item: HistoryItem) {
         val a = api ?: return
         if (item.wfPath.isEmpty()) {
-            Toast.makeText(getApplication(), "该记录没有关联工作流，无法重新生成", Toast.LENGTH_SHORT).show()
+            Toast.makeText(getApplication(), L10n.t("该记录没有关联工作流，无法重新生成", "No workflow linked to this entry"), Toast.LENGTH_SHORT).show()
             return
         }
         // clear any leftover generate state so the waiter below sees the freshly loaded workflow
@@ -714,16 +751,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/ComfyRemote")
                 }
                 val uri = ctx.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-                    ?: throw ComfyException("无法创建媒体文件")
+                    ?: throw ComfyException(L10n.t("无法创建媒体文件", "Could not create media file"))
                 ctx.contentResolver.openOutputStream(uri)?.use {
                     bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
                 }
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(ctx, "已保存到 相册/ComfyRemote", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, L10n.t("已保存到 相册/ComfyRemote", "Saved to Pictures/ComfyRemote"), Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(ctx, "保存失败：${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, L10n.t("保存失败：", "Save failed: ") + (e.message ?: "error"), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -752,9 +789,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun ensureNotificationChannels(ctx: Context) {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_RUNNING, "生成状态", NotificationManager.IMPORTANCE_LOW))
+            NotificationChannel(CHANNEL_RUNNING, L10n.t("生成状态", "Generation status"), NotificationManager.IMPORTANCE_LOW))
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_DONE, "生成完成", NotificationManager.IMPORTANCE_DEFAULT))
+            NotificationChannel(CHANNEL_DONE, L10n.t("生成完成", "Generation finished"), NotificationManager.IMPORTANCE_DEFAULT))
     }
 
     private fun notifyDone(wfName: String, count: Int) {
@@ -763,8 +800,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (!nm.areNotificationsEnabled()) return
         val notif: Notification = NotificationCompat.Builder(ctx, CHANNEL_DONE)
             .setSmallIcon(android.R.drawable.ic_menu_gallery)
-            .setContentTitle("生成完成")
-            .setContentText("$wfName · $count 张图")
+            .setContentTitle(L10n.t("生成完成", "Generation finished"))
+            .setContentText("$wfName · " + L10n.t("${count} 张图", "${count} image(s)"))
             .setAutoCancel(true)
             .build()
         runCatching { nm.notify(2, notif) }

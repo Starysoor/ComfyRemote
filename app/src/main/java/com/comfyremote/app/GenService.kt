@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import com.comfyremote.app.ui.L10n
 
 /**
  * Empty foreground service whose only job is to keep the app process alive
@@ -20,8 +21,8 @@ class GenService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notif = NotificationCompat.Builder(this, MainViewModel.CHANNEL_RUNNING)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle("ComfyUI 生成中")
-            .setContentText("已提交到服务器，完成后会通知你。请勿强制关闭应用。")
+            .setContentTitle(L10n.t("ComfyUI 生成中", "ComfyUI generating"))
+            .setContentText(L10n.t("已提交到服务器，完成后会通知你。请勿强制关闭应用。", "Queued on the server; you will be notified when it finishes."))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build()

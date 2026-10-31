@@ -16,7 +16,8 @@ data class GhRelease(
     val tag: String,        // e.g. "v1.3"
     val name: String,
     val notes: String,
-    val apkUrl: String,     // browser_download_url of the .apk asset
+    val apkUrl: String,     // API asset URL used internally for authenticated download
+    val browserUrl: String, // public browser download link (shareable)
     val apkSize: Long,
 )
 
@@ -55,13 +56,14 @@ object Updater {
             if (!r.isSuccessful) throw ComfyException("HTTP ${r.code}: ${body.take(200)}")
             val o = JSONObject(body)
             val assets = o.optJSONArray("assets") ?: org.json.JSONArray()
-            var apkUrl = ""; var apkSize = 0L
+            var apkUrl = ""; var browserUrl = ""; var apkSize = 0L
             for (i in 0 until assets.length()) {
                 val a = assets.optJSONObject(i) ?: continue
                 if (a.optString("name").endsWith(".apk")) {
                     // API asset URL (not browser_download_url): with Accept octet-stream it
                     // 302-redirects to a pre-signed S3 URL, which works for private repos.
                     apkUrl = a.optString("url")
+                    browserUrl = a.optString("browser_download_url")
                     apkSize = a.optLong("size")
                     break
                 }
@@ -72,6 +74,7 @@ object Updater {
                 name = o.optString("name").ifEmpty { o.optString("tag_name") },
                 notes = o.optString("body").orEmpty(),
                 apkUrl = apkUrl,
+                browserUrl = browserUrl,
                 apkSize = apkSize,
             )
         }
