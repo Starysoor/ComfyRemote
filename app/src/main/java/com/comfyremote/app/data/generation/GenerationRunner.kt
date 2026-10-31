@@ -105,7 +105,11 @@ class GenerationRunner(
 
             // ---- authoritative completion via /history ----
             try {
-                pollHistory(a, promptId)
+                pollHistory(a, promptId) {
+                    if (current.phase == GenerationPhase.QUEUED) {
+                        update(current.copy(phase = GenerationPhase.RUNNING, progress = 0f))
+                    }
+                }
             } finally {
                 wsJob.cancel()
             }
@@ -182,10 +186,20 @@ class GenerationRunner(
         return current
     }
 
-    private suspend fun pollHistory(a: ComfyApi, promptId: String): JSONObject {
+    private suspend fun pollHistory(
+        a: ComfyApi,
+        promptId: String,
+        onStillRunning: () -> Unit,
+    ): JSONObject {
         val deadline = System.currentTimeMillis() + 30 * 60_000L
+        var first = true
         while (System.currentTimeMillis() < deadline) {
             a.historyEntry(promptId)?.let { return it }
+            if (first) {
+                first = false
+                // WS may have missed execution_start; no history after 4s = executing
+                onStillRunning()
+            }
             delay(4000)
         }
         throw ComfyException(

@@ -215,6 +215,12 @@ fun HistoryScreen(vm: MainViewModel, s: UiState) {
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(item.summary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    if (item.seeds.isNotBlank()) Text(
+                                        "seed: ${item.seeds}",
+                                        fontFamily = Mono, fontSize = 9.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
                             if (!selecting) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {

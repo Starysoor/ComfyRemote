@@ -210,12 +210,21 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                                 color = if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            Spacer(Modifier.weight(1f))
+                            task?.nodeTitle?.takeIf { running && it.isNotBlank() }?.let {
+                                Spacer(Modifier.width(8.dp))
+                                Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                Spacer(Modifier.width(0.dp))
+                            } ?: Spacer(Modifier.weight(1f))
                             task?.queueRemaining?.let { q ->
                                 Text(L10n.t("队列: ", "Queue: ") + q, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        task?.progress?.let { p -> LinearProgressIndicator(progress = p, modifier = Modifier.fillMaxWidth().height(3.dp)) }
+                        task?.progress?.let { p ->
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                LinearProgressIndicator(progress = p, modifier = Modifier.fillMaxWidth().height(3.dp).weight(1f))
+                                Text("${(p * 100).toInt()}%", fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                         if (running && task?.progress == null) LinearProgressIndicator(Modifier.fillMaxWidth().height(3.dp))
                     }
                 }
