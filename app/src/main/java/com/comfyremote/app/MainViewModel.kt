@@ -30,7 +30,17 @@ import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
-enum class Screen { CONNECT, AI_SETTINGS, WORKFLOWS, GENERATE, HISTORY }
+enum class Screen { CONNECT, AI_SETTINGS, UPDATE, WORKFLOWS, GENERATE, HISTORY }
+
+/** One labeled prompt text kept in history (full text, copyable). */
+data class LabeledText(val label: String, val value: String)
+
+data class UpdateUi(
+    val status: String? = null,
+    val release: GhRelease? = null,
+    val downloading: Boolean = false,
+    val progress: Float? = null,
+)
 
 data class GenState(
     val wfName: String,
@@ -72,6 +82,8 @@ data class UiState(
     // "$fieldKey|${skill.name}" while a request is in flight
     val aiBusy: String? = null,
     val aiResult: AiResult? = null,
+    val update: UpdateUi? = null,
+    val ghToken: String = "",
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -97,6 +109,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             servers = strList(prefs.getString("servers", null)),
             history = history.load(),
         )
+        maybeAutoCheckUpdate()
     }
 
     private fun mutateState(f: (UiState) -> UiState) {
@@ -272,9 +285,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 val summary = cv.fields.firstOrNull { it.kind == FieldKind.TEXT }
                     ?.let { (values[it.key] ?: it.value).take(50) } ?: g.wfName
+                val finalValues = values + seedsUsed
+                val prompts = cv.fields.filter { it.kind == FieldKind.TEXT }
+                    .map { LabeledText(it.label, finalValues[it.key] ?: it.value) }
+                    .filter { it.value.isNotBlank() }
+                val seeds = cv.fields.filter { it.kind == FieldKind.SEED }
+                    .mapNotNull { finalValues[it.key] }.joinToString(", ")
                 history.add(
                     HistoryItem(pid, currentWfPath, g.wfName, System.currentTimeMillis(),
-                        values + seedsUsed, randomSeed, paths, summary)
+                        finalValues, randomSeed, paths, summary, prompts, seeds)
                 )
                 mutateState { s -> s.copy(history = history.load()) }
                 mutateGen { cur ->
@@ -512,6 +531,79 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun aiDismiss() = mutateState { it.copy(aiResult = null) }
 
+    // ---------- app update ----------
+
+    private fun currentVersion(): String = try {
+        getApplication<Application>().packageManager
+            .getPackageInfo(getApplication<Application>().packageName, 0).versionName ?: "0"
+    } catch (_: Exception) { "0" }
+
+    fun currentVersionPublic(): String = currentVersion()
+
+    fun maybeAutoCheckUpdate() {
+        val token = prefs.getString("ghToken", "")?.trim().orEmpty()
+        if (token.isEmpty()) return
+        val last = prefs.getLong("lastUpdateCheck", 0L)
+        if (System.currentTimeMillis() - last < 24 * 3600_000L) return
+        viewModelScope.launch { runCatching { doCheckUpdate(token) } }
+    }
+
+    fun openUpdateScreen() {
+        mutateState {
+            it.copy(screen = Screen.UPDATE, ghToken = prefs.getString("ghToken", "") ?: "", update = it.update)
+        }
+    }
+
+    fun updateGhToken(v: String) = mutateState { it.copy(ghToken = v) }
+
+    fun checkUpdate() {
+        val token = _state.value.ghToken.trim()
+        if (token.isEmpty()) {
+            mutateState { it.copy(update = UpdateUi(status = "请先填写 GitHub Token（私有仓库读取需要）")) }
+            return
+        }
+        prefs.edit().putString("ghToken", token).apply()
+        mutateState { it.copy(update = UpdateUi(status = "正在检查…")) }
+        viewModelScope.launch {
+            try {
+                doCheckUpdate(token)
+            } catch (e: Exception) {
+                mutateState { it.copy(update = UpdateUi(status = "检查失败：${e.message}".take(200))) }
+            }
+        }
+    }
+
+    private suspend fun doCheckUpdate(token: String) {
+        val rel = Updater.latest(token)
+        prefs.edit().putLong("lastUpdateCheck", System.currentTimeMillis()).apply()
+        val cur = currentVersion()
+        if (Updater.compareVersions(rel.tag, cur) > 0) {
+            mutateState { it.copy(update = UpdateUi(release = rel)) }
+        } else {
+            mutateState { it.copy(update = UpdateUi(status = "已是最新（v$cur）")) }
+        }
+    }
+
+    fun downloadUpdate() {
+        val rel = _state.value.update?.release ?: return
+        val token = prefs.getString("ghToken", "")?.trim().orEmpty()
+        if (token.isEmpty()) return
+        mutateState { it.copy(update = UpdateUi(release = rel, downloading = true, progress = 0f)) }
+        viewModelScope.launch {
+            try {
+                val ctx = getApplication<Application>()
+                val dest = File(ctx.cacheDir, "update/comfyremote_${rel.tag}.apk")
+                Updater.download(token, rel, dest) { p ->
+                    mutateState { it.copy(update = it.update?.copy(progress = p)) }
+                }
+                mutateState { it.copy(update = it.update?.copy(downloading = false, progress = 1f)) }
+                Updater.installApk(ctx, dest)
+            } catch (e: Exception) {
+                mutateState { it.copy(update = UpdateUi(status = "下载失败：${e.message}".take(200))) }
+            }
+        }
+    }
+
     // ---------- history ----------
 
     fun reopenFromHistory(item: HistoryItem) {
@@ -579,6 +671,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 mutateState { it.copy(screen = Screen.WORKFLOWS) }
             }
             Screen.AI_SETTINGS -> mutateState { it.copy(screen = Screen.CONNECT) }
+            Screen.UPDATE -> mutateState { it.copy(screen = Screen.CONNECT) }
             Screen.HISTORY -> mutateState { it.copy(screen = Screen.WORKFLOWS) }
             Screen.WORKFLOWS -> mutateState { it.copy(screen = Screen.CONNECT) }
             else -> {}

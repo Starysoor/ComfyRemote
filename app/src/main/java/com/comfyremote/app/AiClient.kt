@@ -17,14 +17,14 @@ import java.util.concurrent.TimeUnit
  */
 enum class AiSkill(val label: String, val systemPrompt: String) {
     NATURAL(
-        "✨ 扩写",
+        "AI 扩写",
         "你是一位文生图提示词专家，为 MOSS / Qwen 系列文生图模型扩写提示词。这类模型吃自然语言长句（中英文皆可），不要用 Danbooru 标签堆砌。\n" +
                 "请把用户给出的简短想法扩写成一段 80~150 字的自然语言画面描述：以「一张…」开头，补充主体外观与动作、环境背景、构图视角、光线氛围、色调材质等细节。\n" +
                 "如果画面需要出现文字，用『写着“具体文字”』的格式写明文字内容与位置，文字要具体。\n" +
                 "只输出扩写后的中文提示词本身，不要任何解释、前缀或引号。"
     ),
     TAGS(
-        "🏷 标签",
+        "AI 标签",
         "你是 Danbooru 标签专家。把用户的中文画面描述转换为英文 Danbooru 风格标签行，用逗号+空格分隔，按重要性排序：\n" +
                 "先画质词（masterpiece, best quality, very aesthetic, absurdres），再人物数量与主体（如 1girl, 1boy, solo），然后外貌（发色、发型、瞳色）、服装、表情与动作、场景背景、构图与光照（如 looking at viewer, cowboy shot, sunset, cinematic lighting）。\n" +
                 "只使用真实存在的标准 Danbooru 标签拼写；不确定的概念用更通用的标签替代，不要自造标签。\n" +

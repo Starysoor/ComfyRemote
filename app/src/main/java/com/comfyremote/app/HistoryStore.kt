@@ -15,6 +15,8 @@ data class HistoryItem(
     val randomSeed: Boolean,
     val images: List<String>,        // local file paths
     val summary: String,             // first prompt text, truncated
+    val prompts: List<LabeledText> = emptyList(), // full text prompts, copyable
+    val seeds: String = "",          // seeds actually used
 )
 
 /** JSON-file-backed history; result PNGs saved under app-external files dir. */
@@ -36,6 +38,8 @@ class HistoryStore(context: Context) {
                 randomSeed = o.optBoolean("randomSeed", true),
                 images = strList(o.optJSONArray("images")).filter { p -> File(p).isFile },
                 summary = o.optString("summary"),
+                prompts = labeledList(o.optJSONArray("prompts")),
+                seeds = o.optString("seeds"),
             )
         }
     }.getOrDefault(emptyList()).sortedByDescending { it.time }
@@ -66,6 +70,8 @@ class HistoryStore(context: Context) {
         .put("randomSeed", randomSeed)
         .put("images", JSONArray().apply { images.forEach { put(it) } })
         .put("summary", summary)
+        .put("prompts", JSONArray().apply { prompts.forEach { put(JSONObject().put("label", it.label).put("value", it.value)) } })
+        .put("seeds", seeds)
 
     private fun strMap(o: JSONObject?): Map<String, String> {
         val m = LinkedHashMap<String, String>()
@@ -76,6 +82,15 @@ class HistoryStore(context: Context) {
     private fun strList(a: JSONArray?): List<String> {
         val out = mutableListOf<String>()
         if (a != null) for (i in 0 until a.length()) out.add(a.optString(i))
+        return out
+    }
+
+    private fun labeledList(a: JSONArray?): List<LabeledText> {
+        val out = mutableListOf<LabeledText>()
+        if (a != null) for (i in 0 until a.length()) {
+            val o = a.optJSONObject(i) ?: continue
+            out.add(LabeledText(o.optString("label"), o.optString("value")))
+        }
         return out
     }
 

@@ -14,8 +14,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -29,6 +31,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -39,6 +42,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -67,6 +71,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -85,7 +90,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -94,6 +101,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
+import com.comfyremote.app.ui.ComfyTheme
+import com.comfyremote.app.ui.Mono
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -107,7 +116,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            ComfyTheme {
                 Surface(Modifier.fillMaxSize()) { App(vm) }
             }
         }
@@ -121,6 +130,7 @@ fun App(vm: MainViewModel) {
         when (s.screen) {
             Screen.CONNECT -> ConnectScreen(vm, s)
             Screen.AI_SETTINGS -> AiSettingsScreen(vm, s)
+            Screen.UPDATE -> UpdateScreen(vm, s)
             Screen.WORKFLOWS -> WorkflowsScreen(vm, s)
             Screen.GENERATE -> GenerateScreen(vm, s)
             Screen.HISTORY -> HistoryScreen(vm, s)
@@ -147,15 +157,20 @@ fun App(vm: MainViewModel) {
 @Composable
 fun ConnectScreen(vm: MainViewModel, s: UiState) {
     var url by rememberSaveable(s.url) { mutableStateOf(s.url) }
+    val ctx = LocalContext.current
     Column(
-        Modifier.fillMaxSize().imePadding().padding(24.dp),
+        Modifier.fillMaxSize().imePadding().padding(horizontal = 28.dp).padding(bottom = 24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("ComfyRemote", fontSize = 34.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(4.dp))
-        Text("在手机上用电脑 ComfyUI 出图", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(28.dp))
+        Text("ComfyRemote", fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "COMFYUI · REMOTE CONTROL",
+            fontFamily = Mono, fontSize = 10.sp, letterSpacing = 2.5.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(36.dp))
         OutlinedTextField(
             value = url,
             onValueChange = { url = it },
@@ -175,28 +190,60 @@ fun ConnectScreen(vm: MainViewModel, s: UiState) {
                 }
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
         Button(
             onClick = { vm.connect(url) },
             enabled = !s.connecting,
+            shape = MaterialTheme.shapes.medium,
             modifier = Modifier.fillMaxWidth().height(52.dp)
-        ) { Text(if (s.connecting) "连接中…" else "连接") }
-        Spacer(Modifier.height(16.dp))
+        ) { Text(if (s.connecting) "连接中…" else "连  接", letterSpacing = 1.sp) }
+        Spacer(Modifier.height(14.dp))
         s.connError?.let {
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
-        s.sysInfo?.let {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("已连接", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    Text(it, style = MaterialTheme.typography.bodySmall)
+        s.sysInfo?.let { info ->
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(7.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+                    Spacer(Modifier.width(10.dp))
+                    Text(info, style = MaterialTheme.typography.bodySmall, fontFamily = Mono, fontSize = 11.sp)
                 }
             }
         }
-        Spacer(Modifier.height(20.dp))
-        TextButton(onClick = { vm.openAiSettings() }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-            Text("AI 提示词扩写设置（Base URL / Key / 模型）", style = MaterialTheme.typography.bodySmall)
+        // update banner
+        s.update?.release?.let { rel ->
+            Spacer(Modifier.height(12.dp))
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.fillMaxWidth().clickable { vm.openUpdateScreen() }
+            ) {
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("新版本 ${rel.tag} 可用", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Spacer(Modifier.weight(1f))
+                    Text("更新 →", color = MaterialTheme.colorScheme.onPrimaryContainer, fontFamily = Mono, fontSize = 12.sp)
+                }
+            }
         }
+        Spacer(Modifier.height(26.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            TextButton(onClick = { vm.openAiSettings() }) {
+                Text("AI 设置", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            TextButton(onClick = { vm.openUpdateScreen() }) {
+                Text("检查更新", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Spacer(Modifier.height(2.dp))
+        Text(
+            "v${vm.currentVersionPublic()}",
+            fontFamily = Mono, fontSize = 10.sp, letterSpacing = 1.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        )
     }
 }
 
@@ -254,9 +301,93 @@ fun AiSettingsScreen(vm: MainViewModel, s: UiState) {
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            "Key 仅保存在手机本地（应用私有目录）。生成页每个提示词框下方会出现「✨ 扩写」和「🏷 标签」两个按钮，按工作流类型自动排序。",
+            "Key 仅保存在手机本地（应用私有目录）。生成页每个提示词框下方会出现「AI 扩写」和「AI 标签」两个按钮，按工作流类型自动排序。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+// ============================ UPDATE ============================
+
+@Composable
+fun UpdateScreen(vm: MainViewModel, s: UiState) {
+    BackHandler { vm.back() }
+    val u = s.update
+    Column(
+        Modifier.fillMaxSize().imePadding().padding(28.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("软件更新", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
+        Text("当前版本 v${vm.currentVersionPublic()}", fontFamily = Mono, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(24.dp))
+        OutlinedTextField(
+            value = s.ghToken,
+            onValueChange = { vm.updateGhToken(it) },
+            label = { Text("GitHub Token") },
+            supportingText = {
+                Text("私有仓库需要只读 token：GitHub → Settings → Developer settings → Fine-grained tokens，仅授权 ComfyRemote 仓库、权限勾选 Contents:Read-only")
+            },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(
+                onClick = { vm.checkUpdate() },
+                enabled = u?.downloading != true,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.weight(1f).height(50.dp)
+            ) { Text("检查更新") }
+        }
+        Spacer(Modifier.height(18.dp))
+        when {
+            u?.release != null -> {
+                val rel = u.release
+                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(rel.name.ifEmpty { rel.tag }, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                        Text(rel.tag, fontFamily = Mono, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                        if (rel.notes.isNotBlank()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                rel.notes.take(1200),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())
+                            )
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        if (u.downloading) {
+                            LinearProgressIndicator(progress = u.progress ?: 0f, modifier = Modifier.fillMaxWidth())
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "下载中 ${(u.progress ?: 0f) * 100}%".let { if (u.progress == null) "下载中…" else it },
+                                fontFamily = Mono, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Button(
+                                onClick = { vm.downloadUpdate() },
+                                shape = MaterialTheme.shapes.medium,
+                                modifier = Modifier.fillMaxWidth().height(48.dp)
+                            ) { Text("下载并安装") }
+                        }
+                    }
+                }
+            }
+            u?.status != null -> Text(
+                u.status,
+                color = if (u.status.startsWith("检查失败") || u.status.startsWith("下载失败") || u.status.startsWith("请先"))
+                    MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        Spacer(Modifier.height(20.dp))
+        Text(
+            "首次安装时系统会请求「允许安装未知应用」权限，同意一次即可。更新包签名与本应用一致，正常覆盖安装不会丢数据。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
         )
     }
 }
@@ -268,14 +399,26 @@ fun AiSettingsScreen(vm: MainViewModel, s: UiState) {
 fun WorkflowsScreen(vm: MainViewModel, s: UiState) {
     BackHandler { vm.back() }
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("工作流（${s.workflows.size}）") },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                title = {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text("工作流", fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(8.dp))
+                        Text("${s.workflows.size}", fontFamily = Mono, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 },
                 actions = {
-                    TextButton(onClick = { vm.openHistory() }) { Text("历史（${s.history.size}）") }
+                    TextButton(onClick = { vm.openHistory() }) {
+                        Text("历史", style = MaterialTheme.typography.labelLarge)
+                        Spacer(Modifier.width(4.dp))
+                        Text("${s.history.size}", fontFamily = Mono, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                    }
                     IconButton(onClick = { vm.loadWorkflows() }) { Icon(Icons.Default.Refresh, "刷新") }
                 }
             )
@@ -292,16 +435,22 @@ fun WorkflowsScreen(vm: MainViewModel, s: UiState) {
                     Spacer(Modifier.height(8.dp))
                     Button(onClick = { vm.loadWorkflows() }) { Text("重试") }
                 }
-                else -> LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
+                else -> LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
                     items(s.workflows, key = { it.path }) { wf ->
-                        Card(
-                            onClick = { vm.openWorkflow(wf) },
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
+                        Surface(
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.surface,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
+                                .clickable { vm.openWorkflow(wf) }
                         ) {
-                            Column(Modifier.padding(14.dp)) {
-                                Text(wf.name, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                if (wf.sizeKb.isNotEmpty())
-                                    Text(wf.sizeKb, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(wf.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    if (wf.sizeKb.isNotEmpty())
+                                        Text(wf.sizeKb, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Text("›", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -390,19 +539,68 @@ fun HistoryScreen(vm: MainViewModel, s: UiState) {
 
 @Composable
 fun HistoryDetailDialog(item: HistoryItem, onClose: () -> Unit, onSave: (Bitmap) -> Unit, onShare: (String) -> Unit) {
+    val clipboard = LocalClipboardManager.current
+    val ctx = LocalContext.current
+    fun copy(text: String) {
+        clipboard.setText(AnnotatedString(text))
+        android.widget.Toast.makeText(ctx, "已复制", android.widget.Toast.LENGTH_SHORT).show()
+    }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxSize().background(Color.Black)) {
+        Column(Modifier.fillMaxSize().background(Color(0xFF0A0A0C))) {
             Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(item.wfName, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 IconButton(onClick = onClose) { Icon(Icons.Default.Close, "关闭", tint = Color.White) }
             }
             Text(
-                item.summary + " · " + SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(item.time)),
-                color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall,
+                SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(item.time)) + " · " + item.images.size + " 张",
+                color = Color.White.copy(alpha = 0.6f), fontFamily = Mono, fontSize = 11.sp,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
             LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(12.dp)) {
-                items(item.images.size) { idx ->
+                item(key = "prompts") {
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = Color.White.copy(alpha = 0.05f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("提示词", fontWeight = FontWeight.SemiBold, color = Color.White)
+                                Spacer(Modifier.weight(1f))
+                                if (item.prompts.isNotEmpty()) {
+                                    TextButton(onClick = { copy(item.prompts.joinToString("\n") { it.value }) }) {
+                                        Text("复制全部", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
+                            if (item.prompts.isEmpty()) {
+                                Text("（此记录未保存完整提示词）", color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodySmall)
+                            }
+                            item.prompts.forEach { p ->
+                                Text(p.label, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.height(2.dp))
+                                SelectionContainer {
+                                    Text(p.value, color = Color.White.copy(alpha = 0.92f), style = MaterialTheme.typography.bodySmall)
+                                }
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    TextButton(onClick = { copy(p.value) }) { Text("复制", style = MaterialTheme.typography.labelMedium) }
+                                }
+                                Spacer(Modifier.height(6.dp))
+                            }
+                            if (item.seeds.isNotBlank()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("SEED", fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(item.seeds, fontFamily = Mono, fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f), modifier = Modifier.weight(1f))
+                                    TextButton(onClick = { copy(item.seeds) }) { Text("复制", style = MaterialTheme.typography.labelMedium) }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+                items(item.images.size, key = { "img$it" }) { idx ->
                     val p = item.images[idx]
                     val bmp by produceState<Bitmap?>(null, p) {
                         value = withContext(kotlinx.coroutines.Dispatchers.IO) { decodeSampled(p, 1600) }
@@ -473,13 +671,15 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
             if (g.running) {
                 OutlinedButton(
                     onClick = { vm.cancelGenerate() },
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).height(52.dp)
                 ) { Text("取消生成") }
             } else {
                 Button(
                     onClick = { vm.generate() },
+                    shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).height(52.dp)
-                ) { Text("生成", fontSize = 17.sp) }
+                ) { Text("生  成", fontSize = 16.sp, letterSpacing = 2.sp, fontWeight = FontWeight.SemiBold) }
             }
         }
     ) { pad ->
@@ -496,17 +696,27 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                 }
             }
             item(key = "status") {
-                Card {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(g.status ?: "待生成", fontWeight = FontWeight.Bold)
+                            Text(
+                                (g.status ?: "待生成").uppercase(),
+                                fontFamily = Mono, fontSize = 12.sp, letterSpacing = 1.sp,
+                                color = if (g.running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold
+                            )
                             Spacer(Modifier.weight(1f))
                             g.queueInfo?.let {
-                                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(it, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        g.progress?.let { p -> LinearProgressIndicator(progress = p, modifier = Modifier.fillMaxWidth()) }
-                        if (g.running && g.progress == null) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        g.progress?.let { p -> LinearProgressIndicator(progress = p, modifier = Modifier.fillMaxWidth().height(3.dp)) }
+                        if (g.running && g.progress == null) LinearProgressIndicator(Modifier.fillMaxWidth().height(3.dp))
                     }
                 }
             }

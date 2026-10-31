@@ -2,4 +2,5 @@
 <paths>
     <external-files-path name="history" path="history/" />
     <cache-path name="camera" path="camera/" />
+    <cache-path name="update" path="update/" />
 </paths>
