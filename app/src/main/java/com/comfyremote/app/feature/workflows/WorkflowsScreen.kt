@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
@@ -139,6 +140,9 @@ fun WorkflowsScreen(vm: MainViewModel, s: UiState) {
                     IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) }
                 },
                 actions = {
+                    IconButton(onClick = { vm.back() }) {
+                        Icon(androidx.compose.material.icons.Icons.Default.Settings, L10n.t("服务器", "Server"))
+                    }
                     TextButton(onClick = { vm.openHistory() }) {
                         Text(L10n.t("历史", "History"), style = MaterialTheme.typography.labelLarge)
                         Spacer(Modifier.width(4.dp))
@@ -160,7 +164,7 @@ fun WorkflowsScreen(vm: MainViewModel, s: UiState) {
                     Spacer(Modifier.height(8.dp))
                     Button(onClick = { vm.loadWorkflows() }) { Text(L10n.t("重试", "Retry")) }
                 }
-                else -> LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)) {
+                else -> LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 96.dp)) {
                     items(s.workflows, key = { it.path }) { wf ->
                         Surface(
                             shape = MaterialTheme.shapes.medium,

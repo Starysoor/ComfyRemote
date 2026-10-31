@@ -6,8 +6,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -47,32 +48,29 @@ class LanServerDiscovery(
         .readTimeout(verifyTimeoutMs, TimeUnit.MILLISECONDS)
         .build()
 
-    fun discover(): Flow<DiscoveryEvent> = flow {
+    fun discover(): Flow<DiscoveryEvent> = channelFlow {
         val prefix = withContext(Dispatchers.IO) { localSubnetPrefix() }
         if (prefix == null) {
-            emit(DiscoveryEvent.Error("not-on-wifi"))
-            emit(DiscoveryEvent.Finished)
-            return@flow
+            send(DiscoveryEvent.Error("not-on-wifi"))
+            send(DiscoveryEvent.Finished)
+            return@channelFlow
         }
         val total = 254
         var scanned = 0
-        val found = Collections.synchronizedList(mutableListOf<DiscoveredServer>())
         coroutineScope {
-            val jobs = (1..total).map { n ->
+            (1..total).map { n ->
                 async(Dispatchers.IO) {
                     val ip = "$prefix$n"
                     if (isComfyAt(ip)) {
                         val s = DiscoveredServer(ip, "http://$ip:$port")
-                        found.add(s)
-                        emit(DiscoveryEvent.Found(s))
+                        send(DiscoveryEvent.Found(s))
                     }
                     synchronized(this@LanServerDiscovery) { scanned++ }
-                    emit(DiscoveryEvent.Progress(scanned, total))
+                    send(DiscoveryEvent.Progress(scanned, total))
                 }
-            }
-            jobs.awaitAll()
+            }.awaitAll()
         }
-        emit(DiscoveryEvent.Finished)
+        send(DiscoveryEvent.Finished)
     }.flowOn(Dispatchers.IO)
 
     /** Best-effort: prefers wlan0-style site-local IPv4 addresses. */

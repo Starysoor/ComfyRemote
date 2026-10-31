@@ -30,6 +30,10 @@ class ServerSessionRepository {
     fun require(): ComfyApi =
         api ?: throw ComfySessionClosedException()
 
+    suspend fun deleteFromQueue(promptId: String) = require().deleteFromQueue(promptId)
+
+    suspend fun interrupt() = require().interrupt()
+
     fun clear() {
         api = null
         version = ""

@@ -175,6 +175,11 @@ class ComfyApi(base: String) {
         httpPost("/interrupt", "{}")
     }
 
+    /** Removes a queued (not yet running) prompt from the server queue. */
+    suspend fun deleteFromQueue(promptId: String) {
+        httpPost("/queue", JSONObject().put("delete", org.json.JSONArray().put(promptId)).toString())
+    }
+
     fun wsEvents(clientId: String): Flow<WsEvent> = callbackFlow {
         val req = Request.Builder()
             .url(base.replaceFirst("http", "ws") + "/ws?clientId=" + clientId)

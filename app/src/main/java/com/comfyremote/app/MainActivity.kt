@@ -54,10 +54,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -112,6 +116,7 @@ import com.comfyremote.app.feature.ai.AiSettingsScreen
 import com.comfyremote.app.feature.connect.ConnectScreen
 import com.comfyremote.app.feature.generate.GenerateScreen
 import com.comfyremote.app.feature.history.HistoryScreen
+import com.comfyremote.app.feature.tasks.TasksScreen
 import com.comfyremote.app.feature.update.UpdateScreen
 import com.comfyremote.app.feature.workflows.WorkflowsScreen
 import kotlinx.coroutines.Dispatchers
@@ -152,6 +157,31 @@ fun App(vm: MainViewModel) {
             Screen.WORKFLOWS -> WorkflowsScreen(vm, s)
             Screen.GENERATE -> GenerateScreen(vm, s)
             Screen.HISTORY -> HistoryScreen(vm, s)
+            Screen.TASKS -> TasksScreen(vm)
+        }
+        if (s.screen in setOf(Screen.WORKFLOWS, Screen.TASKS, Screen.HISTORY)) {
+            NavigationBar(
+                Modifier.align(Alignment.BottomCenter)
+            ) {
+                NavigationBarItem(
+                    selected = s.screen == Screen.WORKFLOWS,
+                    onClick = { vm.openWorkflows() },
+                    icon = { Icon(Icons.Default.Add, null) },
+                    label = { Text(L10n.t("创作", "Create")) }
+                )
+                NavigationBarItem(
+                    selected = s.screen == Screen.TASKS,
+                    onClick = { vm.openTasks() },
+                    icon = { Icon(Icons.Default.Done, null) },
+                    label = { Text(L10n.t("任务", "Tasks")) }
+                )
+                NavigationBarItem(
+                    selected = s.screen == Screen.HISTORY,
+                    onClick = { vm.openHistory() },
+                    icon = { Icon(Icons.Default.List, null) },
+                    label = { Text(L10n.t("历史", "History")) }
+                )
+            }
         }
         s.busy?.let { msg ->
             Box(

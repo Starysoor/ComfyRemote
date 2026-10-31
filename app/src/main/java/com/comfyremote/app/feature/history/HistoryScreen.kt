@@ -150,7 +150,7 @@ fun HistoryScreen(vm: MainViewModel, s: UiState) {
                 Text(L10n.t("还没有生成记录", "No generations yet"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
-            LazyColumn(Modifier.padding(pad), contentPadding = PaddingValues(12.dp)) {
+            LazyColumn(Modifier.padding(pad), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 96.dp)) {
                 items(s.history, key = { it.id }) { item ->
                     Card(
                         onClick = { viewing = item },
@@ -214,7 +214,7 @@ fun HistoryDetailDialog(item: HistoryItem, onClose: () -> Unit, onSave: (Bitmap)
                 color = Color.White.copy(alpha = 0.6f), fontFamily = Mono, fontSize = 11.sp,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
-            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(12.dp)) {
+            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 96.dp)) {
                 item(key = "prompts") {
                     Surface(
                         shape = MaterialTheme.shapes.medium,

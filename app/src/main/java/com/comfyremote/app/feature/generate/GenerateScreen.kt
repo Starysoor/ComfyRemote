@@ -2,33 +2,19 @@ package com.comfyremote.app.feature.generate
 
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
-import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.viewModels
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -36,35 +22,23 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -77,8 +51,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -90,40 +62,38 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
-import com.comfyremote.app.ui.ComfyTheme
-import com.comfyremote.app.ui.L10n
-import com.comfyremote.app.ui.Mono
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.comfyremote.app.FieldKind
+import com.comfyremote.app.GenState
+import com.comfyremote.app.MainViewModel
+import com.comfyremote.app.UiState
+import com.comfyremote.app.data.generation.GenerationPhase
+import com.comfyremote.app.data.generation.GenerationTask
+import com.comfyremote.app.data.generation.ResultImage
+import com.comfyremote.app.feature.history.decodeSampled
+import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.ui.Mono
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-import com.comfyremote.app.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GenerateScreen(vm: MainViewModel, s: UiState) {
     val g = s.gen ?: return
     val ctx = LocalContext.current
+    val tasks by vm.tasks.collectAsState()
+    val task = tasks.firstOrNull { it.taskId == g.activeTaskId }
+    val running = task?.isActive == true
+
     var pendingKey by remember { mutableStateOf<String?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     var viewingIdx by remember { mutableStateOf<Int?>(null) }
@@ -146,7 +116,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
     }
     val notifPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= 33) notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS)
+        if (Build.VERSION.SDK_INT >= 33) notifPerm.launch(android.Manifest.permission.POST_NOTIFICATIONS)
     }
     BackHandler { vm.back() }
 
@@ -158,6 +128,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
     val textFields = g.fields.filter { it.kind == FieldKind.TEXT }
     val seedFields = g.fields.filter { it.kind == FieldKind.SEED }
     val paramFields = g.fields.filter { it.kind == FieldKind.PARAM }
+    val results = task?.results ?: emptyList()
     var advOpen by rememberSaveable { mutableStateOf(false) }
     var notesOpen by rememberSaveable { mutableStateOf(false) }
 
@@ -176,7 +147,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
             )
         },
         bottomBar = {
-            if (g.running) {
+            if (running) {
                 OutlinedButton(
                     onClick = { vm.cancelGenerate() },
                     shape = MaterialTheme.shapes.medium,
@@ -196,10 +167,12 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            g.error?.let { err ->
+            task?.error?.let { err ->
                 item(key = "error") {
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                        Text(err, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodySmall)
+                        Column(Modifier.padding(12.dp)) {
+                            Text(err.message, color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }
@@ -207,24 +180,24 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                 Surface(
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surface,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                ((g.status ?: L10n.t("待生成", "Ready"))).uppercase(),
+                                statusLabel(task).uppercase(),
                                 fontFamily = Mono, fontSize = 12.sp, letterSpacing = 1.sp,
-                                color = if (g.running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                color = if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Spacer(Modifier.weight(1f))
-                            g.queueInfo?.let {
-                                Text(it, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            task?.queueRemaining?.let { q ->
+                                Text(L10n.t("队列: ", "Queue: ") + q, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        g.progress?.let { p -> LinearProgressIndicator(progress = p, modifier = Modifier.fillMaxWidth().height(3.dp)) }
-                        if (g.running && g.progress == null) LinearProgressIndicator(Modifier.fillMaxWidth().height(3.dp))
+                        task?.progress?.let { p -> LinearProgressIndicator(progress = p, modifier = Modifier.fillMaxWidth().height(3.dp)) }
+                        if (running && task?.progress == null) LinearProgressIndicator(Modifier.fillMaxWidth().height(3.dp))
                     }
                 }
             }
@@ -264,7 +237,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                     }
                 }
             }
-            g.preview?.let { pb ->
+            task?.preview?.let { pb ->
                 item(key = "preview") {
                     Column {
                         Text(L10n.t("实时预览", "Live preview"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
@@ -313,7 +286,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (f.multiline) {
-                        val skills = remember(g.wfName, s.skills) { AiSkillDef.recommendedOrder(s.skills, g.wfName) }
+                        val skills = remember(g.wfName, s.skills) { com.comfyremote.app.AiSkillDef.recommendedOrder(s.skills, g.wfName) }
                         Row(
                             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.End,
@@ -323,7 +296,7 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                                 val busyKey = "${f.key}|${skill.id}"
                                 TextButton(
                                     onClick = { vm.aiExpand(f.key, g.values[f.key] ?: f.value, skill) },
-                                    enabled = s.aiBusy == null && !g.running
+                                    enabled = s.aiBusy == null && !running
                                 ) {
                                     if (s.aiBusy == busyKey) {
                                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
@@ -386,35 +359,39 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                     }
                 }
             }
-            if (g.results.isNotEmpty()) {
+            if (results.isNotEmpty()) {
                 item(key = "resheader") {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            L10n.t("生成结果（", "Results (") + "${g.results.size}" + L10n.t("）", ")"),
+                            L10n.t("生成结果（", "Results (") + "${results.size}" + L10n.t("）", ")"),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.weight(1f))
-                        if (g.results.size >= 2) {
+                        if (results.size >= 2) {
                             TextButton(onClick = { compareOpen = true }) { Text(L10n.t("对比", "Compare")) }
                         }
                     }
                 }
-                itemsIndexed(g.results, key = { i, _ -> "res$i" }) { idx, bmp ->
-                    Column {
-                        Image(
-                            bmp.asImageBitmap(), null,
-                            Modifier.fillMaxWidth().clickable { viewingIdx = idx },
-                            contentScale = ContentScale.FillWidth
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(L10n.t("结果 ", "Result ") + "${idx + 1}" + L10n.t("（点击放大）", " (tap to zoom)"), style = MaterialTheme.typography.bodySmall)
-                            Spacer(Modifier.weight(1f))
-                            val p = g.resultPaths.getOrNull(idx)
-                            if (p != null) TextButton(onClick = { shareImage(ctx, p) }) {
-                                Icon(Icons.Default.Share, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(L10n.t("分享", "Share"))
+                itemsIndexed(results, key = { i, _ -> "res$i" }) { idx, res ->
+                    val bmp by produceState<Bitmap?>(null, res.localPath) {
+                        value = withContext(kotlinx.coroutines.Dispatchers.IO) { decodeSampled(res.localPath, 1600) }
+                    }
+                    bmp?.let {
+                        Column {
+                            Image(
+                                it.asImageBitmap(), null,
+                                Modifier.fillMaxWidth().clickable { viewingIdx = idx },
+                                contentScale = ContentScale.FillWidth
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(L10n.t("结果 ", "Result ") + "${idx + 1}" + L10n.t("（点击放大）", " (tap to zoom)"), style = MaterialTheme.typography.bodySmall)
+                                Spacer(Modifier.weight(1f))
+                                TextButton(onClick = { shareImage(ctx, res.localPath) }) {
+                                    Icon(Icons.Default.Share, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(L10n.t("分享", "Share"))
+                                }
+                                TextButton(onClick = { it.let { b -> vm.saveResult(b) } }) { Text(L10n.t("保存到相册", "Save to gallery")) }
                             }
-                            TextButton(onClick = { vm.saveResult(bmp) }) { Text(L10n.t("保存到相册", "Save to gallery")) }
                         }
                     }
                 }
@@ -422,13 +399,18 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
         }
     }
     viewingIdx?.let { idx ->
-        g.results.getOrNull(idx)?.let { bmp ->
-            ImageViewerDialog(
-                bitmap = bmp,
-                onClose = { viewingIdx = null },
-                onSave = { vm.saveResult(bmp) },
-                onShare = { g.resultPaths.getOrNull(idx)?.let { shareImage(ctx, it) } }
-            )
+        results.getOrNull(idx)?.let { res ->
+            val bmp by produceState<Bitmap?>(null, res.localPath) {
+                value = withContext(kotlinx.coroutines.Dispatchers.IO) { decodeSampled(res.localPath, 1600) }
+            }
+            bmp?.let {
+                ImageViewerDialog(
+                    bitmap = it,
+                    onClose = { viewingIdx = null },
+                    onSave = { vm.saveResult(it) },
+                    onShare = { shareImage(ctx, res.localPath) }
+                )
+            }
         }
     }
     s.aiResult?.let { result ->
@@ -439,8 +421,8 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
             onAppend = { vm.aiApply(replace = false, it) }
         )
     }
-    if (compareOpen && g.results.size >= 2) {
-        CompareDialog(g.results, onDismiss = { compareOpen = false })
+    if (compareOpen && results.size >= 2) {
+        CompareDialog(results, onDismiss = { compareOpen = false })
     }
     if (bookmarksOpen) {
         BookmarksDialog(
@@ -453,3 +435,13 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
     }
 }
 
+private fun statusLabel(task: GenerationTask?): String = when (task?.phase) {
+    null -> L10n.t("待生成", "Ready")
+    GenerationPhase.PREPARING -> L10n.t("准备中", "Preparing")
+    GenerationPhase.QUEUEING, GenerationPhase.QUEUED -> L10n.t("排队中", "Queued")
+    GenerationPhase.RUNNING -> L10n.t("生成中", "Running")
+    GenerationPhase.CANCELLING -> L10n.t("取消中", "Cancelling")
+    GenerationPhase.CANCELLED -> L10n.t("已取消", "Cancelled")
+    GenerationPhase.SUCCEEDED -> L10n.t("完成", "Done")
+    GenerationPhase.FAILED -> L10n.t("失败", "Failed")
+}

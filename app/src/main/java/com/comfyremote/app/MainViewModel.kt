@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-enum class Screen { CONNECT, AI_SETTINGS, UPDATE, WORKFLOWS, GENERATE, HISTORY }
+enum class Screen { CONNECT, AI_SETTINGS, UPDATE, WORKFLOWS, GENERATE, HISTORY, TASKS }
 
 /** One labeled prompt text kept in history (full text, copyable). */
 data class LabeledText(val label: String, val value: String)
@@ -51,14 +51,7 @@ data class GenState(
     val nodeTitles: Map<String, String> = emptyMap(),
     val values: Map<String, String> = emptyMap(),
     val randomSeed: Boolean = true,
-    val running: Boolean = false,
-    val status: String? = null,
-    val queueInfo: String? = null,
-    val progress: Float? = null,
-    val preview: Bitmap? = null,
-    val results: List<Bitmap> = emptyList(),
-    val resultPaths: List<String> = emptyList(),
-    val error: String? = null,
+    val activeTaskId: String? = null,
 )
 
 data class UiState(
@@ -147,31 +140,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         Toast.makeText(getApplication(), msg, if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
     }
 
-    /** Live progress on the foreground-service notification (id 1), tap -> app. */
-    private fun updateRunningNotification(statusText: String?, progress: Float?) {
-        val ctx = getApplication<Application>()
-        val nm = NotificationManagerCompat.from(ctx)
-        if (!nm.areNotificationsEnabled()) return
-        val pi = android.app.PendingIntent.getActivity(
-            ctx, 0,
-            Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        val notif = NotificationCompat.Builder(ctx, CHANNEL_RUNNING)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle(L10n.t("ComfyUI 生成中", "ComfyUI generating"))
-            .setContentText(statusText ?: L10n.t("处理中…", "Working…"))
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .apply {
-                if (progress != null) setProgress(100, (progress * 100).toInt(), false)
-                else setProgress(0, 0, true)
-            }
-            .setContentIntent(pi)
-            .build()
-        runCatching { nm.notify(1, notif) }
-    }
-
     // ---------- connect / workflows ----------
 
     fun connect(url: String) {
@@ -250,167 +218,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun generate() {
         val g = _state.value.gen ?: return
         val cv = converted ?: return
-        val a = session.require()
-        if (g.running) return
-        val ctx = getApplication<Application>()
-        ensureNotificationChannels(ctx)
-        ContextCompat.startForegroundService(ctx, Intent(ctx, GenService::class.java))
-        mutateGen {
-            it.copy(running = true, error = null, results = emptyList(), resultPaths = emptyList(),
-                preview = null, status = L10n.t("排队中…", "Queued…"), progress = null)
-        }
-        updateRunningNotification(L10n.t("排队中…", "Queued…"), null)
-        val clientId = java.util.UUID.randomUUID().toString()
-        val values = g.values
-        val randomSeed = g.randomSeed
-        genJob = viewModelScope.launch {
-            var pid = ""
-            try {
-                val (prompt, seedsUsed) = WorkflowConverter.buildPrompt(cv, values, randomSeed)
-                pid = a.queuePrompt(prompt, clientId)
-                if (seedsUsed.isNotEmpty()) mutateGen { it.copy(values = it.values + seedsUsed) }
-
-                // WS is best-effort live progress/preview; completion authority is polling /history
-                val wsJob = launch {
-                    runCatching {
-                        a.wsEvents(clientId).collect { ev ->
-                            when (ev) {
-                                is WsEvent.Preview -> mutateGen { it.copy(preview = ev.bitmap) }
-                                is WsEvent.Json -> handleWsEvent(ev.obj, pid)
-                            }
-                        }
-                    }
-                }
-                val entry = pollHistory(a, pid)
-                wsJob.cancel()
-
-                if (historyCancelled(entry)) {
-                    mutateGen { it.copy(running = false, status = L10n.t("已取消", "Cancelled"), progress = null) }
-                    return@launch
-                }
-                extractError(entry)?.let { err ->
-                    mutateGen { it.copy(running = false, error = err, status = L10n.t("失败", "Failed")) }
-                    return@launch
-                }
-
-                val imgs = parseImages(entry)
-                val results = mutableListOf<Bitmap>()
-                val paths = mutableListOf<String>()
-                for ((idx, im) in imgs.withIndex()) {
-                    try {
-                        val bytes = a.downloadImage(im)
-                        decodeBitmap(bytes)?.let { results.add(it) }
-                        val f = container.historyRepository.newImageFile(pid, idx)
-                        withContext(kotlinx.coroutines.Dispatchers.IO) { f.writeBytes(bytes) }
-                        paths.add(f.absolutePath)
-                    } catch (_: Exception) {
-                    }
-                }
-                val summary = cv.fields.firstOrNull { it.kind == FieldKind.TEXT }
-                    ?.let { (values[it.key] ?: it.value).take(50) } ?: g.wfName
-                val finalValues = values + seedsUsed
-                val prompts = cv.fields.filter { it.kind == FieldKind.TEXT }
-                    .map { LabeledText(it.label, finalValues[it.key] ?: it.value) }
-                    .filter { it.value.isNotBlank() }
-                val seeds = cv.fields.filter { it.kind == FieldKind.SEED }
-                    .mapNotNull { finalValues[it.key] }.joinToString(", ")
-                container.historyRepository.add(
-                    HistoryItem(pid, currentWfPath, g.wfName, System.currentTimeMillis(),
-                        finalValues, randomSeed, paths, summary, prompts, seeds)
-                )
-                mutateState { s -> s.copy(history = container.historyRepository.load()) }
-                mutateGen { cur ->
-                    cur.copy(
-                        running = false, progress = 1f,
-                        status = if (results.isEmpty()) L10n.t("完成（没有输出图片）", "Done (no output images)") else L10n.t("完成", "Done"),
-                        results = results, resultPaths = paths
-                    )
-                }
-                notifyDone(g.wfName, results.size)
-            } catch (e: Exception) {
-                mutateGen { it.copy(running = false, error = e.message ?: e.toString(), status = L10n.t("失败", "Failed")) }
-            } finally {
-                ctx.stopService(Intent(ctx, GenService::class.java))
-            }
-        }
+        if (!session.connected) return
+        if (g.activeTaskId != null && manager.tasks.value
+                .firstOrNull { it.taskId == g.activeTaskId }?.isActive == true) return
+        val request = com.comfyremote.app.data.generation.GenerationRequest(
+            serverUrl = session.url,
+            workflowPath = currentWfPath,
+            workflowName = g.wfName,
+            fieldValues = g.values,
+            randomSeed = g.randomSeed,
+            nodeTitles = g.nodeTitles,
+            fields = g.fields,
+            convertedPrompt = JSONObject(cv.prompt.toString()),
+        )
+        val taskId = manager.submit(request)
+        mutateGen { it.copy(activeTaskId = taskId) }
     }
 
-    private fun handleWsEvent(ev: JSONObject, pid: String) {
-        val data = ev.optJSONObject("data")
-        when (ev.optString("type")) {
-            "status" -> {
-                val q = data?.optJSONObject("status")?.optJSONObject("exec_info")
-                    ?.optInt("queue_remaining", -1) ?: -1
-                if (q >= 0) mutateGen { it.copy(queueInfo = L10n.t("队列中任务: ", "Queue: ") + q) }
-            }
-            "execution_start" -> if (data?.optString("prompt_id") == pid) {
-                mutateGen { it.copy(status = L10n.t("执行中…", "Running…"), progress = 0f) }
-                updateRunningNotification(L10n.t("执行中…", "Running…"), 0f)
-            }
-            "executing" -> if (data?.optString("prompt_id") == pid) {
-                val node = data.optString("node")
-                if (node.isNotEmpty() && node != "null") {
-                    val st = L10n.t("执行节点 ", "Node ") + "#" + node + " " + (_state.value.gen?.nodeTitles?.get(node) ?: "")
-                    updateRunningNotification(st, null)
-                    mutateGen { g -> g.copy(status = st, progress = null) }
-                }
-            }
-            "progress" -> {
-                val p = data?.optString("prompt_id")
-                if (data != null && data.has("value") && (p.isNullOrEmpty() || p == pid)) {
-                    val v = data.optDouble("value", 0.0)
-                    val m = data.optDouble("max", 1.0).coerceAtLeast(1e-6)
-                    val prog = (v / m).toFloat().coerceIn(0f, 1f)
-                    updateRunningNotification(null, prog)
-                    mutateGen { it.copy(progress = prog) }
-                }
-            }
-        }
+    fun cancelActiveTask() {
+        val id = _state.value.gen?.activeTaskId ?: return
+        viewModelScope.launch { manager.cancel(id) }
     }
 
-    /** /history/{id} is written only after execution finishes — authoritative completion. */
-    private suspend fun pollHistory(a: ComfyApi, promptId: String): JSONObject {
-        val deadline = System.currentTimeMillis() + 30 * 60_000L
-        while (System.currentTimeMillis() < deadline) {
-            a.historyEntry(promptId)?.let { return it }
-            delay(4000)
-        }
-        throw ComfyException(L10n.t("等待结果超时（30 分钟），结果可在服务器 output 目录查看", "Timed out after 30 minutes; check the server output folder"))
-    }
+    fun retryTask(taskId: String): String? = manager.retry(taskId)
 
-    private fun extractError(entry: JSONObject): String? {
-        val status = entry.optJSONObject("status") ?: return null
-        if (status.optString("status_str") != "error") return null
-        val sb = StringBuilder(L10n.t("执行出错", "Execution error"))
-        status.optJSONArray("messages")?.let { msgs ->
-            for (i in 0 until msgs.length()) {
-                val m = msgs.optJSONArray(i) ?: continue
-                if (m.optString(0) == "execution_error") {
-                    val d = m.optJSONObject(1)
-                    if (d != null) sb.append("\n").append(d.optString("node_type"))
-                        .append("：").append(d.optString("exception_message"))
-                }
-            }
-        }
-        return sb.toString()
-    }
+    val tasks = manager.tasks
 
-    private fun parseImages(entry: JSONObject): List<OutputImage> {
-        val out = mutableListOf<OutputImage>()
-        val outputs = entry.optJSONObject("outputs") ?: return out
-        outputs.keys().forEach { k ->
-            val o = outputs.optJSONObject(k) ?: return@forEach
-            val imgs = o.optJSONArray("images") ?: return@forEach
-            for (i in 0 until imgs.length()) {
-                val im = imgs.optJSONObject(i) ?: continue
-                out.add(OutputImage(im.optString("filename"), im.optString("subfolder"), im.optString("type", "output")))
-            }
-        }
-        return out
-    }
+    private val manager get() = container.generationManager
 
-    fun cancelGenerate() {
-        viewModelScope.launch { runCatching { session.require().interrupt() } }
+    fun cancelGenerate() = cancelActiveTask()
+
+    fun cancelTask(taskId: String) {
+        viewModelScope.launch { manager.cancel(taskId) }
     }
 
     // ---------- uploads ----------
@@ -704,8 +543,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 delay(200); waited += 200
             }
             mutateGen { g ->
-                g.copy(values = item.values, randomSeed = item.randomSeed,
-                    results = emptyList(), resultPaths = emptyList())
+                g.copy(values = item.values, randomSeed = item.randomSeed)
             }
         }
     }
@@ -733,8 +571,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun openWorkflows() {
+        mutateState { it.copy(screen = Screen.WORKFLOWS) }
+    }
+
     fun openHistory() {
         mutateState { it.copy(screen = Screen.HISTORY) }
+    }
+
+    fun openTasks() {
+        mutateState { it.copy(screen = Screen.TASKS) }
     }
 
     /** Receives an image shared from the system gallery/other apps. */
@@ -749,7 +595,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Fills the first reference-image slot of the open workflow with the shared image. */
     fun tryConsumePendingShare() {
         val g = _state.value.gen ?: return
-        if (g.running) return
         if (g.fields.none { it.kind == FieldKind.IMAGE }) return
         val uris = container.incomingMedia.drain()
         if (uris.isEmpty()) return
@@ -857,44 +702,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun back() {
         when (_state.value.screen) {
             Screen.GENERATE -> {
-                if (_state.value.gen?.running == true) cancelGenerate()
+                // leaving the page does NOT cancel the task (stage 18)
                 mutateState { it.copy(screen = Screen.WORKFLOWS) }
             }
             Screen.AI_SETTINGS -> mutateState { it.copy(screen = Screen.CONNECT) }
             Screen.UPDATE -> mutateState { it.copy(screen = Screen.CONNECT) }
             Screen.HISTORY -> mutateState { it.copy(screen = Screen.WORKFLOWS) }
+            Screen.TASKS -> mutateState { it.copy(screen = Screen.WORKFLOWS) }
             Screen.WORKFLOWS -> mutateState { it.copy(screen = Screen.CONNECT) }
             else -> {}
         }
-    }
-
-    // ---------- notifications ----------
-
-    fun ensureNotificationChannels(ctx: android.content.Context) {
-        val nm = ctx.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_RUNNING, L10n.t("生成状态", "Generation status"), NotificationManager.IMPORTANCE_LOW))
-        nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_DONE, L10n.t("生成完成", "Generation finished"), NotificationManager.IMPORTANCE_DEFAULT))
-    }
-
-    private fun notifyDone(wfName: String, count: Int) {
-        val ctx = getApplication<Application>()
-        val nm = NotificationManagerCompat.from(ctx)
-        if (!nm.areNotificationsEnabled()) return
-        val pi = android.app.PendingIntent.getActivity(
-            ctx, 0,
-            Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        val notif: Notification = NotificationCompat.Builder(ctx, CHANNEL_DONE)
-            .setSmallIcon(android.R.drawable.ic_menu_gallery)
-            .setContentTitle(L10n.t("生成完成", "Generation finished"))
-            .setContentText("$wfName · " + L10n.t("${count} 张图", "${count} image(s)"))
-            .setContentIntent(pi)
-            .setAutoCancel(true)
-            .build()
-        runCatching { nm.notify(2, notif) }
     }
 
     // ---------- helpers ----------

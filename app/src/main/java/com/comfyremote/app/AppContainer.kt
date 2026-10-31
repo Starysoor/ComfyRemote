@@ -3,6 +3,7 @@ package com.comfyremote.app
 import android.app.Application
 import android.content.SharedPreferences
 import com.comfyremote.app.data.discovery.LanServerDiscovery
+import com.comfyremote.app.data.generation.GenerationManager
 import com.comfyremote.app.data.media.GalleryExporter
 import com.comfyremote.app.data.media.IncomingMediaRepository
 import com.comfyremote.app.data.repository.AiSettingsStore
@@ -36,4 +37,5 @@ class AppContainer(app: Application) {
     val lanDiscovery = LanServerDiscovery()
     val galleryExporter = GalleryExporter(app)
     val incomingMedia = IncomingMediaRepository()
+    val generationManager = GenerationManager(this, app)
 }

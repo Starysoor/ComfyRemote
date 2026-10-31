@@ -108,6 +108,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import com.comfyremote.app.ui.ComfyTheme
+import com.comfyremote.app.data.generation.ResultImage
+import com.comfyremote.app.feature.history.decodeSampled
 import com.comfyremote.app.ui.L10n
 import com.comfyremote.app.ui.Mono
 import kotlinx.coroutines.Dispatchers
@@ -206,9 +208,21 @@ fun BookmarksDialog(
     )
 }
 
+@Composable
+private fun CompareImage(res: ResultImage, modifier: Modifier) {
+    val bmp by produceState<Bitmap?>(null, res.localPath) {
+        value = withContext(Dispatchers.IO) { decodeSampled(res.localPath, 1600) }
+    }
+    if (bmp != null) {
+        Image(bmp!!.asImageBitmap(), null, modifier, contentScale = ContentScale.Fit)
+    } else {
+        Box(modifier, contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    }
+}
+
 /** Side-by-side A/B comparison of two results. */
 @Composable
-fun CompareDialog(results: List<Bitmap>, onDismiss: () -> Unit) {
+fun CompareDialog(results: List<ResultImage>, onDismiss: () -> Unit) {
     var a by remember { mutableStateOf(0) }
     var b by remember { mutableStateOf(1) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -218,10 +232,8 @@ fun CompareDialog(results: List<Bitmap>, onDismiss: () -> Unit) {
                 IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, L10n.t("关闭", "Close"), tint = Color.White) }
             }
             Row(Modifier.weight(1f).fillMaxWidth()) {
-                Image(results[a.coerceIn(results.indices)].asImageBitmap(), null,
-                    Modifier.weight(1f).fillMaxSize().padding(2.dp), contentScale = ContentScale.Fit)
-                Image(results[b.coerceIn(results.indices)].asImageBitmap(), null,
-                    Modifier.weight(1f).fillMaxSize().padding(2.dp), contentScale = ContentScale.Fit)
+                CompareImage(results[a.coerceIn(results.indices)], Modifier.weight(1f).fillMaxSize().padding(2.dp))
+                CompareImage(results[b.coerceIn(results.indices)], Modifier.weight(1f).fillMaxSize().padding(2.dp))
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("A", fontFamily = Mono, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
