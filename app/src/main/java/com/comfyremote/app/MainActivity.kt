@@ -252,34 +252,104 @@ fun ConnectScreen(vm: MainViewModel, s: UiState) {
 @Composable
 fun AiSettingsScreen(vm: MainViewModel, s: UiState) {
     BackHandler { vm.back() }
+    var editingSkill by remember { mutableStateOf<AiSkillDef?>(null) }
+    var addingSkill by remember { mutableStateOf(false) }
+    var thinkingOpen by remember { mutableStateOf(false) }
+    val thinkingLabels = mapOf(
+        "default" to "跟随模型默认",
+        "glm_off" to "GLM · 关闭思考",
+        "glm_on" to "GLM · 开启思考",
+        "low" to "推理强度 low",
+        "medium" to "推理强度 medium",
+        "high" to "推理强度 high",
+    )
     Column(
         Modifier.fillMaxSize().imePadding().padding(24.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text("AI 提示词扩写", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(6.dp))
         Text(
-            "兼容 OpenAI 接口格式，填哪家都行。示例 Base URL：\n· DeepSeek: https://api.deepseek.com/v1\n· 智谱 GLM: https://open.bigmodel.cn/api/paas/v4\n· OpenAI: https://api.openai.com/v1\n· 本地 Ollama: http://电脑IP:11434/v1",
+            "兼容 OpenAI 接口格式。示例：DeepSeek https://api.deepseek.com/v1 · 智谱 https://open.bigmodel.cn/api/paas/v4 · OpenAI https://api.openai.com/v1 · 本地 Ollama http://电脑IP:11434/v1",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(16.dp))
         OutlinedTextField(
             value = s.aiBase, onValueChange = vm::updateAiBase,
             label = { Text("Base URL") }, singleLine = true, modifier = Modifier.fillMaxWidth()
         )
-        Spacer(Modifier.height(10.dp))
         OutlinedTextField(
             value = s.aiKey, onValueChange = vm::updateAiKey,
             label = { Text("API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth()
         )
-        Spacer(Modifier.height(10.dp))
         OutlinedTextField(
             value = s.aiModel, onValueChange = vm::updateAiModel,
             label = { Text("模型名（如 deepseek-chat / glm-4-flash）") },
             singleLine = true, modifier = Modifier.fillMaxWidth()
         )
-        Spacer(Modifier.height(16.dp))
+        // ---- generation tunables ----
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedTextField(
+                value = s.aiTemp,
+                onValueChange = { vm.updateAiTemp(it.filter { c -> c.isDigit() || c == '.' }) },
+                label = { Text("温度 0~2") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = s.aiMaxTok,
+                onValueChange = { vm.updateAiMaxTok(it) },
+                label = { Text("最大输出 tokens") },
+                supportingText = { Text("空=不限", fontSize = 10.sp) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f)
+            )
+        }
+        // thinking mode dropdown
+        Box {
+            OutlinedButton(onClick = { thinkingOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("思考模式：${thinkingLabels[s.aiThinking] ?: s.aiThinking}", modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
+                Text("▾", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            DropdownMenu(expanded = thinkingOpen, onDismissRequest = { thinkingOpen = false }) {
+                thinkingLabels.forEach { (k, label) ->
+                    DropdownMenuItem(text = { Text(label) }, onClick = { vm.applyThinkingMode(k); thinkingOpen = false })
+                }
+            }
+        }
+        OutlinedTextField(
+            value = s.aiExtra,
+            onValueChange = { vm.updateAiExtra(it) },
+            label = { Text("附加请求参数（JSON，可选）") },
+            supportingText = { Text("会合并进请求体顶层，如 {\"top_p\":0.9}；思考模式的字段也写在这里") },
+            minLines = 2,
+            maxLines = 5,
+            modifier = Modifier.fillMaxWidth()
+        )
+        // ---- skills management ----
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("扩写技能（${s.skills.size}）", fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = { addingSkill = true }) { Text("＋ 新增") }
+        }
+        s.skills.forEach { skill ->
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth().clickable { editingSkill = skill }
+            ) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(skill.label, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.width(8.dp))
+                    if (skill.builtin) {
+                        Text("内置", fontFamily = Mono, fontSize = 9.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text("编辑 ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedButton(
                 onClick = { vm.testAi() },
@@ -292,20 +362,89 @@ fun AiSettingsScreen(vm: MainViewModel, s: UiState) {
             ) { Text("保存") }
         }
         s.aiTest?.let {
-            Spacer(Modifier.height(10.dp))
             Text(
                 it,
                 color = if (it.startsWith("成功")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall
             )
         }
-        Spacer(Modifier.height(12.dp))
         Text(
-            "Key 仅保存在手机本地（应用私有目录）。生成页每个提示词框下方会出现「AI 扩写」和「AI 标签」两个按钮，按工作流类型自动排序。",
+            "Key 与技能仅保存在手机本地。思考模式对不支持的 API 会报错——用「跟随模型默认」即可。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+    editingSkill?.let { skill ->
+        SkillEditDialog(
+            skill = skill,
+            onDismiss = { editingSkill = null },
+            onSave = { vm.saveSkill(it); editingSkill = null },
+            onDelete = if (!skill.builtin) ({ vm.deleteSkill(skill.id); editingSkill = null }) else null,
+            onReset = if (skill.builtin) ({ vm.resetSkill(skill.id); editingSkill = null }) else null,
+        )
+    }
+    if (addingSkill) {
+        SkillEditDialog(
+            skill = null,
+            onDismiss = { addingSkill = false },
+            onSave = { vm.addSkill(it.label, it.systemPrompt); addingSkill = false },
+            onDelete = null,
+            onReset = null,
+        )
+    }
+}
+
+@Composable
+fun SkillEditDialog(
+    skill: AiSkillDef?,
+    onDismiss: () -> Unit,
+    onSave: (AiSkillDef) -> Unit,
+    onDelete: (() -> Unit)?,
+    onReset: (() -> Unit)?,
+) {
+    var label by remember(skill) { mutableStateOf(skill?.label ?: "") }
+    var prompt by remember(skill) { mutableStateOf(skill?.systemPrompt ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (skill == null) "新增技能" else "编辑技能", style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it },
+                    label = { Text("按钮名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = prompt,
+                    onValueChange = { prompt = it },
+                    label = { Text("系统提示词（技能的内容）") },
+                    minLines = 6,
+                    maxLines = 14,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "提示词写你想要的行为即可，内容自己负责。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (label.isNotBlank() && prompt.isNotBlank()) onSave(AiSkillDef(skill?.id ?: "custom_${System.currentTimeMillis()}", label.trim(), prompt, skill?.builtin ?: false)) },
+                enabled = label.isNotBlank() && prompt.isNotBlank()
+            ) { Text("保存") }
+        },
+        dismissButton = {
+            Row {
+                if (onReset != null) TextButton(onClick = onReset) { Text("恢复默认") }
+                if (onDelete != null) TextButton(onClick = onDelete) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = onDismiss) { Text("取消") }
+            }
+        }
+    )
 }
 
 // ============================ UPDATE ============================
@@ -325,9 +464,9 @@ fun UpdateScreen(vm: MainViewModel, s: UiState) {
         OutlinedTextField(
             value = s.ghToken,
             onValueChange = { vm.updateGhToken(it) },
-            label = { Text("GitHub Token") },
+            label = { Text("GitHub Token（可选）") },
             supportingText = {
-                Text("私有仓库需要只读 token：GitHub → Settings → Developer settings → Fine-grained tokens，仅授权 ComfyRemote 仓库、权限勾选 Contents:Read-only")
+                Text("仓库公开时无需填写。若仍是私有：GitHub → Settings → Developer settings → Fine-grained tokens，仅授权 ComfyRemote 仓库、Contents:Read-only")
             },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
@@ -805,14 +944,14 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (f.multiline) {
-                        val skills = remember(g.wfName) { AiSkill.recommendedFor(g.wfName) }
+                        val skills = remember(g.wfName, s.skills) { AiSkillDef.recommendedOrder(s.skills, g.wfName) }
                         Row(
-                            Modifier.fillMaxWidth(),
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             skills.forEach { skill ->
-                                val busyKey = "${f.key}|${skill.name}"
+                                val busyKey = "${f.key}|${skill.id}"
                                 TextButton(
                                     onClick = { vm.aiExpand(f.key, g.values[f.key] ?: f.value, skill) },
                                     enabled = s.aiBusy == null && !g.running

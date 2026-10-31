@@ -42,16 +42,15 @@ object Updater {
         return 0
     }
 
-    suspend fun latest(token: String): GhRelease = withContext(Dispatchers.IO) {
-        val req = Request.Builder()
+    suspend fun latest(token: String?): GhRelease = withContext(Dispatchers.IO) {
+        val builder = Request.Builder()
             .url("https://api.github.com/repos/$REPO/releases/latest")
-            .header("Authorization", "Bearer $token")
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
-            .build()
-        http.newCall(req).execute().use { r ->
+        if (!token.isNullOrBlank()) builder.header("Authorization", "Bearer $token")
+        http.newCall(builder.build()).execute().use { r ->
             val body = r.body?.string() ?: ""
-            if (r.code == 404) throw ComfyException("仓库没有已发布的版本，或 token 无权读取（需 Contents:Read）")
+            if (r.code == 404) throw ComfyException("没有已发布的版本，或仓库仍是私有（私有仓库需填只读 Token）")
             if (r.code == 401) throw ComfyException("GitHub token 无效或已过期")
             if (!r.isSuccessful) throw ComfyException("HTTP ${r.code}: ${body.take(200)}")
             val o = JSONObject(body)
@@ -79,16 +78,15 @@ object Updater {
     }
 
     /** Streams the release asset to dest, reporting 0f..1f progress. */
-    suspend fun download(token: String, release: GhRelease, dest: File, onProgress: (Float) -> Unit) =
+    suspend fun download(token: String?, release: GhRelease, dest: File, onProgress: (Float) -> Unit) =
         withContext(Dispatchers.IO) {
             dest.parentFile?.mkdirs()
             val tmp = File(dest.absolutePath + ".part")
-            val req = Request.Builder()
+            val builder = Request.Builder()
                 .url(release.apkUrl)
-                .header("Authorization", "Bearer $token")
                 .header("Accept", "application/octet-stream")
-                .build()
-            http.newCall(req).execute().use { r ->
+            if (!token.isNullOrBlank()) builder.header("Authorization", "Bearer $token")
+            http.newCall(builder.build()).execute().use { r ->
                 if (!r.isSuccessful) {
                     val errBody = r.body?.string()?.take(200)
                     android.util.Log.e("Updater", "download failed code=${r.code} url=${release.apkUrl} body=$errBody")

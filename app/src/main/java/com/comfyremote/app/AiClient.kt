@@ -1,5 +1,6 @@
 package com.comfyremote.app
 
+import android.content.SharedPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -10,39 +11,81 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-/**
- * Two built-in prompt skills. Natural language suits MOSS/Qwen (they "eat"
- * flowing sentences per the official workflow notes); Danbooru tags suit
- * SDXL/Anima/Illustrious-style anime checkpoints.
- */
-enum class AiSkill(val label: String, val systemPrompt: String) {
-    NATURAL(
-        "AI 扩写",
-        "你是一位文生图提示词专家，为 MOSS / Qwen 系列文生图模型扩写提示词。这类模型吃自然语言长句（中英文皆可），不要用 Danbooru 标签堆砌。\n" +
-                "请把用户给出的简短想法扩写成一段 80~150 字的自然语言画面描述：以「一张…」开头，补充主体外观与动作、环境背景、构图视角、光线氛围、色调材质等细节。\n" +
-                "如果画面需要出现文字，用『写着“具体文字”』的格式写明文字内容与位置，文字要具体。\n" +
-                "只输出扩写后的中文提示词本身，不要任何解释、前缀或引号。"
-    ),
-    TAGS(
-        "AI 标签",
-        "你是 Danbooru 标签专家。把用户的中文画面描述转换为英文 Danbooru 风格标签行，用逗号+空格分隔，按重要性排序：\n" +
-                "先画质词（masterpiece, best quality, very aesthetic, absurdres），再人物数量与主体（如 1girl, 1boy, solo），然后外貌（发色、发型、瞳色）、服装、表情与动作、场景背景、构图与光照（如 looking at viewer, cowboy shot, sunset, cinematic lighting）。\n" +
-                "只使用真实存在的标准 Danbooru 标签拼写；不确定的概念用更通用的标签替代，不要自造标签。\n" +
-                "只输出一行标签，不要任何解释或句号。"
-    );
-
+/** A user-editable prompt skill (two built-ins by default, any number custom). */
+data class AiSkillDef(
+    val id: String,
+    val label: String,
+    val systemPrompt: String,
+    val builtin: Boolean,
+) {
     companion object {
-        /** Tags first for anime-checkpoint workflows, natural language otherwise. */
-        fun recommendedFor(wfName: String): List<AiSkill> {
-            val tagFirst = listOf("SDXL", "Anima", "Illustrious", "Pony")
-                .any { wfName.contains(it, ignoreCase = true) }
-            return if (tagFirst) listOf(TAGS, NATURAL) else listOf(NATURAL, TAGS)
+        const val DEFAULT_NATURAL_ID = "builtin_natural"
+        const val DEFAULT_TAGS_ID = "builtin_tags"
+
+        fun defaults(): List<AiSkillDef> = listOf(NATURAL_DEFAULT, TAGS_DEFAULT)
+
+        val NATURAL_DEFAULT = AiSkillDef(
+            DEFAULT_NATURAL_ID, "AI 扩写",
+            "你是一位文生图提示词专家，为 MOSS / Qwen 系列文生图模型扩写提示词。这类模型吃自然语言长句（中英文皆可），不要用 Danbooru 标签堆砌。\n" +
+                    "请把用户给出的简短想法扩写成一段 80~150 字的自然语言画面描述：以「一张…」开头，补充主体外观与动作、环境背景、构图视角、光线氛围、色调材质等细节。\n" +
+                    "如果画面需要出现文字，用『写着“具体文字”』的格式写明文字内容与位置，文字要具体。\n" +
+                    "只输出扩写后的中文提示词本身，不要任何解释、前缀或引号。",
+            true,
+        )
+
+        val TAGS_DEFAULT = AiSkillDef(
+            DEFAULT_TAGS_ID, "AI 标签",
+            "你是 Danbooru 标签专家。把用户的中文画面描述转换为英文 Danbooru 风格标签行，用逗号+空格分隔，按重要性排序：\n" +
+                    "先画质词（masterpiece, best quality, very aesthetic, absurdres），再人物数量与主体（如 1girl, 1boy, solo），然后外貌（发色、发型、瞳色）、服装、表情与动作、场景背景、构图与光照（如 looking at viewer, cowboy shot, sunset, cinematic lighting）。\n" +
+                    "只使用真实存在的标准 Danbooru 标签拼写；不确定的概念用更通用的标签替代，不要自造标签。\n" +
+                    "只输出一行标签，不要任何解释或句号。",
+            true,
+        )
+
+        private val TAGGED_WORKFLOWS = listOf("SDXL", "Anima", "Illustrious", "Pony")
+
+        /** Anime-checkpoint workflows want the tag skill first, natural language otherwise. */
+        fun recommendedOrder(skills: List<AiSkillDef>, wfName: String): List<AiSkillDef> {
+            val first = if (TAGGED_WORKFLOWS.any { wfName.contains(it, ignoreCase = true) })
+                DEFAULT_TAGS_ID else DEFAULT_NATURAL_ID
+            return skills.sortedBy { if (it.id == first) 0 else 1 }
         }
+    }
+}
+
+object AiSkills {
+    private const val KEY = "aiSkills"
+
+    fun load(prefs: SharedPreferences): List<AiSkillDef> = runCatching {
+        val arr = JSONArray(prefs.getString(KEY, null) ?: return@runCatching AiSkillDef.defaults())
+        val out = mutableListOf<AiSkillDef>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val label = o.optString("label")
+            if (label.isEmpty()) continue
+            out.add(AiSkillDef(o.optString("id"), label, o.optString("prompt"), o.optBoolean("builtin", false)))
+        }
+        if (out.isEmpty()) AiSkillDef.defaults() else out
+    }.getOrDefault(AiSkillDef.defaults())
+
+    fun save(prefs: SharedPreferences, skills: List<AiSkillDef>) {
+        val arr = JSONArray()
+        skills.forEach { s ->
+            arr.put(JSONObject().put("id", s.id).put("label", s.label).put("prompt", s.systemPrompt).put("builtin", s.builtin))
+        }
+        prefs.edit().putString(KEY, arr.toString()).apply()
     }
 }
 
 /** One AI result awaiting user confirmation (replace / append / dismiss). */
 data class AiResult(val fieldKey: String, val text: String)
+
+/** Tunables for the chat request, all optional. */
+data class AiTunables(
+    val temperature: Double? = null,
+    val maxTokens: Int? = null,
+    val extraJson: JSONObject? = null,
+)
 
 /**
  * Minimal OpenAI-compatible chat client. Works with DeepSeek, Zhipu GLM,
@@ -54,7 +97,7 @@ object AiClient {
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
+        .readTimeout(180, TimeUnit.SECONDS)
         .build()
 
     fun parseChatCompletion(body: String): String {
@@ -68,27 +111,44 @@ object AiClient {
         return content.trim()
     }
 
-    suspend fun chat(
-        baseUrl: String,
-        apiKey: String,
+    /** Builds the request body; extra JSON keys override the standard ones. */
+    fun buildChatBody(
         model: String,
         systemPrompt: String,
         userText: String,
-    ): String = withContext(Dispatchers.IO) {
-        val url = baseUrl.trimEnd('/') + "/chat/completions"
+        t: AiTunables,
+    ): JSONObject {
         val payload = JSONObject()
             .put("model", model)
-            .put("temperature", 0.8)
             .put("stream", false)
             .put(
                 "messages", JSONArray()
                     .put(JSONObject().put("role", "system").put("content", systemPrompt))
                     .put(JSONObject().put("role", "user").put("content", userText))
             )
+        t.temperature?.let { payload.put("temperature", it) }
+        t.maxTokens?.takeIf { it > 0 }?.let { payload.put("max_tokens", it) }
+        t.extraJson?.let { extra ->
+            extra.keys().forEach { k -> payload.put(k, extra.opt(k)) }
+        }
+        return payload
+    }
+
+    suspend fun chat(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        systemPrompt: String,
+        userText: String,
+        t: AiTunables = AiTunables(),
+    ): String = withContext(Dispatchers.IO) {
+        val url = baseUrl.trimEnd('/') + "/chat/completions"
+        val body = buildChatBody(model, systemPrompt, userText, t).toString()
+            .toRequestBody("application/json; charset=utf-8".toMediaType())
         http.newCall(
             Request.Builder().url(url)
                 .header("Authorization", "Bearer $apiKey")
-                .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .post(body)
                 .build()
         ).execute().use { r ->
             val text = r.body?.string() ?: ""

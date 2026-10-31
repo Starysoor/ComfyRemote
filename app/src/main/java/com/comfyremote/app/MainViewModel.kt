@@ -77,9 +77,14 @@ data class UiState(
     val aiBase: String = "",
     val aiKey: String = "",
     val aiModel: String = "",
+    val aiTemp: String = "0.8",
+    val aiMaxTok: String = "",
+    val aiExtra: String = "",
+    val aiThinking: String = "default",
+    val skills: List<AiSkillDef> = AiSkillDef.defaults(),
     val aiTest: String? = null,
     val aiTesting: Boolean = false,
-    // "$fieldKey|${skill.name}" while a request is in flight
+    // "$fieldKey|${skill.id}" while a request is in flight
     val aiBusy: String? = null,
     val aiResult: AiResult? = null,
     val update: UpdateUi? = null,
@@ -108,6 +113,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.copy(
             servers = strList(prefs.getString("servers", null)),
             history = history.load(),
+            skills = AiSkills.load(prefs),
         )
         maybeAutoCheckUpdate()
     }
@@ -447,6 +453,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 aiBase = prefs.getString("aiBase", "") ?: "",
                 aiKey = prefs.getString("aiKey", "") ?: "",
                 aiModel = prefs.getString("aiModel", "") ?: "",
+                aiTemp = prefs.getString("aiTemp", "0.8") ?: "0.8",
+                aiMaxTok = prefs.getString("aiMaxTok", "") ?: "",
+                aiExtra = prefs.getString("aiExtra", "") ?: "",
+                aiThinking = prefs.getString("aiThinking", "default") ?: "default",
+                skills = AiSkills.load(prefs),
                 aiTest = null,
             )
         }
@@ -455,6 +466,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun updateAiBase(v: String) = mutateState { it.copy(aiBase = v) }
     fun updateAiKey(v: String) = mutateState { it.copy(aiKey = v) }
     fun updateAiModel(v: String) = mutateState { it.copy(aiModel = v) }
+    fun updateAiTemp(v: String) = mutateState { it.copy(aiTemp = v) }
+    fun updateAiMaxTok(v: String) = mutateState { it.copy(aiMaxTok = v.filter { c -> c.isDigit() }) }
+    fun updateAiExtra(v: String) = mutateState { it.copy(aiExtra = v) }
+
+    /** Maps a thinking-mode choice onto the extra-JSON body fields. */
+    fun applyThinkingMode(mode: String) {
+        val extra = runCatching {
+            if (_state.value.aiExtra.isBlank()) JSONObject() else JSONObject(_state.value.aiExtra)
+        }.getOrDefault(JSONObject())
+        when (mode) {
+            "glm_off" -> extra.put("thinking", JSONObject().put("type", "disabled"))
+            "glm_on" -> extra.put("thinking", JSONObject().put("type", "enabled"))
+            "low", "medium", "high" -> extra.put("reasoning_effort", mode)
+            else -> { extra.remove("thinking"); extra.remove("reasoning_effort") }
+        }
+        mutateState { it.copy(aiThinking = mode, aiExtra = extra.toString()) }
+    }
 
     fun saveAiSettings() {
         val s = _state.value
@@ -462,8 +490,52 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .putString("aiBase", s.aiBase.trim())
             .putString("aiKey", s.aiKey.trim())
             .putString("aiModel", s.aiModel.trim())
+            .putString("aiTemp", s.aiTemp.trim())
+            .putString("aiMaxTok", s.aiMaxTok.trim())
+            .putString("aiExtra", s.aiExtra.trim())
+            .putString("aiThinking", s.aiThinking)
             .apply()
         Toast.makeText(getApplication(), "AI 设置已保存", Toast.LENGTH_SHORT).show()
+    }
+
+    // ---------- skill management ----------
+
+    private fun persistSkills(skills: List<AiSkillDef>) {
+        AiSkills.save(prefs, skills)
+        mutateState { it.copy(skills = skills) }
+    }
+
+    fun saveSkill(def: AiSkillDef) {
+        val list = _state.value.skills.toMutableList()
+        val idx = list.indexOfFirst { it.id == def.id }
+        if (idx >= 0) list[idx] = def else list.add(def)
+        persistSkills(list)
+    }
+
+    fun addSkill(label: String, prompt: String) {
+        val id = "custom_${System.currentTimeMillis()}"
+        persistSkills(_state.value.skills + AiSkillDef(id, label, prompt, false))
+    }
+
+    fun deleteSkill(id: String) {
+        persistSkills(_state.value.skills.filter { it.id != id })
+    }
+
+    fun resetSkill(id: String) {
+        val def = when (id) {
+            AiSkillDef.DEFAULT_NATURAL_ID -> AiSkillDef.NATURAL_DEFAULT
+            AiSkillDef.DEFAULT_TAGS_ID -> AiSkillDef.TAGS_DEFAULT
+            else -> return
+        }
+        saveSkill(def)
+    }
+
+    private fun aiTunables(): AiTunables {
+        val s = _state.value
+        val temp = s.aiTemp.trim().toDoubleOrNull()
+        val maxTok = s.aiMaxTok.trim().toIntOrNull()
+        val extra = runCatching { JSONObject(s.aiExtra) }.getOrNull()
+        return AiTunables(temp, maxTok, extra)
     }
 
     fun testAi() {
@@ -478,7 +550,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         mutateState { it.copy(aiTesting = true, aiTest = null) }
         viewModelScope.launch {
             try {
-                val reply = AiClient.chat(base, key, model, "你是连通性测试。收到任何消息都只回复：连接成功", "ping")
+                val reply = AiClient.chat(
+                    base, key, model,
+                    "你是连通性测试。收到任何消息都只回复：连接成功",
+                    "ping", aiTunables(),
+                )
                 mutateState { it.copy(aiTesting = false, aiTest = "成功：${reply.take(80)}") }
             } catch (e: Exception) {
                 mutateState { it.copy(aiTesting = false, aiTest = "失败：${e.message}".take(200)) }
@@ -497,16 +573,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return Triple(base, key, model)
     }
 
-    fun aiExpand(fieldKey: String, currentText: String, skill: AiSkill) {
+    fun aiExpand(fieldKey: String, currentText: String, skill: AiSkillDef) {
         val cfg = aiConfigured() ?: return
         if (currentText.isBlank()) {
             Toast.makeText(getApplication(), "先写几个字，AI 才知道往哪个方向扩写", Toast.LENGTH_SHORT).show()
             return
         }
-        mutateState { it.copy(aiBusy = "$fieldKey|${skill.name}") }
+        mutateState { it.copy(aiBusy = "$fieldKey|${skill.id}") }
         viewModelScope.launch {
             try {
-                val out = AiClient.chat(cfg.first, cfg.second, cfg.third, skill.systemPrompt, currentText)
+                val out = AiClient.chat(cfg.first, cfg.second, cfg.third, skill.systemPrompt, currentText, aiTunables())
                 mutateState { it.copy(aiBusy = null, aiResult = AiResult(fieldKey, out)) }
             } catch (e: Exception) {
                 mutateState { it.copy(aiBusy = null) }
@@ -541,11 +617,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun currentVersionPublic(): String = currentVersion()
 
     fun maybeAutoCheckUpdate() {
-        val token = prefs.getString("ghToken", "")?.trim().orEmpty()
-        if (token.isEmpty()) return
         val last = prefs.getLong("lastUpdateCheck", 0L)
         if (System.currentTimeMillis() - last < 24 * 3600_000L) return
-        viewModelScope.launch { runCatching { doCheckUpdate(token) } }
+        viewModelScope.launch { runCatching { doCheckUpdate(prefs.getString("ghToken", "")?.trim()) } }
     }
 
     fun openUpdateScreen() {
@@ -557,12 +631,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun updateGhToken(v: String) = mutateState { it.copy(ghToken = v) }
 
     fun checkUpdate() {
-        val token = _state.value.ghToken.trim()
-        if (token.isEmpty()) {
-            mutateState { it.copy(update = UpdateUi(status = "请先填写 GitHub Token（私有仓库读取需要）")) }
-            return
-        }
-        prefs.edit().putString("ghToken", token).apply()
+        val token = _state.value.ghToken.trim().ifBlank { null }
+        prefs.edit().putString("ghToken", token ?: "").apply()
         mutateState { it.copy(update = UpdateUi(status = "正在检查…")) }
         viewModelScope.launch {
             try {
@@ -573,7 +643,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun doCheckUpdate(token: String) {
+    private suspend fun doCheckUpdate(token: String?) {
         val rel = Updater.latest(token)
         prefs.edit().putLong("lastUpdateCheck", System.currentTimeMillis()).apply()
         val cur = currentVersion()
@@ -586,8 +656,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun downloadUpdate() {
         val rel = _state.value.update?.release ?: return
-        val token = prefs.getString("ghToken", "")?.trim().orEmpty()
-        if (token.isEmpty()) return
+        val token = prefs.getString("ghToken", "")?.trim()?.ifBlank { null }
         mutateState { it.copy(update = UpdateUi(release = rel, downloading = true, progress = 0f)) }
         viewModelScope.launch {
             try {
