@@ -23,7 +23,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-class ComfyException(message: String) : IOException(message)
+open class ComfyException(message: String) : IOException(message)
 
 data class SysInfo(val version: String, val device: String, val vramGb: String)
 

@@ -4,37 +4,28 @@ import android.app.Application
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.content.ContentValues
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
-import android.os.Environment
-import android.provider.MediaStore
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
+import com.comfyremote.app.data.media.IncomingMediaRepository
+import com.comfyremote.app.data.repository.AiSettings
+import com.comfyremote.app.data.repository.PromptPreset
+import com.comfyremote.app.ui.L10n
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import java.util.concurrent.TimeUnit
-import okhttp3.OkHttpClient
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import com.comfyremote.app.ui.L10n
 import org.json.JSONObject
-import java.io.File
-import java.util.UUID
 
 enum class Screen { CONNECT, AI_SETTINGS, UPDATE, WORKFLOWS, GENERATE, HISTORY }
 
@@ -104,9 +95,8 @@ data class UiState(
     val scanProgress: Int? = null,
     val scanFound: List<ServerEntry> = emptyList(),
     val scanError: String? = null,
-    val bookmarks: List<Bookmark> = emptyList(),
+    val bookmarks: List<PromptPreset> = emptyList(),
 )
-
 
 /** True when ComfyUI marked this prompt as user-interrupted (not a real error). */
 fun historyCancelled(entry: JSONObject): Boolean {
@@ -118,9 +108,6 @@ fun historyCancelled(entry: JSONObject): Boolean {
     return false
 }
 
-/** A saved prompt snippet (from history or the current editor). */
-data class Bookmark(val id: String, val title: String, val prompts: List<LabeledText>, val time: Long)
-
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
@@ -128,57 +115,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         const val CHANNEL_DONE = "gen_done"
     }
 
-    private val prefs = app.getSharedPreferences("comfyremote", Application.MODE_PRIVATE)
-    private val history = HistoryStore(app)
-    private val _state = MutableStateFlow(UiState(url = prefs.getString("url", null) ?: "http://10.0.2.2:8188"))
+    private val container get() = (getApplication() as ComfyRemoteApp).container
+    private val session get() = container.serverSession
+
+    private val _state = MutableStateFlow(UiState(url = container.serverRepository.lastUrl()))
     val state: StateFlow<UiState> = _state.asStateFlow()
 
-    private var api: ComfyApi? = null
-    private var serverVersion = ""
     private var converted: ConvertedWorkflow? = null
     private var currentWfPath = ""
     private var genJob: Job? = null
-    private var pendingShare: Uri? = null
 
     init {
         _state.value = _state.value.copy(
-            servers = loadServers(),
-            history = history.load(),
-            skills = AiSkills.load(prefs),
-            bookmarks = loadBookmarks(),
+            servers = container.serverRepository.load(),
+            history = container.historyRepository.load(),
+            skills = container.aiSkillStore.load(),
+            bookmarks = container.promptPresetRepository.load(),
         )
         maybeAutoCheckUpdate()
-    }
-
-    /** Loads saved servers; migrates the legacy string-array format, defaulting alias = url. */
-    private fun loadServers(): List<ServerEntry> = runCatching {
-        val v2 = prefs.getString("serversV2", null)
-        if (v2 != null) {
-            val arr = JSONArray(v2)
-            return (0 until arr.length()).mapNotNull { i ->
-                val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                ServerEntry(o.optString("name"), o.optString("url"))
-            }
-        }
-        strList(prefs.getString("servers", null)).map { ServerEntry(it, it) }
-    }.getOrDefault(emptyList())
-
-    private fun persistServers(list: List<ServerEntry>) {
-        val arr = JSONArray()
-        list.forEach { arr.put(JSONObject().put("name", it.name).put("url", it.url)) }
-        prefs.edit().putString("serversV2", arr.toString()).apply()
-    }
-
-    fun renameServer(url: String, alias: String) {
-        val list = _state.value.servers.map { if (it.url == url) it.copy(name = alias) else it }
-        persistServers(list)
-        mutateState { it.copy(servers = list) }
-    }
-
-    fun removeServer(url: String) {
-        val list = _state.value.servers.filter { it.url != url }
-        persistServers(list)
-        mutateState { it.copy(servers = list) }
     }
 
     private fun mutateState(f: (UiState) -> UiState) {
@@ -187,6 +141,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun mutateGen(f: (GenState) -> GenState) {
         mutateState { s -> s.copy(gen = s.gen?.let(f)) }
+    }
+
+    private fun toast(msg: String, long: Boolean = false) {
+        Toast.makeText(getApplication(), msg, if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
     }
 
     /** Live progress on the foreground-service notification (id 1), tap -> app. */
@@ -222,16 +180,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         mutateState { it.copy(connecting = true, connError = null, sysInfo = null) }
         viewModelScope.launch {
             try {
-                val a = ComfyApi(clean)
-                val info = a.systemStats()
-                api = a
-                serverVersion = info.version
-                objectInfo = null
-                prefs.edit().putString("url", clean).apply()
+                val info = session.connect(clean)
+                container.objectInfoCache.invalidate()
+                container.serverRepository.saveLastUrl(clean)
                 mutateState {
                     it.copy(
                         url = clean, connecting = false, screen = Screen.WORKFLOWS,
-                        servers = rememberServer(clean),
+                        servers = container.serverRepository.remember(clean),
                         sysInfo = "ComfyUI ${info.version} · ${info.device}${if (info.vramGb.isNotEmpty()) " · ${info.vramGb}" else ""}"
                     )
                 }
@@ -242,20 +197,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun rememberServer(url: String): List<ServerEntry> {
-        val exists = _state.value.servers.any { it.url == url }
-        val list = if (exists) _state.value.servers
-        else (_state.value.servers + ServerEntry(url, url)).takeLast(5)
-        persistServers(list)
-        return list
-    }
-
     fun loadWorkflows() {
-        val a = api ?: return
+        if (!session.connected) return
         mutateState { it.copy(loadingWf = true, wfError = null) }
         viewModelScope.launch {
             try {
-                val list = a.listWorkflows()
+                val list = container.workflowRepository.list()
                 mutateState { it.copy(loadingWf = false, workflows = list) }
             } catch (e: Exception) {
                 mutateState { it.copy(loadingWf = false, wfError = L10n.t("获取工作流失败：", "Failed to list workflows: ") + (e.message ?: "error")) }
@@ -263,37 +210,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private var objectInfo: JSONObject? = null
-
-    /** Disk cache of /object_info keyed by server; invalidated when ComfyUI version changes. */
-    private suspend fun loadObjectInfo(a: ComfyApi): JSONObject {
-        objectInfo?.let { return it }
-        val cacheFile = File(getApplication<Application>().cacheDir, "object_info_${a.base.hashCode()}.json")
-        if (cacheFile.isFile) {
-            runCatching {
-                val o = JSONObject(cacheFile.readText())
-                if (o.optString("version") == serverVersion) {
-                    val data = o.optJSONObject("data")
-                    if (data != null) return data.also { objectInfo = it }
-                }
-            }
-        }
-        val fresh = a.objectInfo()
-        runCatching {
-            cacheFile.writeText(JSONObject().put("version", serverVersion).put("data", fresh).toString())
-        }
-        objectInfo = fresh
-        return fresh
-    }
-
     fun openWorkflow(entry: WorkflowEntry) {
-        val a = api ?: return
+        if (!session.connected) return
         viewModelScope.launch {
             mutateState { it.copy(busy = L10n.t("正在加载工作流…", "Loading workflow…")) }
             try {
-                val info = loadObjectInfo(a)
-                val json = a.fetchWorkflow(entry.path)
-                val conv = WorkflowConverter.convert(json, info)
+                val conv = container.workflowRepository.convert(entry)
                 converted = conv
                 currentWfPath = entry.path
                 val titles = conv.prompt.keys().asSequence().associate { nid ->
@@ -328,7 +250,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun generate() {
         val g = _state.value.gen ?: return
         val cv = converted ?: return
-        val a = api ?: return
+        val a = session.require()
         if (g.running) return
         val ctx = getApplication<Application>()
         ensureNotificationChannels(ctx)
@@ -338,7 +260,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 preview = null, status = L10n.t("排队中…", "Queued…"), progress = null)
         }
         updateRunningNotification(L10n.t("排队中…", "Queued…"), null)
-        val clientId = UUID.randomUUID().toString()
+        val clientId = java.util.UUID.randomUUID().toString()
         val values = g.values
         val randomSeed = g.randomSeed
         genJob = viewModelScope.launch {
@@ -378,8 +300,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     try {
                         val bytes = a.downloadImage(im)
                         decodeBitmap(bytes)?.let { results.add(it) }
-                        val f = history.newImageFile(pid, idx)
-                        withContext(Dispatchers.IO) { f.writeBytes(bytes) }
+                        val f = container.historyRepository.newImageFile(pid, idx)
+                        withContext(kotlinx.coroutines.Dispatchers.IO) { f.writeBytes(bytes) }
                         paths.add(f.absolutePath)
                     } catch (_: Exception) {
                     }
@@ -392,11 +314,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     .filter { it.value.isNotBlank() }
                 val seeds = cv.fields.filter { it.kind == FieldKind.SEED }
                     .mapNotNull { finalValues[it.key] }.joinToString(", ")
-                history.add(
+                container.historyRepository.add(
                     HistoryItem(pid, currentWfPath, g.wfName, System.currentTimeMillis(),
                         finalValues, randomSeed, paths, summary, prompts, seeds)
                 )
-                mutateState { s -> s.copy(history = history.load()) }
+                mutateState { s -> s.copy(history = container.historyRepository.load()) }
                 mutateGen { cur ->
                     cur.copy(
                         running = false, progress = 1f,
@@ -488,14 +410,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun cancelGenerate() {
-        val a = api ?: return
-        viewModelScope.launch { runCatching { a.interrupt() } }
+        viewModelScope.launch { runCatching { session.require().interrupt() } }
     }
 
     // ---------- uploads ----------
 
     fun uploadImage(key: String, uri: Uri) {
-        val a = api ?: return
+        val a = session.require()
         viewModelScope.launch {
             mutateState { it.copy(busy = L10n.t("上传图片…", "Uploading…")) }
             try {
@@ -504,14 +425,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 mutateState { it.copy(busy = null) }
             } catch (e: Exception) {
                 mutateState { it.copy(busy = null) }
-                Toast.makeText(getApplication(), L10n.t("上传失败：", "Upload failed: ") + (e.message ?: "error"), Toast.LENGTH_LONG).show()
+                toast(L10n.t("上传失败：", "Upload failed: ") + (e.message ?: "error"), long = true)
             }
         }
     }
 
     /** Uploads several images and fills them into the IMAGE fields in order. */
     fun uploadImagesBatch(uris: List<Uri>) {
-        val a = api ?: return
+        val a = session.require()
         if (uris.isEmpty()) return
         viewModelScope.launch {
             mutateState { it.copy(busy = L10n.t("上传图片（0/${uris.size}）…", "Uploading (0/${uris.size})…")) }
@@ -530,64 +451,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 mutateState { it.copy(busy = null) }
             } catch (e: Exception) {
                 mutateState { it.copy(busy = null) }
-                Toast.makeText(getApplication(), L10n.t("上传失败：", "Upload failed: ") + (e.message ?: "error"), Toast.LENGTH_LONG).show()
+                toast(L10n.t("上传失败：", "Upload failed: ") + (e.message ?: "error"), long = true)
             }
         }
     }
 
     private suspend fun uploadOne(a: ComfyApi, uri: Uri, seq: Int): String {
         val ctx = getApplication<Application>()
-        val raw = withContext(Dispatchers.IO) {
+        val raw = withContext(kotlinx.coroutines.Dispatchers.IO) {
             ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         } ?: throw ComfyException(L10n.t("读取图片失败", "Failed to read image"))
-        val (bytes, ext) = withContext(Dispatchers.IO) { prepareForUpload(raw, ctx.contentResolver.getType(uri)) }
-        return a.uploadImage(bytes, "mobile_${System.currentTimeMillis()}_$seq.$ext")
-    }
-
-    /** Downscales big camera/gallery photos to 1536px JPEG so uploads finish fast. */
-    private fun prepareForUpload(bytes: ByteArray, mime: String?): Pair<ByteArray, String> {
-        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        if (bounds.outWidth <= 0) return Pair(bytes, mime?.substringAfterLast('/', "png")?.takeIf { it.length in 2..5 } ?: "png")
-        val maxDim = maxOf(bounds.outWidth, bounds.outHeight)
-        if (maxDim <= 1536) return Pair(bytes, mime?.substringAfterLast('/', "png")?.takeIf { it.length in 2..5 } ?: "png")
-        val opts = android.graphics.BitmapFactory.Options().apply {
-            inSampleSize = (maxDim / 1536).coerceAtLeast(1)
+        val (bytes, ext) = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val prepared = com.comfyremote.app.data.media.ImagePreprocessor.prepare(raw, ctx.contentResolver.getType(uri))
+            prepared
         }
-        val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
-            ?: return Pair(bytes, "jpg")
-        val rotation = runCatching {
-            when (android.media.ExifInterface(java.io.ByteArrayInputStream(bytes))
-                .getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, 1)) {
-                android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-                android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-                android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-                else -> 0f
-            }
-        }.getOrDefault(0f)
-        val oriented = if (rotation != 0f) {
-            val m = android.graphics.Matrix().apply { postRotate(rotation) }
-            android.graphics.Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
-        } else bmp
-        val bos = java.io.ByteArrayOutputStream()
-        oriented.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, bos)
-        return Pair(bos.toByteArray(), "jpg")
+        return a.uploadImage(bytes, "mobile_${System.currentTimeMillis()}_$seq.$ext")
     }
 
     // ---------- AI prompt expansion ----------
 
     fun openAiSettings() {
+        val ai = container.aiSettingsStore.load()
         mutateState {
             it.copy(
                 screen = Screen.AI_SETTINGS,
-                aiBase = prefs.getString("aiBase", "") ?: "",
-                aiKey = prefs.getString("aiKey", "") ?: "",
-                aiModel = prefs.getString("aiModel", "") ?: "",
-                aiTemp = prefs.getString("aiTemp", "0.8") ?: "0.8",
-                aiMaxTok = prefs.getString("aiMaxTok", "") ?: "",
-                aiExtra = prefs.getString("aiExtra", "") ?: "",
-                aiThinking = prefs.getString("aiThinking", "default") ?: "default",
-                skills = AiSkills.load(prefs),
+                aiBase = ai.baseUrl, aiKey = ai.apiKey, aiModel = ai.model,
+                aiTemp = ai.temperatureText, aiMaxTok = ai.maxTokensText,
+                aiExtra = ai.extraJson, aiThinking = ai.thinkingMode,
+                skills = container.aiSkillStore.load(),
                 aiTest = null,
             )
         }
@@ -616,22 +507,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveAiSettings() {
         val s = _state.value
-        prefs.edit()
-            .putString("aiBase", s.aiBase.trim())
-            .putString("aiKey", s.aiKey.trim())
-            .putString("aiModel", s.aiModel.trim())
-            .putString("aiTemp", s.aiTemp.trim())
-            .putString("aiMaxTok", s.aiMaxTok.trim())
-            .putString("aiExtra", s.aiExtra.trim())
-            .putString("aiThinking", s.aiThinking)
-            .apply()
-        Toast.makeText(getApplication(), L10n.t("AI 设置已保存", "AI settings saved"), Toast.LENGTH_SHORT).show()
+        container.aiSettingsStore.save(
+            AiSettings(
+                baseUrl = s.aiBase.trim(), apiKey = s.aiKey.trim(), model = s.aiModel.trim(),
+                temperatureText = s.aiTemp.trim(), maxTokensText = s.aiMaxTok.trim(),
+                extraJson = s.aiExtra.trim(), thinkingMode = s.aiThinking,
+            )
+        )
+        toast(L10n.t("AI 设置已保存", "AI settings saved"))
     }
 
     // ---------- skill management ----------
 
     private fun persistSkills(skills: List<AiSkillDef>) {
-        AiSkills.save(prefs, skills)
+        container.aiSkillStore.save(skills)
         mutateState { it.copy(skills = skills) }
     }
 
@@ -655,18 +544,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val def = when (id) {
             AiSkillDef.DEFAULT_NATURAL_ID -> AiSkillDef.NATURAL_DEFAULT
             AiSkillDef.DEFAULT_TAGS_ID -> AiSkillDef.TAGS_DEFAULT
+            AiSkillDef.DEFAULT_EN_ID -> AiSkillDef.EN_EXPAND_DEFAULT
+            AiSkillDef.DEFAULT_NEG_ID -> AiSkillDef.NEGATIVE_DEFAULT
+            AiSkillDef.DEFAULT_TRANSLATE_ID -> AiSkillDef.TRANSLATE_DEFAULT
             else -> return
         }
         saveSkill(def)
     }
 
-    private fun aiTunables(): AiTunables {
-        val s = _state.value
-        val temp = s.aiTemp.trim().toDoubleOrNull()
-        val maxTok = s.aiMaxTok.trim().toIntOrNull()
-        val extra = runCatching { JSONObject(s.aiExtra) }.getOrNull()
-        return AiTunables(temp, maxTok, extra)
-    }
+    private fun aiTunables() = container.aiSettingsStore.load().asTunables()
 
     fun testAi() {
         val s = _state.value
@@ -693,20 +579,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun aiConfigured(): Triple<String, String, String>? {
-        val base = prefs.getString("aiBase", "")?.trim().orEmpty()
-        val key = prefs.getString("aiKey", "")?.trim().orEmpty()
-        val model = prefs.getString("aiModel", "")?.trim().orEmpty()
-        if (base.isEmpty() || key.isEmpty() || model.isEmpty()) {
-            Toast.makeText(getApplication(), L10n.t("请先在连接页配置 AI 扩写设置", "Configure AI settings first (from the connect screen)"), Toast.LENGTH_LONG).show()
+        val ai = container.aiSettingsStore.load()
+        if (!ai.configured) {
+            toast(L10n.t("请先在连接页配置 AI 扩写设置", "Configure AI settings first (from the connect screen)"), long = true)
             return null
         }
-        return Triple(base, key, model)
+        return Triple(ai.baseUrl, ai.apiKey, ai.model)
     }
 
     fun aiExpand(fieldKey: String, currentText: String, skill: AiSkillDef) {
         val cfg = aiConfigured() ?: return
         if (currentText.isBlank()) {
-            Toast.makeText(getApplication(), L10n.t("先写几个字，AI 才知道往哪个方向扩写", "Type a few words first so the AI knows the direction"), Toast.LENGTH_SHORT).show()
+            toast(L10n.t("先写几个字，AI 才知道往哪个方向扩写", "Type a few words first so the AI knows the direction"))
             return
         }
         mutateState { it.copy(aiBusy = "$fieldKey|${skill.id}") }
@@ -716,7 +600,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 mutateState { it.copy(aiBusy = null, aiResult = AiResult(fieldKey, out)) }
             } catch (e: Exception) {
                 mutateState { it.copy(aiBusy = null) }
-                Toast.makeText(getApplication(), (L10n.t("AI 调用失败：", "AI call failed: ") + (e.message ?: "error")).take(180), Toast.LENGTH_LONG).show()
+                toast((L10n.t("AI 调用失败：", "AI call failed: ") + (e.message ?: "error")).take(180), long = true)
             }
         }
     }
@@ -747,14 +631,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun currentVersionPublic(): String = currentVersion()
 
     fun maybeAutoCheckUpdate() {
-        val last = prefs.getLong("lastUpdateCheck", 0L)
-        if (System.currentTimeMillis() - last < 24 * 3600_000L) return
-        viewModelScope.launch { runCatching { doCheckUpdate(prefs.getString("ghToken", "")?.trim()) } }
+        if (System.currentTimeMillis() - container.updateSettingsStore.lastUpdateCheck() < 24 * 3600_000L) return
+        viewModelScope.launch { runCatching { doCheckUpdate(container.updateSettingsStore.ghToken()) } }
     }
 
     fun openUpdateScreen() {
         mutateState {
-            it.copy(screen = Screen.UPDATE, ghToken = prefs.getString("ghToken", "") ?: "", update = it.update)
+            it.copy(screen = Screen.UPDATE, ghToken = container.updateSettingsStore.ghToken() ?: "", update = it.update)
         }
     }
 
@@ -762,7 +645,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun checkUpdate() {
         val token = _state.value.ghToken.trim().ifBlank { null }
-        prefs.edit().putString("ghToken", token ?: "").apply()
+        container.updateSettingsStore.saveGhToken(token)
         mutateState { it.copy(update = UpdateUi(status = L10n.t("正在检查…", "Checking…"))) }
         viewModelScope.launch {
             try {
@@ -775,7 +658,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun doCheckUpdate(token: String?) {
         val rel = Updater.latest(token)
-        prefs.edit().putLong("lastUpdateCheck", System.currentTimeMillis()).apply()
+        container.updateSettingsStore.markUpdateChecked()
         val cur = currentVersion()
         if (Updater.compareVersions(rel.tag, cur) > 0) {
             mutateState { it.copy(update = UpdateUi(release = rel)) }
@@ -786,12 +669,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun downloadUpdate() {
         val rel = _state.value.update?.release ?: return
-        val token = prefs.getString("ghToken", "")?.trim()?.ifBlank { null }
+        val token = container.updateSettingsStore.ghToken()
         mutateState { it.copy(update = UpdateUi(release = rel, downloading = true, progress = 0f)) }
         viewModelScope.launch {
             try {
                 val ctx = getApplication<Application>()
-                val dest = File(ctx.cacheDir, "update/comfyremote_${rel.tag}.apk")
+                val dest = java.io.File(ctx.cacheDir, "update/comfyremote_${rel.tag}.apk")
                 Updater.download(token, rel, dest) { p ->
                     mutateState { it.copy(update = it.update?.copy(progress = p)) }
                 }
@@ -806,9 +689,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- history ----------
 
     fun reopenFromHistory(item: HistoryItem) {
-        val a = api ?: return
+        if (!session.connected) return
         if (item.wfPath.isEmpty()) {
-            Toast.makeText(getApplication(), L10n.t("该记录没有关联工作流，无法重新生成", "No workflow linked to this entry"), Toast.LENGTH_SHORT).show()
+            toast(L10n.t("该记录没有关联工作流，无法重新生成", "No workflow linked to this entry"))
             return
         }
         // clear any leftover generate state so the waiter below sees the freshly loaded workflow
@@ -828,32 +711,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteHistoryItem(id: String) {
-        history.delete(id)
-        mutateState { it.copy(history = history.load()) }
+        container.historyRepository.delete(id)
+        mutateState { it.copy(history = container.historyRepository.load()) }
     }
 
     // ---------- misc ----------
 
     fun saveResult(bitmap: Bitmap) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val ctx = getApplication<Application>()
             try {
-                val values = ContentValues().apply {
-                    put(MediaStore.Images.Media.DISPLAY_NAME, "comfy_${System.currentTimeMillis()}.png")
-                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/ComfyRemote")
-                }
-                val uri = ctx.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-                    ?: throw ComfyException(L10n.t("无法创建媒体文件", "Could not create media file"))
-                ctx.contentResolver.openOutputStream(uri)?.use {
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
-                }
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(ctx, L10n.t("已保存到 相册/ComfyRemote", "Saved to Pictures/ComfyRemote"), Toast.LENGTH_SHORT).show()
+                container.galleryExporter.savePng(bitmap)
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    toast(container.galleryExporter.savedMessage())
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(ctx, L10n.t("保存失败：", "Save failed: ") + (e.message ?: "error"), Toast.LENGTH_SHORT).show()
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    toast(container.galleryExporter.failMessage(e))
                 }
             }
         }
@@ -867,125 +741,63 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun handleSendIntent(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND) return
         val uri = androidx.core.content.IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java) ?: return
-        pendingShare = uri
+        container.incomingMedia.add(uri)
         mutateState { it.copy(pendingShare = true) }
         tryConsumePendingShare()
     }
 
     /** Fills the first reference-image slot of the open workflow with the shared image. */
     fun tryConsumePendingShare() {
-        val uri = pendingShare ?: return
         val g = _state.value.gen ?: return
         if (g.running) return
         if (g.fields.none { it.kind == FieldKind.IMAGE }) return
-        pendingShare = null
+        val uris = container.incomingMedia.drain()
+        if (uris.isEmpty()) return
         mutateState { it.copy(pendingShare = false) }
-        uploadImagesBatch(listOf(uri))
+        uploadImagesBatch(uris)
     }
 
     // ---------- LAN scan ----------
 
-    private val scanHttp = OkHttpClient.Builder()
-        .connectTimeout(400, TimeUnit.MILLISECONDS)
-        .readTimeout(1200, TimeUnit.MILLISECONDS)
-        .build()
-
-    private fun localSubnetPrefix(): String? = runCatching {
-        val e = java.net.NetworkInterface.getNetworkInterfaces()
-        while (e.hasMoreElements()) {
-            val nif = e.nextElement()
-            if (!nif.isUp || nif.isLoopback) continue
-            val addrs = nif.inetAddresses
-            while (addrs.hasMoreElements()) {
-                val a = addrs.nextElement()
-                if (a is java.net.Inet4Address && a.isSiteLocalAddress) {
-                    return a.hostAddress!!.substringBeforeLast('.') + '.'
-                }
-            }
-        }
-        null
-    }.getOrNull()
-
-    private suspend fun isComfyAt(ip: String): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
-            val socket = java.net.Socket()
-            socket.connect(java.net.InetSocketAddress(ip, 8188), 400)
-            socket.close()
-            scanHttp.newCall(
-                okhttp3.Request.Builder().url("http://$ip:8188/system_stats").build()
-            ).execute().use { r ->
-                r.isSuccessful && JSONObject(r.body?.string() ?: "").optJSONObject("system")
-                    ?.has("comfyui_version") == true
-            }
-        }.getOrDefault(false)
-    }
-
     fun scanLan() {
         if (_state.value.scanning) return
         viewModelScope.launch {
-            val prefix = withContext(Dispatchers.IO) { localSubnetPrefix() }
-            if (prefix == null) {
-                mutateState { it.copy(scanError = L10n.t("无法确定 Wi-Fi 网段（未连接或使用流量）", "Unknown subnet - not on Wi-Fi")) }
-                return@launch
-            }
-            mutateState { it.copy(scanning = true, scanProgress = 0, scanFound = emptyList(), scanError = null) }
-            val found = java.util.Collections.synchronizedList(mutableListOf<ServerEntry>())
-            val jobs = mutableListOf<Job>()
-            for (i in 1..254) {
-                val ip = "$prefix$i"
-                jobs += launch(Dispatchers.IO) {
-                    if (isComfyAt(ip)) {
-                        found.add(ServerEntry(ip, "http://$ip:8188"))
-                        mutateState { it.copy(scanFound = found.toList()) }
-                    }
-                    mutateState { s -> s.copy(scanProgress = (s.scanProgress ?: 0) + 1) }
+            container.lanDiscovery.discover().collect { ev ->
+                when (ev) {
+                    is com.comfyremote.app.data.discovery.DiscoveryEvent.Progress ->
+                        mutateState { it.copy(scanning = true, scanProgress = ev.scanned) }
+                    is com.comfyremote.app.data.discovery.DiscoveryEvent.Found ->
+                        mutateState { it.copy(scanFound = it.scanFound + ev.server.asEntry()) }
+                    is com.comfyremote.app.data.discovery.DiscoveryEvent.Error ->
+                        mutateState { it.copy(scanError = scanErrorMessage(ev.message)) }
+                    com.comfyremote.app.data.discovery.DiscoveryEvent.Finished ->
+                        mutateState {
+                            it.copy(
+                                scanning = false,
+                                scanError = if (it.scanFound.isEmpty()) L10n.t("未发现 ComfyUI（确认手机与电脑在同一 Wi-Fi）", "No ComfyUI found - check that both devices are on the same Wi-Fi") else null
+                            )
+                        }
                 }
             }
-            jobs.joinAll()
-            mutateState {
-                it.copy(
-                    scanning = false,
-                    scanError = if (it.scanFound.isEmpty()) L10n.t("未发现 ComfyUI（确认手机与电脑在同一 Wi-Fi）", "No ComfyUI found - check that both devices are on the same Wi-Fi") else null
-                )
-            }
         }
     }
 
-    // ---------- prompt bookmarks ----------
-
-    private fun loadBookmarks(): List<Bookmark> = runCatching {
-        val arr = JSONArray(prefs.getString("bookmarks", null) ?: return@runCatching emptyList())
-        (0 until arr.length()).mapNotNull { i ->
-            val o = arr.optJSONObject(i) ?: return@mapNotNull null
-            val prompts = mutableListOf<LabeledText>()
-            val pa = o.optJSONArray("prompts")
-            if (pa != null) for (j in 0 until pa.length()) {
-                val po = pa.optJSONObject(j) ?: continue
-                prompts.add(LabeledText(po.optString("label"), po.optString("value")))
-            }
-            Bookmark(o.optString("id"), o.optString("title"), prompts, o.optLong("time"))
-        }
-    }.getOrDefault(emptyList()).sortedByDescending { it.time }
-
-    private fun persistBookmarks(list: List<Bookmark>) {
-        val arr = JSONArray()
-        list.forEach { b ->
-            arr.put(JSONObject()
-                .put("id", b.id).put("title", b.title).put("time", b.time)
-                .put("prompts", JSONArray().apply { b.prompts.forEach { pp -> put(JSONObject().put("label", pp.label).put("value", pp.value)) } }))
-        }
-        prefs.edit().putString("bookmarks", arr.toString()).apply()
+    private fun scanErrorMessage(code: String): String = when (code) {
+        "not-on-wifi" -> L10n.t("无法确定 Wi-Fi 网段（未连接或使用流量）", "Unknown subnet - not on Wi-Fi")
+        else -> code
     }
 
-    fun addBookmark(title: String, prompts: List<LabeledText>) {
-        val trimmed = prompts.filter { it.value.isNotBlank() }
-        if (trimmed.isEmpty()) return
-        val bm = Bookmark("bm_${System.currentTimeMillis()}", title, trimmed, System.currentTimeMillis())
-        val list = (listOf(bm) + loadBookmarks()).take(30)
-        persistBookmarks(list)
-        mutateState { it.copy(bookmarks = list) }
-        Toast.makeText(getApplication(), L10n.t("已收藏提示词", "Prompt bookmarked"), Toast.LENGTH_SHORT).show()
+    // ---------- server management ----------
+
+    fun renameServer(url: String, alias: String) {
+        mutateState { it.copy(servers = container.serverRepository.rename(url, alias)) }
     }
+
+    fun removeServer(url: String) {
+        mutateState { it.copy(servers = container.serverRepository.remove(url)) }
+    }
+
+    // ---------- prompt bookmarks (prompt library) ----------
 
     fun addBookmarkFromCurrent() {
         val g = _state.value.gen ?: return
@@ -993,28 +805,41 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .map { LabeledText(it.label, g.values[it.key] ?: it.value) }
             .filter { it.value.isNotBlank() }
         if (texts.isEmpty()) {
-            Toast.makeText(getApplication(), L10n.t("当前没有可收藏的提示词", "Nothing to bookmark yet"), Toast.LENGTH_SHORT).show()
+            toast(L10n.t("当前没有可收藏的提示词", "Nothing to bookmark yet"))
             return
         }
-        addBookmark(texts.first().value.take(28), texts)
+        addBookmark(texts.first().value.take(28), texts, currentWfPath.ifEmpty { null })
     }
 
     fun addBookmarkFromHistory(item: HistoryItem) {
         if (item.prompts.isEmpty()) {
-            Toast.makeText(getApplication(), L10n.t("该记录没有完整提示词可收藏", "No saved prompts for this entry"), Toast.LENGTH_SHORT).show()
+            toast(L10n.t("该记录没有完整提示词可收藏", "No saved prompts for this entry"))
             return
         }
-        addBookmark(item.summary.take(28), item.prompts)
+        addBookmark(item.summary.take(28), item.prompts, item.wfPath.ifEmpty { null })
+    }
+
+    private fun addBookmark(title: String, prompts: List<LabeledText>, workflowPath: String?) {
+        val trimmed = prompts.filter { it.value.isNotBlank() }
+        if (trimmed.isEmpty()) return
+        val preset = PromptPreset(
+            id = "bm_${System.currentTimeMillis()}",
+            title = title,
+            prompts = trimmed,
+            workflowPath = workflowPath,
+            createdAt = System.currentTimeMillis(),
+        )
+        mutateState { it.copy(bookmarks = container.promptPresetRepository.add(preset)) }
+        toast(L10n.t("已收藏提示词", "Prompt bookmarked"))
     }
 
     fun deleteBookmark(id: String) {
-        val list = loadBookmarks().filter { it.id != id }
-        persistBookmarks(list)
-        mutateState { it.copy(bookmarks = list) }
+        mutateState { it.copy(bookmarks = container.promptPresetRepository.delete(id)) }
     }
 
     /** Fills the workflow text fields in stored order. */
-    fun applyBookmark(bm: Bookmark) {
+    fun applyBookmark(bm: PromptPreset) {
+        container.promptPresetRepository.markUsed(bm.id)
         mutateGen { g ->
             var newValues = g.values
             var applied = 0
@@ -1026,7 +851,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             g.copy(values = newValues)
         }
-        Toast.makeText(getApplication(), L10n.t("已应用书签", "Bookmark applied"), Toast.LENGTH_SHORT).show()
+        toast(L10n.t("已应用书签", "Bookmark applied"))
     }
 
     fun back() {
@@ -1045,8 +870,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- notifications ----------
 
-    fun ensureNotificationChannels(ctx: Context) {
-        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    fun ensureNotificationChannels(ctx: android.content.Context) {
+        val nm = ctx.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_RUNNING, L10n.t("生成状态", "Generation status"), NotificationManager.IMPORTANCE_LOW))
         nm.createNotificationChannel(
@@ -1076,9 +901,4 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun decodeBitmap(bytes: ByteArray): Bitmap? =
         android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-
-    private fun strList(s: String?): List<String> = runCatching {
-        val a = JSONArray(s ?: "[]")
-        (0 until a.length()).map { a.optString(it) }
-    }.getOrDefault(emptyList())
 }

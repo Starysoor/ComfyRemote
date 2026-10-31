@@ -118,6 +118,7 @@ import java.util.Date
 import java.util.Locale
 
 import com.comfyremote.app.*
+import com.comfyremote.app.data.repository.PromptPreset
 
 @Composable
 fun AiResultDialog(initial: String, onDismiss: () -> Unit, onReplace: (String) -> Unit, onAppend: (String) -> Unit) {
@@ -152,9 +153,9 @@ fun AiResultDialog(initial: String, onDismiss: () -> Unit, onReplace: (String) -
 /** Saved prompt snippets; tap applies to the open workflow. */
 @Composable
 fun BookmarksDialog(
-    bookmarks: List<Bookmark>,
+    bookmarks: List<PromptPreset>,
     onDismiss: () -> Unit,
-    onApply: (Bookmark) -> Unit,
+    onApply: (PromptPreset) -> Unit,
     onDelete: (String) -> Unit,
     onSaveCurrent: () -> Unit,
 ) {
