@@ -132,15 +132,44 @@ fun decodeSampled(path: String, target: Int): Bitmap? = runCatching {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(vm: MainViewModel, s: UiState) {
-    BackHandler { vm.back() }
+    var selecting by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(setOf<String>()) }
     var viewing by remember { mutableStateOf<HistoryItem?>(null) }
     val ctx = LocalContext.current
+
+    fun exitSelection() { selecting = false; selected = mutableSetOf() }
+
+    BackHandler {
+        if (selecting) exitSelection() else vm.back()
+    }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(L10n.t("历史记录（", "History (") + "${s.history.size}" + L10n.t("）", ")")) },
+                title = {
+                    if (selecting) Text(L10n.t("已选 ", "Selected ") + "${selected.size}")
+                    else Text(L10n.t("历史记录（", "History (") + "${s.history.size}" + L10n.t("）", ")"))
+                },
                 navigationIcon = {
-                    IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) }
+                    IconButton(onClick = {
+                        if (selecting) exitSelection() else vm.back()
+                    }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) }
+                },
+                actions = {
+                    if (selecting) {
+                        TextButton(onClick = { selected = s.history.map { it.id }.toSet() }) {
+                            Text(L10n.t("全选", "Select all"))
+                        }
+                        IconButton(onClick = {
+                            vm.deleteHistoryItems(selected)
+                            exitSelection()
+                        }, enabled = selected.isNotEmpty()) {
+                            Icon(Icons.Default.Delete, L10n.t("删除", "Delete"), tint = MaterialTheme.colorScheme.error)
+                        }
+                    } else if (s.history.isNotEmpty()) {
+                        TextButton(onClick = { selecting = true }) {
+                            Text(L10n.t("多选", "Select"), style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
                 }
             )
         }
@@ -153,11 +182,22 @@ fun HistoryScreen(vm: MainViewModel, s: UiState) {
             LazyColumn(Modifier.padding(pad), contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 96.dp)) {
                 items(s.history, key = { it.id }) { item ->
                     Card(
-                        onClick = { viewing = item },
+                        onClick = { if (selecting) {
+                            selected = if (item.id in selected) selected - item.id else selected + item.id
+                        } else viewing = item },
                         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
                     ) {
                         Column(Modifier.padding(12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (selecting) {
+                                    Checkbox(
+                                        checked = item.id in selected,
+                                        onCheckedChange = {
+                                            selected = if (it) selected + item.id else selected - item.id
+                                        }
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                }
                                 item.images.firstOrNull()?.let { p ->
                                     val thumb by produceState<Bitmap?>(null, p) {
                                         value = withContext(kotlinx.coroutines.Dispatchers.IO) { decodeSampled(p, 160) }
@@ -177,7 +217,7 @@ fun HistoryScreen(vm: MainViewModel, s: UiState) {
                                     Text(item.summary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
                             }
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (!selecting) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 TextButton(onClick = { vm.reopenFromHistory(item) }) { Text(L10n.t("重新生成", "Re-generate")) }
                                 Spacer(Modifier.weight(1f))
                                 IconButton(onClick = { vm.deleteHistoryItem(item.id) }) {

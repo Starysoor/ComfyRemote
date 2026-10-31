@@ -16,5 +16,9 @@ class HistoryRepository(private val store: HistoryStore) {
         store.delete(id)
     }
 
+    fun deleteMany(ids: Collection<String>) {
+        store.deleteMany(ids)
+    }
+
     fun newImageFile(promptId: String, index: Int) = store.newImageFile(promptId, index)
 }

@@ -146,6 +146,30 @@ class GenerationRunner(
                 // partial download failure: keep the rest
             }
         }
+        // Persist BEFORE marking SUCCEEDED so UI collectors that reload history
+        // on the SUCCEEDED transition already see the new entry.
+        val summary = request.fields.firstOrNull { it.kind == FieldKind.TEXT }
+            ?.let { request.fieldValues[it.key] ?: it.value }?.take(50) ?: request.workflowName
+        val prompts = request.fields.filter { it.kind == FieldKind.TEXT }
+            .map { LabeledText(it.label, request.fieldValues[it.key] ?: it.value) }
+            .filter { it.value.isNotBlank() }
+        val seedFields = request.fields.filter { it.kind == FieldKind.SEED }
+            .mapNotNull { request.fieldValues[it.key] }.joinToString(", ")
+        historyRepository.add(
+            com.comfyremote.app.HistoryItem(
+                id = task.promptId ?: task.taskId,
+                wfPath = request.workflowPath,
+                wfName = request.workflowName,
+                time = System.currentTimeMillis(),
+                values = request.fieldValues,
+                randomSeed = request.randomSeed,
+                images = results.map { it.localPath },
+                summary = summary,
+                prompts = prompts,
+                seeds = seedFields.ifEmpty { seedsUsed.values.joinToString(", ") },
+            )
+        )
+
         update(
             current.copy(
                 phase = GenerationPhase.SUCCEEDED,
@@ -156,32 +180,6 @@ class GenerationRunner(
             )
         )
         return current
-    }
-
-    /** Persists the finished task into history. */
-    fun persistToHistory(final: GenerationTask) {
-        val request = final.request
-        val summary = request.fields.firstOrNull { it.kind == FieldKind.TEXT }
-            ?.let { request.fieldValues[it.key] ?: it.value }?.take(50) ?: request.workflowName
-        val prompts = request.fields.filter { it.kind == FieldKind.TEXT }
-            .map { LabeledText(it.label, request.fieldValues[it.key] ?: it.value) }
-            .filter { it.value.isNotBlank() }
-        val seedFields = request.fields.filter { it.kind == FieldKind.SEED }
-            .mapNotNull { request.fieldValues[it.key] }.joinToString(", ")
-        historyRepository.add(
-            com.comfyremote.app.HistoryItem(
-                id = final.promptId ?: final.taskId,
-                wfPath = request.workflowPath,
-                wfName = request.workflowName,
-                time = System.currentTimeMillis(),
-                values = request.fieldValues,
-                randomSeed = request.randomSeed,
-                images = final.results.map { it.localPath },
-                summary = summary,
-                prompts = prompts,
-                seeds = seedFields.ifEmpty { final.seedInfo },
-            )
-        )
     }
 
     private suspend fun pollHistory(a: ComfyApi, promptId: String): JSONObject {

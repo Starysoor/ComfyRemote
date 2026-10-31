@@ -13,6 +13,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.media.IncomingMediaRepository
 import com.comfyremote.app.data.repository.AiSettings
 import com.comfyremote.app.data.repository.PromptPreset
@@ -89,6 +90,7 @@ data class UiState(
     val scanFound: List<ServerEntry> = emptyList(),
     val scanError: String? = null,
     val bookmarks: List<PromptPreset> = emptyList(),
+    val currentWfPath: String = "",
 )
 
 /** True when ComfyUI marked this prompt as user-interrupted (not a real error). */
@@ -126,6 +128,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             bookmarks = container.promptPresetRepository.load(),
         )
         maybeAutoCheckUpdate()
+        // GenerationManager runs app-scoped; when a task succeeds its images are
+        // already persisted - refresh the history list so it appears immediately.
+        val syncedTaskIds = mutableSetOf<String>()
+        viewModelScope.launch {
+            container.generationManager.tasks.collect { tasks ->
+                var changed = false
+                for (t in tasks) {
+                    if (t.phase == GenerationPhase.SUCCEEDED && syncedTaskIds.add(t.taskId)) changed = true
+                }
+                if (changed) mutateState { it.copy(history = container.historyRepository.load()) }
+            }
+        }
     }
 
     private fun mutateState(f: (UiState) -> UiState) {
@@ -191,7 +205,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 mutateState {
                     it.copy(
-                        busy = null, screen = Screen.GENERATE,
+                        busy = null, screen = Screen.GENERATE, currentWfPath = entry.path,
                         gen = GenState(
                             wfName = entry.name, fields = conv.fields,
                             warnings = conv.warnings, notes = conv.notes, nodeTitles = titles
@@ -557,6 +571,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteHistoryItem(id: String) {
         container.historyRepository.delete(id)
+        mutateState { it.copy(history = container.historyRepository.load()) }
+    }
+
+    fun deleteHistoryItems(ids: Collection<String>) {
+        container.historyRepository.deleteMany(ids)
         mutateState { it.copy(history = container.historyRepository.load()) }
     }
 

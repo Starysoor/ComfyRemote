@@ -53,6 +53,14 @@ class HistoryStore(context: Context) {
         indexFile.writeText(JSONArray().apply { kept.forEach { put(it.toJson()) } }.toString())
     }
 
+    fun deleteMany(ids: Collection<String>) {
+        val idSet = ids.toSet()
+        val victims = load().filter { it.id in idSet }
+        victims.flatMap { it.images }.forEach { runCatching { File(it).delete() } }
+        val kept = load().filter { it.id !in idSet }
+        indexFile.writeText(JSONArray().apply { kept.forEach { put(it.toJson()) } }.toString())
+    }
+
     fun delete(id: String) {
         val victim = load().firstOrNull { it.id == id }
         victim?.images?.forEach { runCatching { File(it).delete() } } // only the deleted item's files

@@ -540,10 +540,13 @@ fun GenerateScreen(vm: MainViewModel, s: UiState) {
         CompareDialog(results, onDismiss = { compareOpen = false })
     }
     if (libraryOpen) {
+        val sortedPresets = remember(s.bookmarks, s.currentWfPath) {
+            s.bookmarks.sortedByDescending { it.workflowPath == null || it.workflowPath == s.currentWfPath }
+        }
         ModalBottomSheet(onDismissRequest = { libraryOpen = false }) {
             BookmarksSheetContent(
-                bookmarks = s.bookmarks,
-                onApply = { vm.applyBookmark(it); libraryOpen = false },
+                bookmarks = sortedPresets,
+                onApply = { vm.applyBookmark(it); vm.aiDismiss(); libraryOpen = false },
                 onDelete = { vm.deleteBookmark(it) },
                 onSaveCurrent = { vm.addBookmarkFromCurrent() }
             )

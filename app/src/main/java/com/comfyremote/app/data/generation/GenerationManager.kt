@@ -82,9 +82,6 @@ class GenerationManager(
                 patch(updated.taskId) { updated }
             }
             patch(final.taskId) { final }
-            if (final.phase == com.comfyremote.app.data.generation.GenerationPhase.SUCCEEDED) {
-                runner.persistToHistory(final)
-            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             patch(task.taskId) {
                 it.copy(
