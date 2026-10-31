@@ -156,47 +156,63 @@ fun AiSettingsScreen(vm: MainViewModel, s: UiState) {
             label = { Text(L10n.t("模型名（如 deepseek-chat / glm-4-flash）", "Model (e.g. deepseek-chat / glm-4-flash)")) },
             singleLine = true, modifier = Modifier.fillMaxWidth()
         )
-        // ---- generation tunables ----
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedTextField(
-                value = s.aiTemp,
-                onValueChange = { vm.updateAiTemp(it.filter { c -> c.isDigit() || c == '.' }) },
-                label = { Text(L10n.t("温度 0~2", "Temperature 0-2")) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedTextField(
-                value = s.aiMaxTok,
-                onValueChange = { vm.updateAiMaxTok(it) },
-                label = { Text(L10n.t("最大输出 tokens", "Max output tokens")) },
-                supportingText = { Text(L10n.t("空=不限", "empty = uncapped"), fontSize = 10.sp) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.weight(1f)
-            )
-        }
-        // thinking mode dropdown
-        Box {
-            OutlinedButton(onClick = { thinkingOpen = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(L10n.t("思考模式：", "Thinking mode: ") + (thinkingLabels[s.aiThinking] ?: s.aiThinking), modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
-                Text("▾", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            DropdownMenu(expanded = thinkingOpen, onDismissRequest = { thinkingOpen = false }) {
-                thinkingLabels.forEach { (k, label) ->
-                    DropdownMenuItem(text = { Text(label) }, onClick = { vm.applyThinkingMode(k); thinkingOpen = false })
+        // ---- generation tunables (advanced, default collapsed) ----
+        var advOpen by remember { mutableStateOf(false) }
+        Card {
+            Column {
+                Row(
+                    Modifier.fillMaxWidth().clickable { advOpen = !advOpen }.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(L10n.t("高级参数", "Advanced"), fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.weight(1f))
+                    Text(if (advOpen) L10n.t("收起", "Hide") else L10n.t("展开", "Show"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                }
+                if (advOpen) {
+                    Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedTextField(
+                                value = s.aiTemp,
+                                onValueChange = { vm.updateAiTemp(it.filter { c -> c.isDigit() || c == '.' }) },
+                                label = { Text(L10n.t("温度 0~2", "Temperature 0-2")) },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = s.aiMaxTok,
+                                onValueChange = { vm.updateAiMaxTok(it) },
+                                label = { Text(L10n.t("最大输出 tokens", "Max output tokens")) },
+                                supportingText = { Text(L10n.t("空=不限", "empty = uncapped"), fontSize = 10.sp) },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Box {
+                            OutlinedButton(onClick = { thinkingOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                                Text(L10n.t("思考模式：", "Thinking mode: ") + (thinkingLabels[s.aiThinking] ?: s.aiThinking), modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
+                                Text("▾", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            DropdownMenu(expanded = thinkingOpen, onDismissRequest = { thinkingOpen = false }) {
+                                thinkingLabels.forEach { (k, label) ->
+                                    DropdownMenuItem(text = { Text(label) }, onClick = { vm.applyThinkingMode(k); thinkingOpen = false })
+                                }
+                            }
+                        }
+                        OutlinedTextField(
+                            value = s.aiExtra,
+                            onValueChange = { vm.updateAiExtra(it) },
+                            label = { Text(L10n.t("附加请求参数（JSON，可选）", "Extra request params (JSON, optional)")) },
+                            supportingText = { Text(L10n.t("会合并进请求体顶层，如 {\"top_p\":0.9}；思考模式的字段也写在这里", "Merged into the request body, e.g. {\"top_p\":0.9}; thinking-mode fields live here too")) },
+                            minLines = 2,
+                            maxLines = 5,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
         }
-        OutlinedTextField(
-            value = s.aiExtra,
-            onValueChange = { vm.updateAiExtra(it) },
-            label = { Text(L10n.t("附加请求参数（JSON，可选）", "Extra request params (JSON, optional)")) },
-            supportingText = { Text(L10n.t("会合并进请求体顶层，如 {\"top_p\":0.9}；思考模式的字段也写在这里", "Merged into the request body, e.g. {\"top_p\":0.9}; thinking-mode fields live here too")) },
-            minLines = 2,
-            maxLines = 5,
-            modifier = Modifier.fillMaxWidth()
-        )
         // ---- skills management ----
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(L10n.t("扩写技能（", "Skills (") + "${s.skills.size}" + L10n.t("）", ")"), fontWeight = FontWeight.Bold)
