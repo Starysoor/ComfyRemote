@@ -24,6 +24,7 @@ jobs:
 
       - name: Restore signing keystore
         run: |
+          mkdir -p keystore
           echo "${{ secrets.KEYSTORE_B64 }}" | base64 -d > keystore/comfyremote.jks
           printf 'storeFile=keystore/comfyremote.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
             "${{ secrets.KS_PASS }}" "${{ secrets.KS_ALIAS }}" "${{ secrets.KS_PASS }}" > keystore.properties
