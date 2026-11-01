@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Observable facade over the JSON history store. File I/O remains intentionally
+ * Observable facade over the JSON result library. File I/O remains intentionally
  * simple, but all mutations are serialized here so concurrent generation tasks
  * cannot race a load-modify-write cycle.
  */
@@ -26,6 +26,17 @@ class HistoryRepository(private val store: HistoryStore) {
 
     fun add(item: HistoryItem) = synchronized(lock) {
         store.add(item)
+        _items.value = store.load()
+    }
+
+    fun toggleFavorite(id: String) = synchronized(lock) {
+        val item = _items.value.firstOrNull { it.id == id } ?: return@synchronized
+        store.updateMetadata(id, favorite = !item.favorite)
+        _items.value = store.load()
+    }
+
+    fun setTags(id: String, tags: List<String>) = synchronized(lock) {
+        store.updateMetadata(id, tags = tags)
         _items.value = store.load()
     }
 
