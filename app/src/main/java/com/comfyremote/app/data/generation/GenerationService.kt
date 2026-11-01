@@ -29,7 +29,11 @@ class GenerationService : Service() {
         controller.ensureChannels()
         val container = (application as com.comfyremote.app.ComfyRemoteApp).container
         scope.launch {
-            container.generationManager.activeTasks.collect { active ->
+            // Observe the source task StateFlow directly. The derived activeTasks flow
+            // has an empty initial state and can make a freshly started service stop
+            // itself before the first mapped value arrives.
+            container.generationManager.tasks.collect { tasks ->
+                val active = tasks.filter { it.isActive }
                 if (active.isEmpty()) {
                     ServiceCompat.stopForeground(this@GenerationService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                     stopSelf()
