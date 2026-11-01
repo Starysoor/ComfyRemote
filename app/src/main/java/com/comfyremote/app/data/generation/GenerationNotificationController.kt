@@ -1,38 +1,43 @@
 package com.comfyremote.app.data.generation
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.comfyremote.app.MainActivity
 import com.comfyremote.app.ui.L10n
 
-/** Builds all generation-related notifications and channels. */
+/** Builds all generation-related notifications and task deep links. */
 class GenerationNotificationController(private val context: Context) {
-
     companion object {
         const val CHANNEL_RUNNING = "gen_running"
         const val CHANNEL_DONE = "gen_done"
         const val RUNNING_NOTIFICATION_ID = 1
+        const val EXTRA_TASK_ID = "generation_task_id"
         private const val FINISHED_NOTIFICATION_BASE = 100
     }
 
     fun ensureChannels() {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_RUNNING, L10n.t("生成状态", "Generation status"), NotificationManager.IMPORTANCE_LOW))
-        nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_DONE, L10n.t("生成完成", "Generation finished"), NotificationManager.IMPORTANCE_DEFAULT))
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_RUNNING, L10n.t("生成状态", "Generation status"), NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_DONE, L10n.t("生成完成", "Generation finished"), NotificationManager.IMPORTANCE_DEFAULT))
     }
 
-    private fun contentIntent(): PendingIntent = PendingIntent.getActivity(
-        context, 0,
-        Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    private fun contentIntent(task: GenerationTask): PendingIntent = PendingIntent.getActivity(
+        context,
+        task.taskId.hashCode(),
+        Intent(context, MainActivity::class.java)
+            .putExtra(EXTRA_TASK_ID, task.taskId)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
     fun runningNotification(task: GenerationTask): Notification {
@@ -40,9 +45,9 @@ class GenerationNotificationController(private val context: Context) {
             GenerationPhase.QUEUEING, GenerationPhase.QUEUED -> L10n.t("排队中…", "Queued…")
             GenerationPhase.CANCELLING -> L10n.t("正在取消…", "Cancelling…")
             else -> buildString {
-                append(L10n.t("执行节点 ", "Node "))
+                append(L10n.t("节点 ", "Node "))
                 append("#${task.nodeId ?: "?"} ")
-                append(task.nodeTitle ?: "")
+                append(task.nodeTitle.orEmpty())
                 task.progress?.let { append("  ${(it * 100).toInt()}%") }
             }
         }
@@ -53,21 +58,23 @@ class GenerationNotificationController(private val context: Context) {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .apply {
-                if (task.progress != null) setProgress(100, (task.progress * 100).toInt(), false)
-                else setProgress(0, 0, true)
+                task.progress?.let { setProgress(100, (it * 100).toInt(), false) } ?: setProgress(0, 0, true)
             }
-            .setContentIntent(contentIntent())
+            .setContentIntent(contentIntent(task))
             .build()
     }
 
     fun notifyFinished(task: GenerationTask) {
         val nm = NotificationManagerCompat.from(context)
         if (!nm.areNotificationsEnabled()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
+
         val (title, text, icon) = when (task.phase) {
             GenerationPhase.SUCCEEDED -> Triple(
                 L10n.t("生成完成", "Generation finished"),
-                "${task.request.workflowName} · ${task.results.size} " +
-                    L10n.t("张图", "image(s)"),
+                "${task.request.workflowName} · ${task.results.size} " + L10n.t("张图", "image(s)"),
                 android.R.drawable.ic_menu_gallery,
             )
             GenerationPhase.CANCELLED -> Triple(
@@ -81,15 +88,13 @@ class GenerationNotificationController(private val context: Context) {
                 android.R.drawable.ic_dialog_alert,
             )
         }
-        val notif = NotificationCompat.Builder(context, CHANNEL_DONE)
+        val notification = NotificationCompat.Builder(context, CHANNEL_DONE)
             .setSmallIcon(icon)
             .setContentTitle(title)
             .setContentText(text)
-            .setContentIntent(contentIntent())
+            .setContentIntent(contentIntent(task))
             .setAutoCancel(true)
             .build()
-        runCatching {
-            nm.notify(FINISHED_NOTIFICATION_BASE + (task.promptId?.hashCode()?.mod(1000) ?: 0), notif)
-        }
+        nm.notify(FINISHED_NOTIFICATION_BASE + (task.taskId.hashCode() and 0x3ff), notification)
     }
 }

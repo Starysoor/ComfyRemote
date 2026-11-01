@@ -10,7 +10,6 @@ import java.io.File
 
 /** Saves generated images into the phone gallery (Pictures/ComfyRemote). */
 class GalleryExporter(private val context: Context) {
-
     /** Returns the public Uri of the saved image. */
     fun savePng(bitmap: Bitmap): android.net.Uri {
         val values = ContentValues().apply {
@@ -27,13 +26,12 @@ class GalleryExporter(private val context: Context) {
     }
 
     fun savedMessage(): String = L10n.t("已保存到 相册/ComfyRemote", "Saved to Pictures/ComfyRemote")
-
-    fun failMessage(e: Exception): String = L10n.t("保存失败：", "Save failed: ") + (e.message ?: "error")
+    fun failMessage(error: Throwable): String = L10n.t("保存失败：", "Save failed: ") + (error.message ?: "error")
 
     companion object {
         fun shareFile(context: Context, path: String): File? {
-            val f = File(path)
-            return if (f.isFile) f else null
+            val file = File(path)
+            return if (file.isFile) file else null
         }
     }
 }

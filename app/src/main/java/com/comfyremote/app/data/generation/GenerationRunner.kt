@@ -1,99 +1,83 @@
 package com.comfyremote.app.data.generation
 
-import com.comfyremote.app.ComfyApi
-import com.comfyremote.app.ComfyException
 import com.comfyremote.app.FieldKind
+import com.comfyremote.app.HistoryItem
 import com.comfyremote.app.LabeledText
+import com.comfyremote.app.OutputImage
+import com.comfyremote.app.WsEvent
 import com.comfyremote.app.historyCancelled
-import com.comfyremote.app.WorkflowConverter
-import com.comfyremote.app.data.repository.HistoryRepository
-import com.comfyremote.app.data.repository.ServerSessionRepository
-import com.comfyremote.app.ui.L10n
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
- * Executes one [GenerationRequest] end to end and reports every state change
- * through [onUpdate]. Policy unchanged: WebSocket = realtime feedback,
- * /history = authoritative completion.
+ * Executes exactly one immutable generation request. WebSocket is best-effort
+ * realtime feedback; /history remains the authoritative completion source.
  */
 class GenerationRunner(
-    private val session: ServerSessionRepository,
-    private val historyRepository: HistoryRepository,
-    private val onInterruptRequested: suspend () -> Unit,
+    private val backend: GenerationBackend,
+    private val history: GenerationHistorySink,
+    private val pollDelayMs: Long = 4_000L,
+    private val timeoutMs: Long = 30 * 60_000L,
 ) {
-
     suspend fun run(
         task: GenerationTask,
         onUpdate: (GenerationTask) -> Unit,
     ): GenerationTask {
         var current = task
-        fun update(t: GenerationTask) {
-            if (current.isTerminal && !t.isTerminal) return  // late WS event after finish
-            current = t
-            onUpdate(t)
+        fun update(next: GenerationTask) {
+            if (current.isTerminal) return
+            current = next
+            onUpdate(next)
         }
 
-        val a: ComfyApi = session.require()
         val request = task.request
-
-        // ---- queue ----
         update(current.copy(phase = GenerationPhase.QUEUEING, startedAt = System.currentTimeMillis()))
-        val (prompt, seedsUsed) = WorkflowConverter.buildPrompt(
-            com.comfyremote.app.ConvertedWorkflow(
-                request.convertedPrompt, request.fields, emptyList()
-            ),
-            request.fieldValues,
-            request.randomSeed,
-        )
+        val (prompt, seedsUsed) = GenerationPromptBuilder.build(request)
         val clientId = task.clientId ?: error("missing clientId")
-        val promptId = a.queuePrompt(prompt, clientId)
-        update(
-            current.copy(
-                phase = GenerationPhase.QUEUED,
-                promptId = promptId,
-            )
-        )
+        val promptId = backend.queuePrompt(prompt, clientId)
+        update(current.copy(phase = GenerationPhase.QUEUED, promptId = promptId))
 
-        // ---- live WS feedback (best effort) ----
         val entry: JSONObject = coroutineScope {
             val wsJob: Job = launch {
-            runCatching {
-                a.wsEvents(clientId).collect { ev ->
-                    when (ev) {
-                        is com.comfyremote.app.WsEvent.Preview ->
-                            update(current.copy(preview = ev.bitmap))
-                        is com.comfyremote.app.WsEvent.Json -> {
-                            val data = ev.obj.optJSONObject("data")
-                            when (ev.obj.optString("type")) {
-                                "status" -> {
-                                    val q = data?.optJSONObject("status")?.optJSONObject("exec_info")
-                                        ?.optInt("queue_remaining", -1) ?: -1
-                                    if (q >= 0) update(current.copy(queueRemaining = q))
-                                }
-                                "execution_start" -> if (data?.optString("prompt_id") == promptId)
-                                    update(current.copy(phase = GenerationPhase.RUNNING, progress = 0f))
-                                "executing" -> if (data?.optString("prompt_id") == promptId) {
-                                    val node = data.optString("node")
-                                    if (node.isNotEmpty() && node != "null") update(
-                                        current.copy(
-                                            nodeId = node,
-                                            nodeTitle = request.nodeTitles[node] ?: "",
-                                            progress = null,
-                                        )
-                                    )
-                                }
-                                "progress" -> {
-                                    val p = data?.optString("prompt_id")
-                                    if (data != null && data.has("value") && (p.isNullOrEmpty() || p == promptId)) {
-                                        val v = data.optDouble("value", 0.0)
-                                        val m = data.optDouble("max", 1.0).coerceAtLeast(1e-6)
-                                        update(current.copy(progress = (v / m).toFloat().coerceIn(0f, 1f)))
+                runCatching {
+                    backend.wsEvents(clientId).collect { event ->
+                        when (event) {
+                            is WsEvent.Preview -> update(current.copy(preview = event.bitmap))
+                            is WsEvent.Json -> {
+                                val data = event.obj.optJSONObject("data")
+                                when (event.obj.optString("type")) {
+                                    "status" -> {
+                                        val remaining = data?.optJSONObject("status")?.optJSONObject("exec_info")
+                                            ?.optInt("queue_remaining", -1) ?: -1
+                                        if (remaining >= 0) update(current.copy(queueRemaining = remaining))
+                                    }
+                                    "execution_start" -> if (data?.optString("prompt_id") == promptId) {
+                                        update(current.copy(phase = GenerationPhase.RUNNING, progress = 0f))
+                                    }
+                                    "executing" -> if (data?.optString("prompt_id") == promptId) {
+                                        val node = data.optString("node")
+                                        if (node.isNotEmpty() && node != "null") {
+                                            update(
+                                                current.copy(
+                                                    nodeId = node,
+                                                    nodeTitle = request.nodeTitles[node].orEmpty(),
+                                                    progress = null,
+                                                )
+                                            )
+                                        }
+                                    }
+                                    "progress" -> {
+                                        val eventPrompt = data?.optString("prompt_id")
+                                        if (data != null && data.has("value") && (eventPrompt.isNullOrEmpty() || eventPrompt == promptId)) {
+                                            val value = data.optDouble("value", 0.0)
+                                            val max = data.optDouble("max", 1.0).coerceAtLeast(1e-6)
+                                            update(current.copy(progress = (value / max).toFloat().coerceIn(0f, 1f)))
+                                        }
                                     }
                                 }
                             }
@@ -101,11 +85,8 @@ class GenerationRunner(
                     }
                 }
             }
-        }
-
-            // ---- authoritative completion via /history ----
             try {
-                pollHistory(a, promptId) {
+                pollHistory(promptId) {
                     if (current.phase == GenerationPhase.QUEUED) {
                         update(current.copy(phase = GenerationPhase.RUNNING, progress = 0f))
                     }
@@ -116,21 +97,30 @@ class GenerationRunner(
         }
 
         if (historyCancelled(entry)) {
-            update(
-                current.copy(
-                    phase = GenerationPhase.CANCELLED,
-                    completedAt = System.currentTimeMillis(),
-                    preview = null,
-                )
-            )
+            update(current.copy(phase = GenerationPhase.CANCELLED, completedAt = System.currentTimeMillis(), preview = null))
             return current
         }
 
-        extractError(entry)?.let { err ->
+        extractError(entry, request.nodeTitles)?.let { error ->
+            update(current.copy(phase = GenerationPhase.FAILED, error = error, completedAt = System.currentTimeMillis(), preview = null))
+            return current
+        }
+
+        val outputImages = parseImages(entry)
+        val results = mutableListOf<ResultImage>()
+        outputImages.forEachIndexed { index, image ->
+            runCatching {
+                val bytes = backend.downloadImage(image)
+                val file = history.newImageFile(promptId, index)
+                withContext(Dispatchers.IO) { file.writeBytes(bytes) }
+                results += ResultImage(id = "$promptId:$index", localPath = file.absolutePath)
+            }
+        }
+        if (outputImages.isNotEmpty() && results.isEmpty()) {
             update(
                 current.copy(
                     phase = GenerationPhase.FAILED,
-                    error = err,
+                    error = GenerationError(ErrorKind.DOWNLOAD, "All result image downloads failed"),
                     completedAt = System.currentTimeMillis(),
                     preview = null,
                 )
@@ -138,39 +128,27 @@ class GenerationRunner(
             return current
         }
 
-        // ---- download outputs ----
-        val results = mutableListOf<ResultImage>()
-        parseImages(entry).forEachIndexed { idx, im ->
-            try {
-                val bytes = a.downloadImage(im)
-                val f = historyRepository.newImageFile(promptId, idx)
-                withContext(Dispatchers.IO) { f.writeBytes(bytes) }
-                results.add(ResultImage(id = "$promptId:$idx", localPath = f.absolutePath))
-            } catch (_: Exception) {
-                // partial download failure: keep the rest
-            }
-        }
-        // Persist BEFORE marking SUCCEEDED so UI collectors that reload history
-        // on the SUCCEEDED transition already see the new entry.
+        val valuesUsed = request.fieldValues + seedsUsed
         val summary = request.fields.firstOrNull { it.kind == FieldKind.TEXT }
-            ?.let { request.fieldValues[it.key] ?: it.value }?.take(50) ?: request.workflowName
+            ?.let { valuesUsed[it.key] ?: it.value }?.take(50) ?: request.workflowName
         val prompts = request.fields.filter { it.kind == FieldKind.TEXT }
-            .map { LabeledText(it.label, request.fieldValues[it.key] ?: it.value) }
+            .map { LabeledText(it.label, valuesUsed[it.key] ?: it.value) }
             .filter { it.value.isNotBlank() }
-        val seedFields = request.fields.filter { it.kind == FieldKind.SEED }
-            .mapNotNull { request.fieldValues[it.key] }.joinToString(", ")
-        historyRepository.add(
-            com.comfyremote.app.HistoryItem(
-                id = task.promptId ?: task.taskId,
+        val seedInfo = seedsUsed.values.joinToString(", ")
+
+        // Persist before publishing SUCCEEDED so History observers see the result immediately.
+        history.add(
+            HistoryItem(
+                id = promptId,
                 wfPath = request.workflowPath,
                 wfName = request.workflowName,
                 time = System.currentTimeMillis(),
-                values = request.fieldValues,
+                values = valuesUsed,
                 randomSeed = request.randomSeed,
                 images = results.map { it.localPath },
                 summary = summary,
                 prompts = prompts,
-                seeds = seedFields.ifEmpty { seedsUsed.values.joinToString(", ") },
+                seeds = seedInfo,
             )
         )
 
@@ -180,69 +158,62 @@ class GenerationRunner(
                 results = results,
                 completedAt = System.currentTimeMillis(),
                 preview = null,
-                seedInfo = seedsUsed.values.joinToString(", "),
+                seedInfo = seedInfo,
+                seedValues = seedsUsed,
             )
         )
         return current
     }
 
-    private suspend fun pollHistory(
-        a: ComfyApi,
-        promptId: String,
-        onStillRunning: () -> Unit,
-    ): JSONObject {
-        val deadline = System.currentTimeMillis() + 30 * 60_000L
+    private suspend fun pollHistory(promptId: String, onStillRunning: () -> Unit): JSONObject {
+        val deadline = System.currentTimeMillis() + timeoutMs
         var first = true
         while (System.currentTimeMillis() < deadline) {
-            a.historyEntry(promptId)?.let { return it }
+            backend.historyEntry(promptId)?.let { return it }
             if (first) {
                 first = false
-                // WS may have missed execution_start; no history after 4s = executing
                 onStillRunning()
             }
-            delay(4000)
+            delay(pollDelayMs)
         }
-        throw ComfyException(
-            L10n.t(
-                "等待结果超时（30 分钟），结果可在服务器 output 目录查看",
-                "Timed out after 30 minutes; check the server output folder"
-            )
-        )
+        throw GenerationTimeoutException("Timed out waiting for ComfyUI history")
     }
 
-    private fun extractError(entry: JSONObject): GenerationError? {
+    private fun extractError(entry: JSONObject, nodeTitles: Map<String, String>): GenerationError? {
         val status = entry.optJSONObject("status") ?: return null
         if (status.optString("status_str") != "error") return null
-        val msgs = status.optJSONArray("messages")
-        if (msgs != null) for (i in 0 until msgs.length()) {
-            val m = msgs.optJSONArray(i) ?: continue
-            if (m.optString(0) == "execution_error") {
-                val d = m.optJSONObject(1)
-                if (d != null) return GenerationError(
-                    kind = com.comfyremote.app.data.generation.ErrorKind.EXECUTION,
-                    message = L10n.t("执行出错", "Execution error") + "：${d.optString("exception_message")}",
-                    nodeId = d.optString("node_id").ifEmpty { null },
-                    nodeType = d.optString("node_type").ifEmpty { null },
+        val messages = status.optJSONArray("messages")
+        if (messages != null) for (i in 0 until messages.length()) {
+            val message = messages.optJSONArray(i) ?: continue
+            if (message.optString(0) == "execution_error") {
+                val data = message.optJSONObject(1) ?: continue
+                val nodeId = data.optString("node_id").ifEmpty { null }
+                return GenerationError(
+                    kind = ErrorKind.EXECUTION,
+                    message = data.optString("exception_message").ifEmpty { "Execution error" },
+                    nodeId = nodeId,
+                    nodeType = data.optString("node_type").ifEmpty { null },
+                    nodeTitle = nodeId?.let(nodeTitles::get),
                 )
             }
         }
-        return GenerationError(
-            kind = com.comfyremote.app.data.generation.ErrorKind.EXECUTION,
-            message = L10n.t("执行出错", "Execution error"),
-        )
+        return GenerationError(ErrorKind.EXECUTION, "Execution error")
     }
 
-    private fun parseImages(entry: JSONObject): List<com.comfyremote.app.OutputImage> {
-        val out = mutableListOf<com.comfyremote.app.OutputImage>()
-        val outputs = entry.optJSONObject("outputs") ?: return out
-        outputs.keys().forEach { k ->
-            val o = outputs.optJSONObject(k) ?: return@forEach
-            val imgs = o.optJSONArray("images") ?: return@forEach
-            for (i in 0 until imgs.length()) {
-                val im = imgs.optJSONObject(i) ?: continue
-                out.add(com.comfyremote.app.OutputImage(im.optString("filename"), im.optString("subfolder"), im.optString("type", "output")))
+    private fun parseImages(entry: JSONObject): List<OutputImage> {
+        val result = mutableListOf<OutputImage>()
+        val outputs = entry.optJSONObject("outputs") ?: return result
+        outputs.keys().forEach { key ->
+            val images = outputs.optJSONObject(key)?.optJSONArray("images") ?: return@forEach
+            for (i in 0 until images.length()) {
+                val image = images.optJSONObject(i) ?: continue
+                result += OutputImage(
+                    image.optString("filename"),
+                    image.optString("subfolder"),
+                    image.optString("type", "output"),
+                )
             }
         }
-        return out
+        return result
     }
 }

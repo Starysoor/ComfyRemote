@@ -1,7 +1,10 @@
 package com.comfyremote.app.data.repository
 
-import com.comfyremote.app.LabeledText
 import android.content.SharedPreferences
+import com.comfyremote.app.LabeledText
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -10,8 +13,44 @@ import org.json.JSONObject
  * key transparently; existing bookmarks are never lost.
  */
 class PromptPresetRepository(private val prefs: SharedPreferences) {
+    private val lock = Any()
+    private val _presets = MutableStateFlow(read())
+    val presets: StateFlow<List<PromptPreset>> = _presets.asStateFlow()
 
-    fun load(): List<PromptPreset> = runCatching {
+    fun load(): List<PromptPreset> = _presets.value
+
+    fun save(list: List<PromptPreset>) = synchronized(lock) {
+        write(list)
+        _presets.value = list.sortedWith(
+            compareByDescending<PromptPreset> { it.lastUsedAt ?: 0L }
+                .thenByDescending { it.createdAt }
+        )
+    }
+
+    fun add(preset: PromptPreset): List<PromptPreset> = synchronized(lock) {
+        val list = (listOf(preset) + _presets.value.filter { it.id != preset.id }).take(MAX_ITEMS)
+        write(list)
+        _presets.value = list
+        list
+    }
+
+    fun delete(id: String): List<PromptPreset> = synchronized(lock) {
+        val list = _presets.value.filter { it.id != id }
+        write(list)
+        _presets.value = list
+        list
+    }
+
+    fun markUsed(id: String): List<PromptPreset> = synchronized(lock) {
+        val list = _presets.value.map {
+            if (it.id == id) it.copy(lastUsedAt = System.currentTimeMillis()) else it
+        }.sortedWith(compareByDescending<PromptPreset> { it.lastUsedAt ?: 0L }.thenByDescending { it.createdAt })
+        write(list)
+        _presets.value = list
+        list
+    }
+
+    private fun read(): List<PromptPreset> = runCatching {
         val raw = prefs.getString(KEY, null) ?: prefs.getString(LEGACY_KEY, null)
             ?: return@runCatching emptyList()
         val arr = JSONArray(raw)
@@ -34,7 +73,7 @@ class PromptPresetRepository(private val prefs: SharedPreferences) {
         }
     }.getOrDefault(emptyList()).sortedByDescending { it.createdAt }
 
-    fun save(list: List<PromptPreset>) {
+    private fun write(list: List<PromptPreset>) {
         val arr = JSONArray()
         list.forEach { b ->
             arr.put(JSONObject()
@@ -47,35 +86,16 @@ class PromptPresetRepository(private val prefs: SharedPreferences) {
                     b.prompts.forEach { p -> put(JSONObject().put("label", p.label).put("value", p.value)) }
                 }))
         }
-        prefs.edit().putString(KEY, arr.toString()).apply()
-        prefs.edit().remove(LEGACY_KEY).apply()
-    }
-
-    fun add(preset: PromptPreset): List<PromptPreset> {
-        val list = (listOf(preset) + load()).take(30)
-        save(list)
-        return list
-    }
-
-    fun delete(id: String): List<PromptPreset> {
-        val list = load().filter { it.id != id }
-        save(list)
-        return list
-    }
-
-    fun markUsed(id: String): List<PromptPreset> {
-        val list = load().map { if (it.id == id) it.copy(lastUsedAt = System.currentTimeMillis()) else it }
-        save(list)
-        return list
+        prefs.edit().putString(KEY, arr.toString()).remove(LEGACY_KEY).apply()
     }
 
     companion object {
         private const val KEY = "promptPresets"
         private const val LEGACY_KEY = "bookmarks"
+        private const val MAX_ITEMS = 50
     }
 }
 
-/** Saved prompt snippet (from history or the current editor). */
 data class PromptPreset(
     val id: String,
     val title: String,

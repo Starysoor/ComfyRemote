@@ -12,14 +12,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-/**
- * Holds the foreground notification while any generation task is active.
- * Starts itself into foreground when tasks exist, stops when they finish.
- */
+/** Android foreground lifecycle + generation notifications. Generation work stays in GenerationManager. */
 class GenerationService : Service() {
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var controller: GenerationNotificationController
+    private val notifiedTerminal = mutableSetOf<String>()
+    private var initialized = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -27,23 +25,37 @@ class GenerationService : Service() {
         super.onCreate()
         controller = GenerationNotificationController(this)
         controller.ensureChannels()
-        val container = (application as com.comfyremote.app.ComfyRemoteApp).container
+        val manager = (application as com.comfyremote.app.ComfyRemoteApp).container.generationManager
         scope.launch {
-            container.generationManager.activeTasks.collect { active ->
+            manager.tasks.collect { tasks ->
+                val terminal = tasks.filter { it.isTerminal }
+                if (!initialized) {
+                    // Do not replay completion notifications for tasks that predate this service instance.
+                    notifiedTerminal += terminal.map { it.taskId }
+                    initialized = true
+                } else {
+                    terminal.filter { notifiedTerminal.add(it.taskId) }.forEach(controller::notifyFinished)
+                }
+
+                val active = tasks.filter { it.isActive }
                 if (active.isEmpty()) {
                     ServiceCompat.stopForeground(this@GenerationService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 } else {
-                    val t = active.first()
+                    val task = active.first()
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         ServiceCompat.startForeground(
-                            this@GenerationService, GenerationNotificationController.RUNNING_NOTIFICATION_ID,
-                            controller.runningNotification(t), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                            this@GenerationService,
+                            GenerationNotificationController.RUNNING_NOTIFICATION_ID,
+                            controller.runningNotification(task),
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
                         )
                     } else {
                         ServiceCompat.startForeground(
-                            this@GenerationService, GenerationNotificationController.RUNNING_NOTIFICATION_ID,
-                            controller.runningNotification(t), 0
+                            this@GenerationService,
+                            GenerationNotificationController.RUNNING_NOTIFICATION_ID,
+                            controller.runningNotification(task),
+                            0,
                         )
                     }
                 }
