@@ -18,24 +18,26 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,6 +60,7 @@ import com.comfyremote.app.data.generation.uiLabel
 import com.comfyremote.app.data.media.decodeSampled
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.feature.generate.ImageViewerDialog
+import com.comfyremote.app.feature.generate.shareImage
 import com.comfyremote.app.ui.L10n
 import com.comfyremote.app.ui.Mono
 import com.comfyremote.app.ui.components.EmptyState
@@ -122,9 +126,19 @@ private fun TaskCard(task: GenerationTask, onClick: () -> Unit) {
                 Text(task.request.workflowName, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 StatusChip(task.label(), active = task.isActive, error = task.phase == GenerationPhase.FAILED)
             }
-            task.nodeTitle?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            task.nodeTitle?.takeIf(String::isNotBlank)?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             task.progress?.let { p -> LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth()) }
-            task.error?.let { Text(it.uiLabel() + " · " + it.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            task.error?.let {
+                Text(
+                    it.uiLabel() + " · " + it.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(formatTime(task.createdAt), fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.weight(1f))
@@ -146,23 +160,39 @@ fun TaskDetailScreen(
     viewModel: TasksViewModel,
     taskId: String,
     onBack: () -> Unit,
+    onRetry: (String) -> Unit,
     onReuse: (DraftTransfer) -> Unit,
 ) {
     val tasks by viewModel.tasks.collectAsState()
+    val message by viewModel.message.collectAsState()
     val task = tasks.firstOrNull { it.taskId == taskId }
+    val snackbar = remember { SnackbarHostState() }
+    val context = LocalContext.current
     var viewingPath by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(message) {
+        message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = { Text(L10n.t("任务详情", "Task detail")) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) } },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back"))
+                    }
+                },
             )
         }
     ) { pad ->
         if (task == null) {
             Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) {
-                EmptyState(L10n.t("任务已不在内存中", "Task is no longer in memory"), L10n.t("完成结果仍可在历史记录中查看", "Completed results remain in History"))
+                EmptyState(
+                    L10n.t("任务已不在内存中", "Task is no longer in memory"),
+                    L10n.t("完成结果仍可在历史记录中查看", "Completed results remain in History"),
+                )
             }
             return@Scaffold
         }
@@ -193,27 +223,44 @@ fun TaskDetailScreen(
                     }
                 }
             }
-            task.error?.let { error -> item {
-                ErrorCard(
-                    error.uiLabel(),
-                    listOfNotNull(error.nodeType, error.nodeId?.let { "#$it" }, error.message).joinToString(" · ")
-                )
-            } }
+            task.error?.let { error ->
+                item {
+                    ErrorCard(
+                        error.uiLabel(),
+                        listOfNotNull(error.nodeTitle, error.nodeType, error.nodeId?.let { "#$it" }, error.message).joinToString(" · "),
+                    )
+                }
+            }
             if (task.results.isNotEmpty()) {
                 item { Text(L10n.t("结果", "Results"), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary) }
                 items(task.results, key = { it.id }) { result ->
                     val bitmap by produceState<Bitmap?>(null, result.localPath) {
                         value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1200) }
                     }
-                    if (bitmap == null) Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                    else Image(bitmap!!.asImageBitmap(), null, Modifier.fillMaxWidth().clickable { viewingPath = result.localPath }, contentScale = ContentScale.FillWidth)
+                    if (bitmap == null) {
+                        Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    } else {
+                        Image(
+                            bitmap!!.asImageBitmap(),
+                            null,
+                            Modifier.fillMaxWidth().clickable { viewingPath = result.localPath },
+                            contentScale = ContentScale.FillWidth,
+                        )
+                    }
                 }
             }
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     when {
-                        task.isActive -> OutlinedButton(onClick = { viewModel.cancel(task.taskId) }, enabled = task.phase != GenerationPhase.CANCELLING, modifier = Modifier.weight(1f)) { Text(L10n.t("取消", "Cancel")) }
-                        task.phase == GenerationPhase.FAILED || task.phase == GenerationPhase.CANCELLED -> Button(onClick = { viewModel.retry(task.taskId) }, modifier = Modifier.weight(1f)) { Text(L10n.t("重试", "Retry")) }
+                        task.isActive -> OutlinedButton(
+                            onClick = { viewModel.cancel(task.taskId) },
+                            enabled = task.phase != GenerationPhase.CANCELLING,
+                            modifier = Modifier.weight(1f),
+                        ) { Text(L10n.t("取消", "Cancel")) }
+                        task.phase == GenerationPhase.FAILED || task.phase == GenerationPhase.CANCELLED -> Button(
+                            onClick = { viewModel.retry(task.taskId)?.let(onRetry) },
+                            modifier = Modifier.weight(1f),
+                        ) { Text(L10n.t("重试", "Retry")) }
                     }
                     OutlinedButton(
                         onClick = { viewModel.prepareReuse(task.taskId)?.let(onReuse) },
@@ -225,9 +272,16 @@ fun TaskDetailScreen(
     }
 
     viewingPath?.let { path ->
-        val bitmap by produceState<Bitmap?>(null, path) { value = withContext(Dispatchers.IO) { decodeSampled(path, 1800) } }
-        bitmap?.let {
-            ImageViewerDialog(bitmap = it, onClose = { viewingPath = null }, onSave = {}, onShare = {})
+        val bitmap by produceState<Bitmap?>(null, path) {
+            value = withContext(Dispatchers.IO) { decodeSampled(path, 1800) }
+        }
+        bitmap?.let { image ->
+            ImageViewerDialog(
+                bitmap = image,
+                onClose = { viewingPath = null },
+                onSave = { viewModel.saveResult(image) },
+                onShare = { shareImage(context, path) },
+            )
         }
     }
 }
