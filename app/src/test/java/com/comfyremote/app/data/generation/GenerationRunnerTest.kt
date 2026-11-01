@@ -12,7 +12,6 @@ import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -135,14 +134,18 @@ class GenerationRunnerTest {
         assertTrue(final.error?.message?.contains("boom") == true)
     }
 
-    @Test(expected = GenerationTimeoutException::class)
+    @Test
     fun historyTimeoutIsTyped() = runBlocking {
-        GenerationRunner(
-            FakeBackend(history = mutableListOf()),
-            FakeHistorySink(),
-            pollDelayMs = 1,
-            timeoutMs = 5,
-        ).run(task()) {}
+        val error = runCatching {
+            GenerationRunner(
+                FakeBackend(history = mutableListOf()),
+                FakeHistorySink(),
+                pollDelayMs = 1,
+                timeoutMs = 5,
+            ).run(task()) {}
+        }.exceptionOrNull()
+
+        assertTrue(error is GenerationTimeoutException)
     }
 
     @Test
