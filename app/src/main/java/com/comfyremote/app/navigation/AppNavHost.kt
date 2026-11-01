@@ -141,6 +141,7 @@ private fun AppNavHost(
                     viewModel = vm,
                     taskId = entry.arguments?.getString("taskId").orEmpty(),
                     onBack = { navController.popBackStack() },
+                    onRetry = { navController.navigate(Routes.task(it)) },
                     onReuse = { transfer -> navController.navigate(Routes.generate(transfer.workflowPath, transfer.workflowName)) },
                 )
             }
