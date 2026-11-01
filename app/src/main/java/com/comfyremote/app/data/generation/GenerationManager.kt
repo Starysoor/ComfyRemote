@@ -4,13 +4,14 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.comfyremote.app.AppContainer
+import com.comfyremote.app.PromptValidationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -18,15 +19,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * Runtime core for generation jobs. Owns the task list and runs every job in
- * an app-scoped coroutine, so tasks outlive the UI that submitted them.
- */
+/** App-scoped runtime owner for all generation jobs. */
 class GenerationManager(
     private val container: AppContainer,
     private val appContext: Context,
 ) {
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val runner = GenerationRunner(
         session = container.serverSession,
@@ -36,12 +33,10 @@ class GenerationManager(
 
     private val _tasks = MutableStateFlow<List<GenerationTask>>(emptyList())
     val tasks: StateFlow<List<GenerationTask>> = _tasks.asStateFlow()
-
     val activeTasks: StateFlow<List<GenerationTask>> = _tasks
         .map { list -> list.filter { it.isActive } }
-        .stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
-    /** Jobs can finish on different Dispatchers.Default workers. */
     private val jobs = ConcurrentHashMap<String, Job>()
 
     fun submit(request: GenerationRequest): String {
@@ -50,51 +45,51 @@ class GenerationManager(
             request = request,
             clientId = java.util.UUID.randomUUID().toString(),
         )
-        _tasks.update { listOf(task) + it }
-
-        // The service observes activeTasks and owns the foreground notification.
-        // Start it for every newly submitted task; Android coalesces repeated starts.
-        ContextCompat.startForegroundService(
-            appContext,
-            Intent(appContext, GenerationService::class.java),
-        )
-
+        _tasks.update { prune(listOf(task) + it) }
+        ContextCompat.startForegroundService(appContext, Intent(appContext, GenerationService::class.java))
         jobs[task.taskId] = scope.launch { execute(task) }
         return task.taskId
     }
 
     suspend fun cancel(taskId: String) {
-        val t = _tasks.value.firstOrNull { it.taskId == taskId } ?: return
-        if (!t.isActive) return
+        val task = _tasks.value.firstOrNull { it.taskId == taskId } ?: return
+        if (!task.isActive || task.phase == GenerationPhase.CANCELLING) return
         patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING) }
-        when (t.phase) {
-            GenerationPhase.QUEUED ->
-                runCatching { container.serverSession.deleteFromQueue(t.promptId ?: return) }
-            else -> runCatching { container.serverSession.interrupt() }
+        when (task.phase) {
+            GenerationPhase.PREPARING, GenerationPhase.QUEUEING -> {
+                jobs[taskId]?.cancel()
+            }
+            GenerationPhase.QUEUED -> {
+                task.promptId?.let { runCatching { container.serverSession.deleteFromQueue(it) } }
+                jobs[taskId]?.cancel()
+            }
+            GenerationPhase.RUNNING -> {
+                // ComfyUI interrupt is server-scoped, not guaranteed per-prompt.
+                runCatching { container.serverSession.interrupt() }
+            }
+            else -> Unit
         }
     }
 
     fun retry(taskId: String): String? {
         val old = _tasks.value.firstOrNull { it.taskId == taskId } ?: return null
-        val request = old.request.copy(id = java.util.UUID.randomUUID().toString())
-        return submit(request)
+        return submit(old.request.copy(id = java.util.UUID.randomUUID().toString()))
     }
 
     fun observe(taskId: String) = _tasks
         .map { list -> list.firstOrNull { it.taskId == taskId } }
-        .stateIn(scope, SharingStarted.WhileSubscribed(5000), null)
+        .stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
 
     private suspend fun execute(task: GenerationTask) {
         try {
-            val final = runner.run(task) { updated ->
-                patch(updated.taskId) { updated }
-            }
+            val final = runner.run(task) { updated -> patch(updated.taskId) { updated } }
             patch(final.taskId) { final }
         } catch (e: kotlinx.coroutines.CancellationException) {
             patch(task.taskId) {
                 it.copy(
                     phase = GenerationPhase.CANCELLED,
                     completedAt = System.currentTimeMillis(),
+                    preview = null,
                 )
             }
             throw e
@@ -103,10 +98,14 @@ class GenerationManager(
                 it.copy(
                     phase = GenerationPhase.FAILED,
                     error = GenerationError(
-                        kind = ErrorKind.CONNECTION,
+                        kind = when (e) {
+                            is PromptValidationException -> ErrorKind.PROMPT_VALIDATION
+                            else -> ErrorKind.CONNECTION
+                        },
                         message = e.message ?: e.toString(),
                     ),
                     completedAt = System.currentTimeMillis(),
+                    preview = null,
                 )
             }
         } finally {
@@ -114,8 +113,25 @@ class GenerationManager(
         }
     }
 
-    /** Atomic CAS update avoids one task's update overwriting another concurrent task. */
-    private fun patch(taskId: String, f: (GenerationTask) -> GenerationTask) {
-        _tasks.update { list -> list.map { if (it.taskId == taskId) f(it) else it } }
+    private fun patch(taskId: String, transform: (GenerationTask) -> GenerationTask) {
+        _tasks.update { list ->
+            prune(list.map { current ->
+                if (current.taskId != taskId) current
+                else {
+                    val next = transform(current)
+                    if (current.isTerminal && !next.isTerminal) current else next
+                }
+            })
+        }
+    }
+
+    private fun prune(list: List<GenerationTask>): List<GenerationTask> {
+        val active = list.filter { it.isActive }
+        val terminal = list.filterNot { it.isActive }.sortedByDescending { it.completedAt ?: it.createdAt }.take(MAX_TERMINAL_TASKS)
+        return (active + terminal).distinctBy { it.taskId }.sortedByDescending { it.createdAt }
+    }
+
+    companion object {
+        private const val MAX_TERMINAL_TASKS = 50
     }
 }

@@ -1,8 +1,11 @@
 package com.comfyremote.app.feature.tasks
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,107 +18,92 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.comfyremote.app.MainViewModel
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.generation.label
 import com.comfyremote.app.data.generation.uiLabel
-import com.comfyremote.app.feature.history.decodeSampled
+import com.comfyremote.app.data.media.decodeSampled
+import com.comfyremote.app.data.repository.DraftTransfer
+import com.comfyremote.app.feature.generate.ImageViewerDialog
 import com.comfyremote.app.ui.L10n
 import com.comfyremote.app.ui.Mono
+import com.comfyremote.app.ui.components.EmptyState
+import com.comfyremote.app.ui.components.ErrorCard
+import com.comfyremote.app.ui.components.StatusChip
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TasksScreen(vm: MainViewModel) {
-    val tasks by vm.tasks.collectAsState()
-    var viewingPath by remember { mutableStateOf<String?>(null) }
-
+fun TasksScreen(
+    viewModel: TasksViewModel,
+    onOpenTask: (String) -> Unit,
+) {
+    val allTasks by viewModel.tasks.collectAsState()
+    val tasks = remember(allTasks) {
+        allTasks.sortedWith(compareByDescending<GenerationTask> { it.isActive }.thenByDescending { it.createdAt })
+    }
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-                title = {
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text(L10n.t("任务", "Tasks"), fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.width(8.dp))
-                        Text("${tasks.count { it.isActive }}", fontFamily = Mono, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
-                    }
+            TopAppBar(title = {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(L10n.t("任务", "Tasks"), fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(8.dp))
+                    Text("${tasks.count { it.isActive }}", fontFamily = Mono, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                 }
-            )
+            })
         }
     ) { pad ->
         if (tasks.isEmpty()) {
-            Column(
-                Modifier.padding(pad).fillMaxSize(),
-                verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(L10n.t("还没有生成任务", "No generation tasks yet"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    L10n.t("提交生成后任务会显示在这里，离开页面也会继续执行", "Submitted jobs keep running even if you leave the page"),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) {
+                EmptyState(
+                    L10n.t("还没有任务", "No tasks yet"),
+                    L10n.t("提交生成后会出现在这里，离开创作页也会继续运行", "Submitted jobs keep running when you leave Create"),
                 )
             }
         } else {
             LazyColumn(
                 Modifier.padding(pad).fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 96.dp)
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(tasks, key = { it.taskId }) { t ->
-                    TaskCard(
-                        task = t,
-                        onCancel = { vm.cancelTask(t.taskId) },
-                        onRetry = { vm.retryTask(t.taskId) },
-                        onOpenResult = { viewingPath = t.results.firstOrNull()?.localPath },
-                    )
-                }
-            }
-        }
-    }
-    viewingPath?.let { p ->
-        val bmp by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(null, p) {
-            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { decodeSampled(p, 1600) }
-        }
-        bmp?.let {
-            androidx.compose.ui.window.Dialog(onDismissRequest = { viewingPath = null }) {
-                androidx.compose.foundation.layout.Box(
-                    Modifier.fillMaxSize().padding(16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Image(it.asImageBitmap(), null, Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
+                items(tasks, key = { it.taskId }) { task ->
+                    TaskCard(task, onClick = { onOpenTask(task.taskId) })
                 }
             }
         }
@@ -123,92 +111,134 @@ fun TasksScreen(vm: MainViewModel) {
 }
 
 @Composable
-private fun TaskCard(
-    task: GenerationTask,
-    onCancel: () -> Unit,
-    onRetry: () -> Unit,
-    onOpenResult: () -> Unit,
-) {
+private fun TaskCard(task: GenerationTask, onClick: () -> Unit) {
     Card(
-        shape = MaterialTheme.shapes.medium,
-        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    task.request.workflowName,
-                    fontWeight = FontWeight.SemiBold, fontSize = 15.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    task.label().uppercase(),
-                    fontFamily = Mono, fontSize = 11.sp,
-                    color = if (task.isActive) MaterialTheme.colorScheme.primary
-                    else if (task.phase == GenerationPhase.FAILED) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Text(task.request.workflowName, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                StatusChip(task.label(), active = task.isActive, error = task.phase == GenerationPhase.FAILED)
             }
-            task.nodeTitle?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            task.progress?.let { p ->
-                LinearProgressIndicator(progress = p, modifier = Modifier.fillMaxWidth().height(3.dp))
-            }
-            task.error?.let {
-                Text(
-                    it.uiLabel() + "：${it.message}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis
-                )
-            }
+            task.nodeTitle?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            task.progress?.let { p -> LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth()) }
+            task.error?.let { Text(it.uiLabel() + " · " + it.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
-                        .format(java.util.Date(task.createdAt)),
-                    fontFamily = Mono, fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (task.seedInfo.isNotBlank()) {
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        "seed: ${task.seedInfo.take(20)}",
-                        fontFamily = Mono, fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
-                }
+                Text(formatTime(task.createdAt), fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.weight(1f))
-                task.results.firstOrNull()?.let { res ->
-                    val thumb by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(null, res.localPath) {
-                        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { decodeSampled(res.localPath, 96) }
+                task.results.firstOrNull()?.let { result ->
+                    val thumb by produceState<Bitmap?>(null, result.localPath) {
+                        value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 96) }
                     }
-                    thumb?.let {
-                        Image(
-                            it.asImageBitmap(), null,
-                            Modifier.size(44.dp).clickable { onOpenResult() },
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                        )
-                        Spacer(Modifier.width(8.dp))
-                    }
+                    thumb?.let { Image(it.asImageBitmap(), null, Modifier.size(44.dp), contentScale = ContentScale.Crop) }
                 }
-                when {
-                    task.phase == GenerationPhase.RUNNING || task.phase == GenerationPhase.CANCELLING ->
-                        OutlinedButton(onClick = onCancel, enabled = task.phase == GenerationPhase.RUNNING) {
-                            Text(L10n.t("取消", "Cancel"))
-                        }
-                    task.phase == GenerationPhase.QUEUED || task.phase == GenerationPhase.QUEUEING ->
-                        Text(L10n.t("排队等待…", "Waiting…"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    task.phase == GenerationPhase.FAILED || task.phase == GenerationPhase.CANCELLED ->
-                        OutlinedButton(onClick = onRetry) { Text(L10n.t("重试", "Retry")) }
-                    task.phase == GenerationPhase.SUCCEEDED && task.results.isNotEmpty() ->
-                        OutlinedButton(onClick = onOpenResult) { Text(L10n.t("看图", "Open")) }
-                }
+                Text("  ›", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TaskDetailScreen(
+    viewModel: TasksViewModel,
+    taskId: String,
+    onBack: () -> Unit,
+    onReuse: (DraftTransfer) -> Unit,
+) {
+    val tasks by viewModel.tasks.collectAsState()
+    val task = tasks.firstOrNull { it.taskId == taskId }
+    var viewingPath by remember { mutableStateOf<String?>(null) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(L10n.t("任务详情", "Task detail")) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) } },
+            )
+        }
+    ) { pad ->
+        if (task == null) {
+            Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) {
+                EmptyState(L10n.t("任务已不在内存中", "Task is no longer in memory"), L10n.t("完成结果仍可在历史记录中查看", "Completed results remain in History"))
+            }
+            return@Scaffold
+        }
+        LazyColumn(
+            Modifier.padding(pad).fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(task.request.workflowName, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            StatusChip(task.label(), active = task.isActive, error = task.phase == GenerationPhase.FAILED)
+                        }
+                        Meta("SERVER", task.request.serverUrl)
+                        Meta("TASK", task.taskId)
+                        task.promptId?.let { Meta("PROMPT", it) }
+                        task.nodeTitle?.takeIf(String::isNotBlank)?.let { Meta("NODE", "${task.nodeId ?: "?"} · $it") }
+                        task.seedInfo.takeIf(String::isNotBlank)?.let { Meta("SEED", it) }
+                        Meta("CREATED", formatTimeFull(task.createdAt))
+                        task.startedAt?.let { Meta("STARTED", formatTimeFull(it)) }
+                        task.completedAt?.let { Meta("COMPLETED", formatTimeFull(it)) }
+                        task.progress?.let { p ->
+                            LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth())
+                            Text("${(p * 100).toInt()}%", fontFamily = Mono, fontSize = 10.sp)
+                        }
+                    }
+                }
+            }
+            task.error?.let { error -> item {
+                ErrorCard(
+                    error.uiLabel(),
+                    listOfNotNull(error.nodeType, error.nodeId?.let { "#$it" }, error.message).joinToString(" · ")
+                )
+            } }
+            if (task.results.isNotEmpty()) {
+                item { Text(L10n.t("结果", "Results"), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary) }
+                items(task.results, key = { it.id }) { result ->
+                    val bitmap by produceState<Bitmap?>(null, result.localPath) {
+                        value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1200) }
+                    }
+                    if (bitmap == null) Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    else Image(bitmap!!.asImageBitmap(), null, Modifier.fillMaxWidth().clickable { viewingPath = result.localPath }, contentScale = ContentScale.FillWidth)
+                }
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    when {
+                        task.isActive -> OutlinedButton(onClick = { viewModel.cancel(task.taskId) }, enabled = task.phase != GenerationPhase.CANCELLING, modifier = Modifier.weight(1f)) { Text(L10n.t("取消", "Cancel")) }
+                        task.phase == GenerationPhase.FAILED || task.phase == GenerationPhase.CANCELLED -> Button(onClick = { viewModel.retry(task.taskId) }, modifier = Modifier.weight(1f)) { Text(L10n.t("重试", "Retry")) }
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.prepareReuse(task.taskId)?.let(onReuse) },
+                        modifier = Modifier.weight(1f),
+                    ) { Text(L10n.t("复用参数", "Reuse parameters")) }
+                }
+            }
+        }
+    }
+
+    viewingPath?.let { path ->
+        val bitmap by produceState<Bitmap?>(null, path) { value = withContext(Dispatchers.IO) { decodeSampled(path, 1800) } }
+        bitmap?.let {
+            ImageViewerDialog(bitmap = it, onClose = { viewingPath = null }, onSave = {}, onShare = {})
+        }
+    }
+}
+
+@Composable
+private fun Meta(label: String, value: String) {
+    Row {
+        Text(label, fontFamily = Mono, fontSize = 9.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(76.dp))
+        Text(value, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+    }
+}
+
+private fun formatTime(value: Long): String = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(value))
+private fun formatTimeFull(value: Long): String = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(value))
