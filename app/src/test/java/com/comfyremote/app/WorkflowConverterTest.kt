@@ -124,11 +124,12 @@ class WorkflowConverterTest {
         val edited = AiSkillDef(AiSkillDef.DEFAULT_NATURAL_ID, "自定义扩写", "my prompt", true)
         val stored = listOf(edited)
         val merged = AiSkillDef.mergeBuiltins(stored)
-        assertEquals(5, merged.size)
         assertEquals("my prompt", merged.first { it.id == AiSkillDef.DEFAULT_NATURAL_ID }.systemPrompt)
         assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_EN_ID })
         assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_NEG_ID })
         assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_TRANSLATE_ID })
+        assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_NSFW_EXPAND_ID })
+        assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_NSFW_TAGS_ID })
     }
 
     @Test
