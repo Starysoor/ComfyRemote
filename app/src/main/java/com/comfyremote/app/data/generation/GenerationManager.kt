@@ -1,21 +1,22 @@
 package com.comfyremote.app.data.generation
 
 import android.content.Context
+import android.content.Intent
+import androidx.core.content.ContextCompat
 import com.comfyremote.app.AppContainer
-import com.comfyremote.app.data.repository.HistoryRepository
-import com.comfyremote.app.data.repository.ServerSessionRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Runtime core for generation jobs. Owns the task list and runs every job in
@@ -40,15 +41,24 @@ class GenerationManager(
         .map { list -> list.filter { it.isActive } }
         .stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val jobs = mutableMapOf<String, Job>()
+    /** Jobs can finish on different Dispatchers.Default workers. */
+    private val jobs = ConcurrentHashMap<String, Job>()
 
-    fun submit(request: com.comfyremote.app.data.generation.GenerationRequest): String {
-        val task = com.comfyremote.app.data.generation.GenerationTask(
+    fun submit(request: GenerationRequest): String {
+        val task = GenerationTask(
             taskId = request.id,
             request = request,
             clientId = java.util.UUID.randomUUID().toString(),
         )
-        _tasks.value = listOf(task) + _tasks.value
+        _tasks.update { listOf(task) + it }
+
+        // The service observes activeTasks and owns the foreground notification.
+        // Start it for every newly submitted task; Android coalesces repeated starts.
+        ContextCompat.startForegroundService(
+            appContext,
+            Intent(appContext, GenerationService::class.java),
+        )
+
         jobs[task.taskId] = scope.launch { execute(task) }
         return task.taskId
     }
@@ -56,9 +66,9 @@ class GenerationManager(
     suspend fun cancel(taskId: String) {
         val t = _tasks.value.firstOrNull { it.taskId == taskId } ?: return
         if (!t.isActive) return
-        patch(taskId) { it.copy(phase = com.comfyremote.app.data.generation.GenerationPhase.CANCELLING) }
+        patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING) }
         when (t.phase) {
-            com.comfyremote.app.data.generation.GenerationPhase.QUEUED ->
+            GenerationPhase.QUEUED ->
                 runCatching { container.serverSession.deleteFromQueue(t.promptId ?: return) }
             else -> runCatching { container.serverSession.interrupt() }
         }
@@ -74,18 +84,16 @@ class GenerationManager(
         .map { list -> list.firstOrNull { it.taskId == taskId } }
         .stateIn(scope, SharingStarted.WhileSubscribed(5000), null)
 
-    private suspend fun execute(task: com.comfyremote.app.data.generation.GenerationTask) {
-        val atomic = AtomicReference(task)
+    private suspend fun execute(task: GenerationTask) {
         try {
             val final = runner.run(task) { updated ->
-                atomic.set(updated)
                 patch(updated.taskId) { updated }
             }
             patch(final.taskId) { final }
         } catch (e: kotlinx.coroutines.CancellationException) {
             patch(task.taskId) {
                 it.copy(
-                    phase = com.comfyremote.app.data.generation.GenerationPhase.CANCELLED,
+                    phase = GenerationPhase.CANCELLED,
                     completedAt = System.currentTimeMillis(),
                 )
             }
@@ -93,9 +101,9 @@ class GenerationManager(
         } catch (e: Exception) {
             patch(task.taskId) {
                 it.copy(
-                    phase = com.comfyremote.app.data.generation.GenerationPhase.FAILED,
-                    error = com.comfyremote.app.data.generation.GenerationError(
-                        kind = com.comfyremote.app.data.generation.ErrorKind.CONNECTION,
+                    phase = GenerationPhase.FAILED,
+                    error = GenerationError(
+                        kind = ErrorKind.CONNECTION,
                         message = e.message ?: e.toString(),
                     ),
                     completedAt = System.currentTimeMillis(),
@@ -106,9 +114,8 @@ class GenerationManager(
         }
     }
 
-    private fun patch(taskId: String, f: (com.comfyremote.app.data.generation.GenerationTask) -> com.comfyremote.app.data.generation.GenerationTask) {
-        _tasks.value = _tasks.value.map { if (it.taskId == taskId) f(it) else it }
+    /** Atomic CAS update avoids one task's update overwriting another concurrent task. */
+    private fun patch(taskId: String, f: (GenerationTask) -> GenerationTask) {
+        _tasks.update { list -> list.map { if (it.taskId == taskId) f(it) else it } }
     }
-
-    private fun sessionOrThrow(): ServerSessionRepository = container.serverSession
 }
