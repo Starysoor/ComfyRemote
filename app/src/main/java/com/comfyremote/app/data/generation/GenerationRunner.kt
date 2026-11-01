@@ -5,7 +5,6 @@ import com.comfyremote.app.ComfyException
 import com.comfyremote.app.FieldKind
 import com.comfyremote.app.LabeledText
 import com.comfyremote.app.historyCancelled
-import com.comfyremote.app.WorkflowConverter
 import com.comfyremote.app.data.repository.HistoryRepository
 import com.comfyremote.app.data.repository.ServerSessionRepository
 import com.comfyremote.app.ui.L10n
@@ -34,7 +33,7 @@ class GenerationRunner(
     ): GenerationTask {
         var current = task
         fun update(t: GenerationTask) {
-            if (current.isTerminal && !t.isTerminal) return  // late WS event after finish
+            if (current.isTerminal) return // terminal states are immutable; ignore late WS/poll events
             current = t
             onUpdate(t)
         }
@@ -44,13 +43,7 @@ class GenerationRunner(
 
         // ---- queue ----
         update(current.copy(phase = GenerationPhase.QUEUEING, startedAt = System.currentTimeMillis()))
-        val (prompt, seedsUsed) = WorkflowConverter.buildPrompt(
-            com.comfyremote.app.ConvertedWorkflow(
-                request.convertedPrompt, request.fields, emptyList()
-            ),
-            request.fieldValues,
-            request.randomSeed,
-        )
+        val (prompt, seedsUsed) = GenerationPromptBuilder.build(request)
         val clientId = task.clientId ?: error("missing clientId")
         val promptId = a.queuePrompt(prompt, clientId)
         update(
@@ -63,37 +56,38 @@ class GenerationRunner(
         // ---- live WS feedback (best effort) ----
         val entry: JSONObject = coroutineScope {
             val wsJob: Job = launch {
-            runCatching {
-                a.wsEvents(clientId).collect { ev ->
-                    when (ev) {
-                        is com.comfyremote.app.WsEvent.Preview ->
-                            update(current.copy(preview = ev.bitmap))
-                        is com.comfyremote.app.WsEvent.Json -> {
-                            val data = ev.obj.optJSONObject("data")
-                            when (ev.obj.optString("type")) {
-                                "status" -> {
-                                    val q = data?.optJSONObject("status")?.optJSONObject("exec_info")
-                                        ?.optInt("queue_remaining", -1) ?: -1
-                                    if (q >= 0) update(current.copy(queueRemaining = q))
-                                }
-                                "execution_start" -> if (data?.optString("prompt_id") == promptId)
-                                    update(current.copy(phase = GenerationPhase.RUNNING, progress = 0f))
-                                "executing" -> if (data?.optString("prompt_id") == promptId) {
-                                    val node = data.optString("node")
-                                    if (node.isNotEmpty() && node != "null") update(
-                                        current.copy(
-                                            nodeId = node,
-                                            nodeTitle = request.nodeTitles[node] ?: "",
-                                            progress = null,
+                runCatching {
+                    a.wsEvents(clientId).collect { ev ->
+                        when (ev) {
+                            is com.comfyremote.app.WsEvent.Preview ->
+                                update(current.copy(preview = ev.bitmap))
+                            is com.comfyremote.app.WsEvent.Json -> {
+                                val data = ev.obj.optJSONObject("data")
+                                when (ev.obj.optString("type")) {
+                                    "status" -> {
+                                        val q = data?.optJSONObject("status")?.optJSONObject("exec_info")
+                                            ?.optInt("queue_remaining", -1) ?: -1
+                                        if (q >= 0) update(current.copy(queueRemaining = q))
+                                    }
+                                    "execution_start" -> if (data?.optString("prompt_id") == promptId)
+                                        update(current.copy(phase = GenerationPhase.RUNNING, progress = 0f))
+                                    "executing" -> if (data?.optString("prompt_id") == promptId) {
+                                        val node = data.optString("node")
+                                        if (node.isNotEmpty() && node != "null") update(
+                                            current.copy(
+                                                nodeId = node,
+                                                nodeTitle = request.nodeTitles[node] ?: "",
+                                                progress = null,
+                                            )
                                         )
-                                    )
-                                }
-                                "progress" -> {
-                                    val p = data?.optString("prompt_id")
-                                    if (data != null && data.has("value") && (p.isNullOrEmpty() || p == promptId)) {
-                                        val v = data.optDouble("value", 0.0)
-                                        val m = data.optDouble("max", 1.0).coerceAtLeast(1e-6)
-                                        update(current.copy(progress = (v / m).toFloat().coerceIn(0f, 1f)))
+                                    }
+                                    "progress" -> {
+                                        val p = data?.optString("prompt_id")
+                                        if (data != null && data.has("value") && (p.isNullOrEmpty() || p == promptId)) {
+                                            val v = data.optDouble("value", 0.0)
+                                            val m = data.optDouble("max", 1.0).coerceAtLeast(1e-6)
+                                            update(current.copy(progress = (v / m).toFloat().coerceIn(0f, 1f)))
+                                        }
                                     }
                                 }
                             }
@@ -101,7 +95,6 @@ class GenerationRunner(
                     }
                 }
             }
-        }
 
             // ---- authoritative completion via /history ----
             try {
