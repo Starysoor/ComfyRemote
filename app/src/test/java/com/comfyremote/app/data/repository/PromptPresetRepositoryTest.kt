@@ -59,6 +59,36 @@ class PromptPresetRepositoryTest {
         assertTrue(repo.load().first().lastUsedAt != null)
     }
 
+    @Test
+    fun workflowPresetMetadataRoundTripsAndFavoriteSortsFirst() {
+        val prefs = FakePreferences()
+        val repo = PromptPresetRepository(prefs)
+        repo.add(
+            PromptPreset(
+                id = "setup",
+                title = "Portrait setup",
+                prompts = listOf(LabeledText("Prompt", "portrait")),
+                workflowPath = "portrait.json",
+                createdAt = 100L,
+                values = mapOf("1:text" to "portrait", "2:seed" to "42", "3:cfg" to "6.5"),
+                randomSeed = false,
+                tags = listOf("workflow", "portrait"),
+            )
+        )
+        repo.add(PromptPreset("prompt", "Prompt only", listOf(LabeledText("Prompt", "x")), null, 200L))
+        repo.toggleFavorite("setup")
+
+        val restored = PromptPresetRepository(prefs).load()
+        val setup = restored.first { it.id == "setup" }
+
+        assertTrue(setup.isWorkflowPreset)
+        assertTrue(setup.favorite)
+        assertEquals("42", setup.values["2:seed"])
+        assertEquals(false, setup.randomSeed)
+        assertEquals(listOf("workflow", "portrait"), setup.tags)
+        assertEquals("setup", restored.first().id)
+    }
+
     private class FakePreferences : SharedPreferences {
         private val values = linkedMapOf<String, Any?>()
 
