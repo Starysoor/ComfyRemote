@@ -22,13 +22,13 @@ class AiSkillMergeRegressionTest {
     @Test
     fun nsfwSkillsAreMergedForExistingUsers() {
         // 老用户升级后应自动获得两个 NSFW 技能，无需手动添加
-        val merged = AiSkillDef.mergeBuiltins(listOf())
+        val merged = AiSkillDef.mergeBuiltins(emptyList())
 
-        val expand = merged.firstOrNull { it.id == AiSkillDef.DEFAULT_NSFW_EXPAND_ID }
-        val tags = merged.firstOrNull { it.id == AiSkillDef.DEFAULT_NSFW_TAGS_ID }
+        val expand = requireNotNull(merged.firstOrNull { it.id == AiSkillDef.DEFAULT_NSFW_EXPAND_ID })
+        val tags = requireNotNull(merged.firstOrNull { it.id == AiSkillDef.DEFAULT_NSFW_TAGS_ID })
 
-        assertTrue(expand != null && expand.builtin && expand.label == "NSFW扩写")
-        assertTrue(tags != null && tags.builtin && tags.label == "NSFW标签")
+        assertTrue(expand.builtin && expand.label == "NSFW扩写")
+        assertTrue(tags.builtin && tags.label == "NSFW标签")
         assertTrue(expand.systemPrompt.contains("存档标注员"))
         assertTrue(tags.systemPrompt.contains("Danbooru"))
     }
