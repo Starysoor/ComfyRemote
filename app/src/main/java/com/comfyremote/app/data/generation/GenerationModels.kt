@@ -20,17 +20,7 @@ data class GenerationRequest(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
-enum class GenerationPhase {
-    PREPARING,
-    QUEUEING,
-    QUEUED,
-    RUNNING,
-    RECOVERING,
-    CANCELLING,
-    CANCELLED,
-    SUCCEEDED,
-    FAILED,
-}
+enum class GenerationPhase { PREPARING, QUEUEING, QUEUED, RUNNING, CANCELLING, CANCELLED, SUCCEEDED, FAILED }
 
 data class ResultImage(
     val id: String,
@@ -39,7 +29,7 @@ data class ResultImage(
     val height: Int? = null,
 )
 
-enum class ErrorKind { CONNECTION, PROMPT_VALIDATION, EXECUTION, TIMEOUT, DOWNLOAD, RECOVERY, CANCELLED, UNKNOWN }
+enum class ErrorKind { CONNECTION, PROMPT_VALIDATION, EXECUTION, TIMEOUT, DOWNLOAD, CANCELLED, UNKNOWN }
 
 data class GenerationError(
     val kind: ErrorKind,
@@ -78,8 +68,7 @@ data class GenerationTask(
 ) {
     val isActive: Boolean
         get() = phase == GenerationPhase.PREPARING || phase == GenerationPhase.QUEUEING ||
-            phase == GenerationPhase.QUEUED || phase == GenerationPhase.RUNNING ||
-            phase == GenerationPhase.RECOVERING || phase == GenerationPhase.CANCELLING
+            phase == GenerationPhase.QUEUED || phase == GenerationPhase.RUNNING || phase == GenerationPhase.CANCELLING
 
     val isTerminal: Boolean
         get() = phase == GenerationPhase.CANCELLED || phase == GenerationPhase.SUCCEEDED || phase == GenerationPhase.FAILED
@@ -89,7 +78,6 @@ fun GenerationTask.label(): String = when (phase) {
     GenerationPhase.PREPARING -> com.comfyremote.app.ui.L10n.t("准备中", "Preparing")
     GenerationPhase.QUEUEING, GenerationPhase.QUEUED -> com.comfyremote.app.ui.L10n.t("排队中", "Queued")
     GenerationPhase.RUNNING -> com.comfyremote.app.ui.L10n.t("生成中", "Running")
-    GenerationPhase.RECOVERING -> com.comfyremote.app.ui.L10n.t("恢复中", "Recovering")
     GenerationPhase.CANCELLING -> com.comfyremote.app.ui.L10n.t("取消中", "Cancelling")
     GenerationPhase.CANCELLED -> com.comfyremote.app.ui.L10n.t("已取消", "Cancelled")
     GenerationPhase.SUCCEEDED -> com.comfyremote.app.ui.L10n.t("完成", "Done")
@@ -102,7 +90,6 @@ fun GenerationError.uiLabel(): String = when (kind) {
     ErrorKind.PROMPT_VALIDATION -> com.comfyremote.app.ui.L10n.t("参数校验失败", "Validation failed")
     ErrorKind.TIMEOUT -> com.comfyremote.app.ui.L10n.t("等待超时", "Timed out")
     ErrorKind.DOWNLOAD -> com.comfyremote.app.ui.L10n.t("下载失败", "Download failed")
-    ErrorKind.RECOVERY -> com.comfyremote.app.ui.L10n.t("恢复失败", "Recovery failed")
     ErrorKind.CANCELLED -> com.comfyremote.app.ui.L10n.t("已取消", "Cancelled")
     ErrorKind.UNKNOWN -> com.comfyremote.app.ui.L10n.t("未知错误", "Unknown error")
 }

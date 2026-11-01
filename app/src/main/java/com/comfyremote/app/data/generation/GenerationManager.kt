@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 /** App-scoped runtime owner for all generation jobs, including process-death recovery. */
@@ -72,7 +71,6 @@ class GenerationManager(
                 // ComfyUI interrupt is server-scoped. Always target this task's original server.
                 runCatching { ComfyApi(task.request.serverUrl).interrupt() }
             }
-            GenerationPhase.RECOVERING -> cancelRecovering(task)
             else -> Unit
         }
     }
@@ -87,12 +85,13 @@ class GenerationManager(
         val current = _tasks.value.firstOrNull { it.taskId == taskId } ?: return false
         if (current.promptId.isNullOrBlank() || current.isActive) return false
         val recovering = current.copy(
-            phase = GenerationPhase.RECOVERING,
+            phase = GenerationPhase.QUEUED,
             error = null,
             completedAt = null,
             recovered = true,
             recoveryNote = "Retrying recovery",
             preview = null,
+            queuePosition = null,
         )
         patch(taskId, allowTerminalExit = true) { recovering }
         startService()
@@ -134,11 +133,12 @@ class GenerationManager(
 
     private suspend fun recoverExecute(original: GenerationTask) {
         val task = original.copy(
-            phase = GenerationPhase.RECOVERING,
+            phase = if (original.phase == GenerationPhase.RUNNING) GenerationPhase.RUNNING else GenerationPhase.QUEUED,
             preview = null,
             recovered = true,
             error = null,
             completedAt = null,
+            recoveryNote = original.recoveryNote ?: "Recovering after restart",
         )
         patch(task.taskId, allowTerminalExit = true) { task }
         val runner = GenerationRunner(
@@ -162,30 +162,13 @@ class GenerationManager(
             patch(task.taskId, allowTerminalExit = true) {
                 it.copy(
                     phase = GenerationPhase.FAILED,
-                    error = GenerationError(ErrorKind.RECOVERY, e.message ?: e.toString()),
+                    error = GenerationError(ErrorKind.CONNECTION, "Recovery failed: ${e.message ?: e}"),
                     completedAt = System.currentTimeMillis(),
                     preview = null,
+                    queuePosition = null,
                     recoveryNote = "Reconnect failed",
                 )
             }
-        }
-    }
-
-    private suspend fun cancelRecovering(task: GenerationTask) {
-        val promptId = task.promptId
-        if (promptId.isNullOrBlank()) {
-            jobs[task.taskId]?.cancel()
-            return
-        }
-        val api = ComfyApi(task.request.serverUrl)
-        val snapshot = runCatching { api.queueSnapshot() }.getOrNull()
-        when {
-            snapshot?.pendingPosition(promptId) != null -> {
-                runCatching { api.deleteFromQueue(promptId) }
-                jobs[task.taskId]?.cancel()
-            }
-            snapshot?.isRunning(promptId) == true -> runCatching { api.interrupt() }
-            else -> jobs[task.taskId]?.cancel()
         }
     }
 

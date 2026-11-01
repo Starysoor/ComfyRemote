@@ -56,24 +56,25 @@ class GenerationRunner(
 
     /**
      * Re-attaches to a prompt that was already submitted before process death.
-     * History is checked first, then /queue. A missing prompt is not guessed to be running.
+     * History is checked first, then /queue. A missing prompt is never guessed to be running.
      */
     suspend fun recover(
         task: GenerationTask,
         onUpdate: (GenerationTask) -> Unit,
     ): GenerationTask {
-        var current = task.copy(preview = null, recovered = true)
+        var current = task.copy(preview = null, recovered = true, recoveryNote = "Checking ComfyUI state")
         fun update(next: GenerationTask) {
             if (current.isTerminal) return
             current = next
             onUpdate(next)
         }
+        onUpdate(current)
 
         val promptId = task.promptId
         if (promptId.isNullOrBlank()) {
             val failed = current.copy(
                 phase = GenerationPhase.FAILED,
-                error = GenerationError(ErrorKind.RECOVERY, "Task ended before a prompt_id was persisted"),
+                error = GenerationError(ErrorKind.CONNECTION, "Recovery failed: task ended before a prompt_id was persisted"),
                 completedAt = System.currentTimeMillis(),
                 recoveryNote = "No prompt_id",
             )
@@ -81,16 +82,13 @@ class GenerationRunner(
             return failed
         }
 
-        update(current.copy(phase = GenerationPhase.RECOVERING, recoveryNote = "Checking ComfyUI state"))
         val seedsUsed = effectiveSeeds(current)
-
         repeat(RECOVERY_PROBES) {
             backend.historyEntry(promptId)?.let { entry ->
                 return finish(current, entry, promptId, seedsUsed, onUpdate)
             }
             val queue = backend.queueSnapshot()
             if (queue == null) {
-                // Test/legacy backend without /queue support: keep the old history-authority behavior.
                 update(current.copy(phase = GenerationPhase.RUNNING, progress = null, recoveryNote = "Recovered by history polling"))
                 return follow(current, promptId, seedsUsed, onUpdate, useWebSocket = false)
             }
@@ -122,8 +120,8 @@ class GenerationRunner(
         val failed = current.copy(
             phase = GenerationPhase.FAILED,
             error = GenerationError(
-                ErrorKind.RECOVERY,
-                "Prompt is no longer present in ComfyUI history or queue",
+                ErrorKind.CONNECTION,
+                "Recovery failed: prompt is no longer present in ComfyUI history or queue",
             ),
             completedAt = System.currentTimeMillis(),
             preview = null,
@@ -251,7 +249,6 @@ class GenerationRunner(
                     queue.pendingPosition(promptId),
                 )
                 queue == null && first -> onServerState(GenerationPhase.RUNNING, null)
-                // A known queue snapshot that momentarily does not contain the prompt is not proof of RUNNING.
             }
             first = false
             delay(pollDelayMs)
@@ -315,7 +312,6 @@ class GenerationRunner(
             .filter { it.value.isNotBlank() }
         val seedInfo = seedsUsed.values.joinToString(", ").ifBlank { task.seedInfo }
 
-        // Persist before publishing SUCCEEDED so History observers see the result immediately.
         history.add(
             HistoryItem(
                 id = promptId,
