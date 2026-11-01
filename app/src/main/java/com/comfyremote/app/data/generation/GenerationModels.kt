@@ -1,6 +1,7 @@
 package com.comfyremote.app.data.generation
 
 import android.graphics.Bitmap
+import com.comfyremote.app.ComfyException
 import com.comfyremote.app.PromptField
 import org.json.JSONObject
 import java.util.UUID
@@ -19,11 +20,8 @@ data class GenerationRequest(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
-enum class GenerationPhase {
-    PREPARING, QUEUEING, QUEUED, RUNNING, CANCELLING, CANCELLED, SUCCEEDED, FAILED
-}
+enum class GenerationPhase { PREPARING, QUEUEING, QUEUED, RUNNING, CANCELLING, CANCELLED, SUCCEEDED, FAILED }
 
-/** A generated image, referenced by its on-device file (never a Bitmap in task state). */
 data class ResultImage(
     val id: String,
     val localPath: String,
@@ -38,9 +36,11 @@ data class GenerationError(
     val message: String,
     val nodeId: String? = null,
     val nodeType: String? = null,
+    val nodeTitle: String? = null,
 )
 
-/** One generation job with its full observable state. */
+class GenerationTimeoutException(message: String) : ComfyException(message)
+
 data class GenerationTask(
     val taskId: String,
     val request: GenerationRequest,
@@ -58,18 +58,16 @@ data class GenerationTask(
     val results: List<ResultImage> = emptyList(),
     val error: GenerationError? = null,
     val seedInfo: String = "",
+    val seedValues: Map<String, String> = emptyMap(),
 ) {
     val isActive: Boolean
         get() = phase == GenerationPhase.PREPARING || phase == GenerationPhase.QUEUEING ||
-                phase == GenerationPhase.QUEUED || phase == GenerationPhase.RUNNING ||
-                phase == GenerationPhase.CANCELLING
+            phase == GenerationPhase.QUEUED || phase == GenerationPhase.RUNNING || phase == GenerationPhase.CANCELLING
 
     val isTerminal: Boolean
-        get() = phase == GenerationPhase.CANCELLED || phase == GenerationPhase.SUCCEEDED ||
-                phase == GenerationPhase.FAILED
+        get() = phase == GenerationPhase.CANCELLED || phase == GenerationPhase.SUCCEEDED || phase == GenerationPhase.FAILED
 }
 
-/** Localized status label shared by the Tasks page and the generate screen. */
 fun GenerationTask.label(): String = when (phase) {
     GenerationPhase.PREPARING -> com.comfyremote.app.ui.L10n.t("准备中", "Preparing")
     GenerationPhase.QUEUEING, GenerationPhase.QUEUED -> com.comfyremote.app.ui.L10n.t("排队中", "Queued")
@@ -80,8 +78,7 @@ fun GenerationTask.label(): String = when (phase) {
     GenerationPhase.FAILED -> com.comfyremote.app.ui.L10n.t("失败", "Failed")
 }
 
-/** Localized error kind label for UI display. */
-fun com.comfyremote.app.data.generation.GenerationError.uiLabel(): String = when (kind) {
+fun GenerationError.uiLabel(): String = when (kind) {
     ErrorKind.EXECUTION -> com.comfyremote.app.ui.L10n.t("执行错误", "Execution error")
     ErrorKind.CONNECTION -> com.comfyremote.app.ui.L10n.t("连接错误", "Connection error")
     ErrorKind.PROMPT_VALIDATION -> com.comfyremote.app.ui.L10n.t("参数校验失败", "Validation failed")

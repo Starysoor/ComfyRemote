@@ -26,9 +26,8 @@ class GenerationManager(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val runner = GenerationRunner(
-        session = container.serverSession,
-        historyRepository = container.historyRepository,
-        onInterruptRequested = { runCatching { container.serverSession.interrupt() } },
+        backend = SessionGenerationBackend(container.serverSession),
+        history = RepositoryGenerationHistorySink(container.historyRepository),
     )
 
     private val _tasks = MutableStateFlow<List<GenerationTask>>(emptyList())
@@ -56,9 +55,7 @@ class GenerationManager(
         if (!task.isActive || task.phase == GenerationPhase.CANCELLING) return
         patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING) }
         when (task.phase) {
-            GenerationPhase.PREPARING, GenerationPhase.QUEUEING -> {
-                jobs[taskId]?.cancel()
-            }
+            GenerationPhase.PREPARING, GenerationPhase.QUEUEING -> jobs[taskId]?.cancel()
             GenerationPhase.QUEUED -> {
                 task.promptId?.let { runCatching { container.serverSession.deleteFromQueue(it) } }
                 jobs[taskId]?.cancel()
@@ -100,6 +97,7 @@ class GenerationManager(
                     error = GenerationError(
                         kind = when (e) {
                             is PromptValidationException -> ErrorKind.PROMPT_VALIDATION
+                            is GenerationTimeoutException -> ErrorKind.TIMEOUT
                             else -> ErrorKind.CONNECTION
                         },
                         message = e.message ?: e.toString(),
@@ -127,11 +125,11 @@ class GenerationManager(
 
     private fun prune(list: List<GenerationTask>): List<GenerationTask> {
         val active = list.filter { it.isActive }
-        val terminal = list.filterNot { it.isActive }.sortedByDescending { it.completedAt ?: it.createdAt }.take(MAX_TERMINAL_TASKS)
+        val terminal = list.filterNot { it.isActive }
+            .sortedByDescending { it.completedAt ?: it.createdAt }
+            .take(MAX_TERMINAL_TASKS)
         return (active + terminal).distinctBy { it.taskId }.sortedByDescending { it.createdAt }
     }
 
-    companion object {
-        private const val MAX_TERMINAL_TASKS = 50
-    }
+    companion object { private const val MAX_TERMINAL_TASKS = 50 }
 }
