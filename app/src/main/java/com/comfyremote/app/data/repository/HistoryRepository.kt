@@ -2,22 +2,41 @@ package com.comfyremote.app.data.repository
 
 import com.comfyremote.app.HistoryItem
 import com.comfyremote.app.HistoryStore
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
-/** Facade over the JSON history store; Room can replace it later if ever needed. */
+/**
+ * Observable facade over the JSON history store. File I/O remains intentionally
+ * simple, but all mutations are serialized here so concurrent generation tasks
+ * cannot race a load-modify-write cycle.
+ */
 class HistoryRepository(private val store: HistoryStore) {
+    private val lock = Any()
+    private val _items = MutableStateFlow(store.load())
+    val items: StateFlow<List<HistoryItem>> = _items.asStateFlow()
 
-    fun load(): List<HistoryItem> = store.load()
+    fun load(): List<HistoryItem> = _items.value
 
-    fun add(item: HistoryItem) {
+    fun refresh(): List<HistoryItem> = synchronized(lock) {
+        store.load().also { _items.value = it }
+    }
+
+    fun find(id: String): HistoryItem? = _items.value.firstOrNull { it.id == id }
+
+    fun add(item: HistoryItem) = synchronized(lock) {
         store.add(item)
+        _items.value = store.load()
     }
 
-    fun delete(id: String) {
+    fun delete(id: String) = synchronized(lock) {
         store.delete(id)
+        _items.value = store.load()
     }
 
-    fun deleteMany(ids: Collection<String>) {
+    fun deleteMany(ids: Collection<String>) = synchronized(lock) {
         store.deleteMany(ids)
+        _items.value = store.load()
     }
 
     fun newImageFile(promptId: String, index: Int) = store.newImageFile(promptId, index)
