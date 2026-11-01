@@ -141,7 +141,7 @@ private fun AppNavHost(
                     viewModel = vm,
                     taskId = entry.arguments?.getString("taskId").orEmpty(),
                     onBack = { navController.popBackStack() },
-                    onRetry = { navController.navigate(Routes.task(it)) },
+                    onRetry = { newTaskId -> navController.navigate(Routes.task(newTaskId)) { launchSingleTop = true } },
                     onReuse = { transfer -> navController.navigate(Routes.generate(transfer.workflowPath, transfer.workflowName)) },
                 )
             }
@@ -193,7 +193,7 @@ private fun MainBottomBar(navController: NavHostController, current: String?) {
             selected = current == Routes.HISTORY,
             onClick = { navigateTopLevel(navController, Routes.HISTORY) },
             icon = { Icon(Icons.AutoMirrored.Filled.List, null) },
-            label = { Text(L10n.t("历史", "History")) },
+            label = { Text(L10n.t("结果", "Results")) },
         )
     }
 }

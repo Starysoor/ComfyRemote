@@ -3,7 +3,10 @@ package com.comfyremote.app.feature.workflows
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.comfyremote.app.AppContainer
+import com.comfyremote.app.HistoryItem
 import com.comfyremote.app.WorkflowEntry
+import com.comfyremote.app.data.repository.DraftTransfer
+import com.comfyremote.app.data.repository.PromptPreset
 import com.comfyremote.app.data.repository.ServerSession
 import com.comfyremote.app.ui.L10n
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +22,8 @@ data class WorkflowsUiState(
     val error: String? = null,
     val recentPaths: List<String> = emptyList(),
     val favoritePaths: Set<String> = emptySet(),
+    val recentPresets: List<PromptPreset> = emptyList(),
+    val recentResults: List<HistoryItem> = emptyList(),
     val session: ServerSession? = null,
 ) {
     val visible: List<WorkflowEntry>
@@ -41,6 +46,8 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
         WorkflowsUiState(
             recentPaths = container.workflowUsageRepository.recentPaths(),
             favoritePaths = container.workflowUsageRepository.favorites(),
+            recentPresets = recentSetups(container.promptPresetRepository.load()),
+            recentResults = recentResults(container.historyRepository.load(), container.serverSession.session.value?.url),
             session = container.serverSession.session.value,
         )
     )
@@ -57,17 +64,29 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                         session = session,
                         workflows = if (session == null) emptyList() else it.workflows,
                         error = if (session == null) null else it.error,
+                        recentResults = recentResults(container.historyRepository.load(), session?.url),
                     )
                 }
-                if (changed && session != null) load(force = true)
+                if (changed && session != null) loadInternal(force = true)
+            }
+        }
+        viewModelScope.launch {
+            container.promptPresetRepository.presets.collect { presets ->
+                _state.update { it.copy(recentPresets = recentSetups(presets)) }
+            }
+        }
+        viewModelScope.launch {
+            container.historyRepository.items.collect { history ->
+                _state.update { state -> state.copy(recentResults = recentResults(history, state.session?.url)) }
             }
         }
         load()
     }
 
     fun setQuery(value: String) = _state.update { it.copy(query = value) }
+    fun load() = loadInternal(force = false)
 
-    fun load(force: Boolean = false) {
+    private fun loadInternal(force: Boolean) {
         if (!container.serverSession.connected || (_state.value.loading && !force)) return
         _state.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
@@ -100,6 +119,47 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun toggleFavorite(path: String) {
         _state.update { it.copy(favoritePaths = container.workflowUsageRepository.toggleFavorite(path)) }
+    }
+
+    fun preparePreset(preset: PromptPreset): WorkflowEntry? {
+        val path = preset.workflowPath ?: return null
+        container.promptPresetRepository.markUsed(preset.id)
+        container.draftTransferRepository.put(
+            DraftTransfer(
+                workflowPath = path,
+                workflowName = workflowNameFor(path),
+                values = preset.values,
+                randomSeed = preset.randomSeed ?: true,
+            )
+        )
+        return workflowEntryFor(path)
+    }
+
+    fun prepareResult(item: HistoryItem): WorkflowEntry? {
+        if (item.wfPath.isBlank()) return null
+        container.draftTransferRepository.put(DraftTransfer(item.wfPath, item.wfName, item.values, item.randomSeed))
+        return workflowEntryFor(item.wfPath, item.wfName)
+    }
+
+    private fun workflowEntryFor(path: String, fallbackName: String = workflowNameFor(path)): WorkflowEntry =
+        _state.value.workflows.firstOrNull { it.path == path } ?: WorkflowEntry(path, fallbackName, "")
+
+    private fun workflowNameFor(path: String): String =
+        _state.value.workflows.firstOrNull { it.path == path }?.name
+            ?: path.substringAfterLast('/').removeSuffix(".json")
+
+    companion object {
+        private fun recentSetups(presets: List<PromptPreset>): List<PromptPreset> = presets
+            .filter { it.isWorkflowPreset }
+            .sortedWith(compareByDescending<PromptPreset> { it.favorite }.thenByDescending { it.lastUsedAt ?: it.createdAt })
+            .take(4)
+
+        private fun recentResults(items: List<HistoryItem>, serverUrl: String?): List<HistoryItem> = items
+            .asSequence()
+            .filter { serverUrl.isNullOrBlank() || it.serverUrl.isBlank() || it.serverUrl == serverUrl }
+            .sortedByDescending { it.time }
+            .take(4)
+            .toList()
     }
 }
 

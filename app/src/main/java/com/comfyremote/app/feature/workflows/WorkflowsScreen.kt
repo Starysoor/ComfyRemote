@@ -37,10 +37,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.comfyremote.app.HistoryItem
 import com.comfyremote.app.WorkflowEntry
+import com.comfyremote.app.data.repository.PromptPreset
 import com.comfyremote.app.ui.L10n
 import com.comfyremote.app.ui.Mono
 import com.comfyremote.app.ui.components.EmptyState
+import com.comfyremote.app.ui.components.SectionHeader
 import com.comfyremote.app.ui.components.StatusChip
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,31 +104,93 @@ fun WorkflowsScreen(
                     Button(onClick = viewModel::load, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(L10n.t("重试", "Retry")) }
                     Spacer(Modifier.weight(1f))
                 }
-                state.visible.isEmpty() -> {
-                    EmptyState(
-                        if (state.query.isBlank()) L10n.t("没有工作流", "No workflows") else L10n.t("没有匹配结果", "No matches"),
-                        L10n.t("可在电脑端保存 workflow 后刷新", "Save workflows on the server and refresh"),
-                    )
+                state.visible.isEmpty() && state.query.isNotBlank() -> {
+                    EmptyState(L10n.t("没有匹配结果", "No matches"))
                 }
                 else -> LazyColumn(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    val recent = state.recentPaths.toSet()
-                    items(state.visible, key = { it.path }) { wf ->
-                        WorkflowCard(
-                            workflow = wf,
-                            favorite = wf.path in state.favoritePaths,
-                            recent = wf.path in recent,
-                            onToggleFavorite = { viewModel.toggleFavorite(wf.path) },
-                            onClick = {
-                                viewModel.opened(wf)
-                                onOpenWorkflow(wf)
-                            },
-                        )
+                    if (state.query.isBlank() && state.recentPresets.isNotEmpty()) {
+                        item("preset-heading") { SectionHeader(L10n.t("最近预设", "Recent setups")) }
+                        items(state.recentPresets, key = { "preset:${it.id}" }) { preset ->
+                            RecentPresetCard(preset) { viewModel.preparePreset(preset)?.let(onOpenWorkflow) }
+                        }
+                    }
+                    if (state.query.isBlank() && state.recentResults.isNotEmpty()) {
+                        item("result-heading") { SectionHeader(L10n.t("最近结果", "Recent results")) }
+                        items(state.recentResults, key = { "result:${it.id}" }) { result ->
+                            RecentResultCard(result) { viewModel.prepareResult(result)?.let(onOpenWorkflow) }
+                        }
+                    }
+                    if (state.query.isBlank()) item("workflow-heading") { SectionHeader(L10n.t("工作流", "Workflows")) }
+                    if (state.visible.isEmpty()) {
+                        item("empty-workflow") {
+                            EmptyState(
+                                L10n.t("没有工作流", "No workflows"),
+                                L10n.t("可在电脑端保存 workflow 后刷新", "Save workflows on the server and refresh"),
+                            )
+                        }
+                    } else {
+                        val recent = state.recentPaths.toSet()
+                        items(state.visible, key = { it.path }) { wf ->
+                            WorkflowCard(
+                                workflow = wf,
+                                favorite = wf.path in state.favoritePaths,
+                                recent = wf.path in recent,
+                                onToggleFavorite = { viewModel.toggleFavorite(wf.path) },
+                                onClick = {
+                                    viewModel.opened(wf)
+                                    onOpenWorkflow(wf)
+                                },
+                            )
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RecentPresetCard(preset: PromptPreset, onClick: () -> Unit) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(preset.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    preset.prompts.firstOrNull()?.value.orEmpty(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (preset.favorite) Text("★ ", color = MaterialTheme.colorScheme.primary)
+            StatusChip(L10n.t("整套", "SETUP"))
+            Text("  ›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun RecentResultCard(item: HistoryItem, onClick: () -> Unit) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(item.wfName, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(item.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (item.favorite) Text("★ ", color = MaterialTheme.colorScheme.primary)
+            Text(L10n.t("复用 ›", "Reuse ›"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         }
     }
 }

@@ -66,10 +66,14 @@ data class GenerateUiState(
             val path = draft?.workflowPath
             return presets.asSequence()
                 .filter { p ->
-                    q.isBlank() || p.title.contains(q, true) || p.prompts.any { it.value.contains(q, true) }
+                    q.isBlank() || p.title.contains(q, true) ||
+                        p.prompts.any { it.value.contains(q, true) || it.label.contains(q, true) } ||
+                        p.tags.any { it.contains(q, true) } ||
+                        p.values.values.any { it.contains(q, true) }
                 }
                 .sortedWith(
-                    compareByDescending<PromptPreset> { it.workflowPath != null && it.workflowPath == path }
+                    compareByDescending<PromptPreset> { it.favorite }
+                        .thenByDescending { it.workflowPath != null && it.workflowPath == path }
                         .thenByDescending { it.lastUsedAt ?: 0L }
                         .thenByDescending { it.createdAt }
                 )
@@ -225,11 +229,10 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         dismissAiResult()
     }
 
+    /** Saves only text prompts; compatible with legacy Prompt Library behavior. */
     fun saveCurrentPreset() {
         val draft = _state.value.draft ?: return
-        val prompts = draft.fields.filter { it.kind == FieldKind.TEXT }
-            .map { LabeledText(it.label, draft.values[it.key] ?: it.value) }
-            .filter { it.value.isNotBlank() }
+        val prompts = currentPrompts(draft)
         if (prompts.isEmpty()) {
             _state.update { it.copy(message = L10n.t("当前没有可保存的提示词", "Nothing to save")) }
             return
@@ -241,24 +244,55 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 prompts = prompts,
                 workflowPath = draft.workflowPath,
                 createdAt = System.currentTimeMillis(),
+                tags = listOf("prompt"),
             )
         )
         _state.update { it.copy(message = L10n.t("已保存到提示词库", "Saved to prompt library")) }
     }
 
+    /** Saves the entire editable workflow snapshot, including image/advanced params and seed mode. */
+    fun saveCurrentWorkflowPreset() {
+        val draft = _state.value.draft ?: return
+        val values = draft.fields.associate { field -> field.key to (draft.values[field.key] ?: field.value) }
+        val prompts = currentPrompts(draft)
+        container.promptPresetRepository.add(
+            PromptPreset(
+                id = "workflow_${System.currentTimeMillis()}",
+                title = (prompts.firstOrNull()?.value?.take(28)?.takeIf(String::isNotBlank) ?: draft.workflowName),
+                prompts = prompts,
+                workflowPath = draft.workflowPath,
+                createdAt = System.currentTimeMillis(),
+                values = values,
+                randomSeed = draft.randomSeed,
+                tags = listOf("workflow"),
+            )
+        )
+        _state.update { it.copy(message = L10n.t("已保存工作流预设", "Workflow preset saved")) }
+    }
+
     fun deletePreset(id: String) { container.promptPresetRepository.delete(id) }
+    fun togglePresetFavorite(id: String) { container.promptPresetRepository.toggleFavorite(id) }
 
     fun applyPreset(preset: PromptPreset) {
         container.promptPresetRepository.markUsed(preset.id)
         updateDraft { draft ->
-            val textFields = draft.fields.filter { it.kind == FieldKind.TEXT }
-            val byLabel = preset.prompts.associateBy { it.label }
-            var values = draft.values
-            textFields.forEachIndexed { index, field ->
-                val prompt = byLabel[field.label] ?: preset.prompts.getOrNull(index)
-                if (prompt != null) values = values + (field.key to prompt.value)
+            if (preset.isWorkflowPreset && preset.workflowPath == draft.workflowPath) {
+                val knownKeys = draft.fields.mapTo(hashSetOf()) { it.key }
+                val accepted = preset.values.filterKeys { it in knownKeys }
+                draft.copy(
+                    values = draft.values + accepted,
+                    randomSeed = preset.randomSeed ?: draft.randomSeed,
+                )
+            } else {
+                val textFields = draft.fields.filter { it.kind == FieldKind.TEXT }
+                val byLabel = preset.prompts.associateBy { it.label }
+                var values = draft.values
+                textFields.forEachIndexed { index, field ->
+                    val prompt = byLabel[field.label] ?: preset.prompts.getOrNull(index)
+                    if (prompt != null) values = values + (field.key to prompt.value)
+                }
+                draft.copy(values = values)
             }
-            draft.copy(values = values)
         }
     }
 
@@ -300,6 +334,11 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 .onFailure { e -> _state.update { it.copy(message = container.galleryExporter.failMessage(e)) } }
         }
     }
+
+    private fun currentPrompts(draft: WorkflowDraft): List<LabeledText> = draft.fields
+        .filter { it.kind == FieldKind.TEXT }
+        .map { LabeledText(it.label, draft.values[it.key] ?: it.value) }
+        .filter { it.value.isNotBlank() }
 
     private fun consumeIncomingMedia() {
         val draft = _state.value.draft ?: return

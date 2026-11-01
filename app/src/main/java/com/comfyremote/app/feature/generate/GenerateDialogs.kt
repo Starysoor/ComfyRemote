@@ -11,12 +11,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -48,7 +48,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -58,6 +57,7 @@ import com.comfyremote.app.data.media.decodeSampled
 import com.comfyremote.app.data.repository.PromptPreset
 import com.comfyremote.app.ui.L10n
 import com.comfyremote.app.ui.Mono
+import com.comfyremote.app.ui.components.StatusChip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -94,33 +94,36 @@ fun PromptLibrarySheetContent(
     onQuery: (String) -> Unit,
     onApply: (PromptPreset) -> Unit,
     onDelete: (String) -> Unit,
+    onToggleFavorite: (String) -> Unit,
     onSaveCurrent: () -> Unit,
+    onSaveWorkflow: () -> Unit,
 ) {
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(L10n.t("提示词库", "Prompt Library"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(L10n.t("预设库", "Preset Library"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = onSaveCurrent) { Text(L10n.t("保存当前", "Save current")) }
+            TextButton(onClick = onSaveCurrent) { Text(L10n.t("存提示词", "Save prompt")) }
+            TextButton(onClick = onSaveWorkflow) { Text(L10n.t("存整套", "Save setup")) }
         }
         OutlinedTextField(
             value = query,
             onValueChange = onQuery,
-            label = { Text(L10n.t("搜索", "Search")) },
+            label = { Text(L10n.t("搜索标题、标签、参数", "Search title, tags, values")) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
         if (presets.isEmpty()) {
             Text(
-                L10n.t("还没有匹配的提示词预设", "No matching prompt presets"),
+                L10n.t("还没有匹配的预设", "No matching presets"),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 18.dp),
             )
         } else {
-            LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(Modifier.heightIn(max = 440.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(presets, key = { it.id }) { preset ->
                     Surface(
                         shape = MaterialTheme.shapes.small,
@@ -128,18 +131,27 @@ fun PromptLibrarySheetContent(
                         modifier = Modifier.fillMaxWidth().clickable { onApply(preset) },
                     ) {
                         Row(Modifier.padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(preset.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(preset.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                    StatusChip(if (preset.isWorkflowPreset) L10n.t("整套", "SETUP") else L10n.t("提示词", "PROMPT"))
+                                }
                                 Text(
-                                    preset.prompts.firstOrNull()?.value.orEmpty(),
+                                    preset.prompts.firstOrNull()?.value ?: preset.values.values.firstOrNull().orEmpty(),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
                                 )
+                                if (preset.tags.isNotEmpty()) {
+                                    Text(preset.tags.joinToString(" · "), fontFamily = Mono, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                                 preset.lastUsedAt?.let {
                                     Text(L10n.t("最近使用", "RECENT"), fontFamily = Mono, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 }
+                            }
+                            TextButton(onClick = { onToggleFavorite(preset.id) }) {
+                                Text(if (preset.favorite) "★" else "☆", color = if (preset.favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             IconButton(onClick = { onDelete(preset.id) }) {
                                 Icon(Icons.Default.Delete, L10n.t("删除", "Delete"), tint = MaterialTheme.colorScheme.onSurfaceVariant)

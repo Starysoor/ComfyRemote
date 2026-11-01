@@ -21,10 +21,7 @@ interface GenerationBackend {
     suspend fun queueSnapshot(): QueueSnapshot? = null
 }
 
-/**
- * A task-scoped backend permanently bound to the server selected at submit time.
- * Switching the app's current ServerSession cannot redirect an in-flight task.
- */
+/** A task-scoped backend permanently bound to the server selected at submit time. */
 class ComfyGenerationBackend(serverUrl: String) : GenerationBackend {
     private val api = ComfyApi(serverUrl)
 
@@ -42,7 +39,10 @@ interface GenerationHistorySink {
 
 class RepositoryGenerationHistorySink(
     private val repository: HistoryRepository,
+    private val serverUrl: String = "",
 ) : GenerationHistorySink {
     override fun newImageFile(promptId: String, index: Int): File = repository.newImageFile(promptId, index)
-    override fun add(item: HistoryItem) = repository.add(item)
+    override fun add(item: HistoryItem) = repository.add(
+        if (serverUrl.isBlank() || item.serverUrl.isNotBlank()) item else item.copy(serverUrl = serverUrl)
+    )
 }

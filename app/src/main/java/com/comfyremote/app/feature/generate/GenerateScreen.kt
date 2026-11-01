@@ -34,7 +34,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -85,6 +84,7 @@ import com.comfyremote.app.ui.L10n
 import com.comfyremote.app.ui.Mono
 import com.comfyremote.app.ui.components.ErrorCard
 import com.comfyremote.app.ui.components.SectionHeader
+import com.comfyremote.app.ui.components.StatusChip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -229,7 +229,7 @@ fun GenerateScreen(
 
                     item("prompt-header") {
                         SectionHeader(L10n.t("提示词", "Prompt")) {
-                            TextButton(onClick = { libraryOpen = true }) { Text(L10n.t("提示词库", "Library")) }
+                            TextButton(onClick = { libraryOpen = true }) { Text(L10n.t("预设库", "Presets")) }
                         }
                     }
                     itemsIndexed(textFields, key = { _, f -> f.key }) { _, field ->
@@ -416,7 +416,9 @@ fun GenerateScreen(
             onQuery = viewModel::setPresetQuery,
             onApply = { viewModel.applyPreset(it); libraryOpen = false },
             onDelete = viewModel::deletePreset,
+            onToggleFavorite = viewModel::togglePresetFavorite,
             onSaveCurrent = viewModel::saveCurrentPreset,
+            onSaveWorkflow = viewModel::saveCurrentWorkflowPreset,
         )
     }
     if (compareOpen) CompareDialog(results) { compareOpen = false }
@@ -446,8 +448,16 @@ private fun GenerationStatusCard(task: GenerationTask?, running: Boolean) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(statusLabel(task).uppercase(), fontFamily = Mono, fontSize = 11.sp, color = if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                if (task?.recovered == true) {
+                    Spacer(Modifier.width(6.dp))
+                    StatusChip(L10n.t("已恢复", "RECOVERED"))
+                }
                 task?.nodeTitle?.takeIf(String::isNotBlank)?.let { Spacer(Modifier.width(8.dp)); Text(it, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp) } ?: Spacer(Modifier.weight(1f))
-                task?.queueRemaining?.let { Text(L10n.t("队列 ", "Queue ") + it, fontFamily = Mono, fontSize = 10.sp) }
+                task?.queuePosition?.let { Text("#${it}", fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary) }
+                    ?: task?.queueRemaining?.let { Text(L10n.t("队列 ", "Queue ") + it, fontFamily = Mono, fontSize = 10.sp) }
+            }
+            task?.recoveryNote?.takeIf(String::isNotBlank)?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             task?.progress?.let { p ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

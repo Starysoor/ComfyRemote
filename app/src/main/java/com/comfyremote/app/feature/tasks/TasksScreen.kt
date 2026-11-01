@@ -35,6 +35,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,7 +49,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -97,7 +100,7 @@ fun TasksScreen(
             Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) {
                 EmptyState(
                     L10n.t("还没有任务", "No tasks yet"),
-                    L10n.t("提交生成后会出现在这里，离开创作页也会继续运行", "Submitted jobs keep running when you leave Create"),
+                    L10n.t("任务会持续运行，并在 App 重启后尝试恢复", "Jobs continue outside Create and recover after app restart"),
                 )
             }
         } else {
@@ -107,7 +110,7 @@ fun TasksScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(tasks, key = { it.taskId }) { task ->
-                    TaskCard(task, onClick = { onOpenTask(task.taskId) })
+                    TaskCard(task, viewModel.serverLabel(task.request.serverUrl), onClick = { onOpenTask(task.taskId) })
                 }
             }
         }
@@ -115,7 +118,7 @@ fun TasksScreen(
 }
 
 @Composable
-private fun TaskCard(task: GenerationTask, onClick: () -> Unit) {
+private fun TaskCard(task: GenerationTask, serverLabel: String, onClick: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
@@ -124,8 +127,14 @@ private fun TaskCard(task: GenerationTask, onClick: () -> Unit) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(task.request.workflowName, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                if (task.recovered) {
+                    StatusChip(L10n.t("已恢复", "RECOVERED"))
+                    Spacer(Modifier.width(5.dp))
+                }
                 StatusChip(task.label(), active = task.isActive, error = task.phase == GenerationPhase.FAILED)
             }
+            Text(serverLabel, fontFamily = Mono, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            task.queuePosition?.let { Text(L10n.t("队列位置 #", "Queue position #") + it, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary) }
             task.nodeTitle?.takeIf(String::isNotBlank)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -168,6 +177,7 @@ fun TaskDetailScreen(
     val task = tasks.firstOrNull { it.taskId == taskId }
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     var viewingPath by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(message) {
@@ -179,20 +189,13 @@ fun TaskDetailScreen(
         topBar = {
             TopAppBar(
                 title = { Text(L10n.t("任务详情", "Task detail")) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back"))
-                    }
-                },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) } },
             )
         }
     ) { pad ->
         if (task == null) {
             Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) {
-                EmptyState(
-                    L10n.t("任务已不在内存中", "Task is no longer in memory"),
-                    L10n.t("完成结果仍可在历史记录中查看", "Completed results remain in History"),
-                )
+                EmptyState(L10n.t("任务已不在运行列表", "Task is no longer in runtime list"), L10n.t("完成结果仍可在结果库中查看", "Completed results remain in Result Library"))
             }
             return@Scaffold
         }
@@ -206,13 +209,19 @@ fun TaskDetailScreen(
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(task.request.workflowName, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            if (task.recovered) {
+                                StatusChip(L10n.t("恢复任务", "RECOVERED"))
+                                Spacer(Modifier.width(5.dp))
+                            }
                             StatusChip(task.label(), active = task.isActive, error = task.phase == GenerationPhase.FAILED)
                         }
-                        Meta("SERVER", task.request.serverUrl)
+                        Meta("SERVER", viewModel.serverLabel(task.request.serverUrl))
                         Meta("TASK", task.taskId)
                         task.promptId?.let { Meta("PROMPT", it) }
+                        task.queuePosition?.let { Meta("QUEUE", "#$it") }
                         task.nodeTitle?.takeIf(String::isNotBlank)?.let { Meta("NODE", "${task.nodeId ?: "?"} · $it") }
                         task.seedInfo.takeIf(String::isNotBlank)?.let { Meta("SEED", it) }
+                        task.recoveryNote?.takeIf(String::isNotBlank)?.let { Meta("RECOVERY", it) }
                         Meta("CREATED", formatTimeFull(task.createdAt))
                         task.startedAt?.let { Meta("STARTED", formatTimeFull(it)) }
                         task.completedAt?.let { Meta("COMPLETED", formatTimeFull(it)) }
@@ -223,58 +232,65 @@ fun TaskDetailScreen(
                     }
                 }
             }
-            task.error?.let { error ->
-                item {
-                    ErrorCard(
-                        error.uiLabel(),
-                        listOfNotNull(error.nodeTitle, error.nodeType, error.nodeId?.let { "#$it" }, error.message).joinToString(" · "),
-                    )
-                }
-            }
+            task.error?.let { error -> item {
+                ErrorCard(
+                    error.uiLabel(),
+                    listOfNotNull(error.nodeTitle, error.nodeType, error.nodeId?.let { "#$it" }, error.message).joinToString(" · ")
+                )
+            } }
             if (task.results.isNotEmpty()) {
                 item { Text(L10n.t("结果", "Results"), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary) }
                 items(task.results, key = { it.id }) { result ->
                     val bitmap by produceState<Bitmap?>(null, result.localPath) {
                         value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1200) }
                     }
-                    if (bitmap == null) {
-                        Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                    } else {
-                        Image(
-                            bitmap!!.asImageBitmap(),
-                            null,
-                            Modifier.fillMaxWidth().clickable { viewingPath = result.localPath },
-                            contentScale = ContentScale.FillWidth,
-                        )
-                    }
+                    if (bitmap == null) Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    else Image(bitmap!!.asImageBitmap(), null, Modifier.fillMaxWidth().clickable { viewingPath = result.localPath }, contentScale = ContentScale.FillWidth)
                 }
             }
             item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    when {
-                        task.isActive -> OutlinedButton(
-                            onClick = { viewModel.cancel(task.taskId) },
-                            enabled = task.phase != GenerationPhase.CANCELLING,
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        when {
+                            task.isActive -> OutlinedButton(
+                                onClick = { viewModel.cancel(task.taskId) },
+                                enabled = task.phase != GenerationPhase.CANCELLING,
+                                modifier = Modifier.weight(1f),
+                            ) { Text(L10n.t("取消", "Cancel")) }
+                            task.phase == GenerationPhase.FAILED || task.phase == GenerationPhase.CANCELLED -> Button(
+                                onClick = { viewModel.retry(task.taskId)?.let(onRetry) },
+                                modifier = Modifier.weight(1f),
+                            ) { Text(L10n.t("重新生成", "Retry")) }
+                        }
+                        OutlinedButton(
+                            onClick = { viewModel.prepareReuse(task.taskId)?.let(onReuse) },
                             modifier = Modifier.weight(1f),
-                        ) { Text(L10n.t("取消", "Cancel")) }
-                        task.phase == GenerationPhase.FAILED || task.phase == GenerationPhase.CANCELLED -> Button(
-                            onClick = { viewModel.retry(task.taskId)?.let(onRetry) },
-                            modifier = Modifier.weight(1f),
-                        ) { Text(L10n.t("重试", "Retry")) }
+                        ) { Text(L10n.t("复用参数", "Reuse")) }
                     }
-                    OutlinedButton(
-                        onClick = { viewModel.prepareReuse(task.taskId)?.let(onReuse) },
-                        modifier = Modifier.weight(1f),
-                    ) { Text(L10n.t("复用参数", "Reuse parameters")) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (!task.isActive && !task.promptId.isNullOrBlank()) {
+                            OutlinedButton(onClick = { viewModel.recover(task.taskId) }, modifier = Modifier.weight(1f)) {
+                                Text(L10n.t("恢复原任务", "Recover original"))
+                            }
+                        }
+                        OutlinedButton(onClick = { viewModel.duplicate(task.taskId)?.let(onRetry) }, modifier = Modifier.weight(1f)) {
+                            Text(L10n.t("复制任务", "Duplicate"))
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            clipboard.setText(AnnotatedString(viewModel.diagnostics(task.taskId)))
+                            android.widget.Toast.makeText(context, L10n.t("诊断已复制", "Diagnostics copied"), android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(L10n.t("复制诊断信息", "Copy diagnostics")) }
                 }
             }
         }
     }
 
     viewingPath?.let { path ->
-        val bitmap by produceState<Bitmap?>(null, path) {
-            value = withContext(Dispatchers.IO) { decodeSampled(path, 1800) }
-        }
+        val bitmap by produceState<Bitmap?>(null, path) { value = withContext(Dispatchers.IO) { decodeSampled(path, 1800) } }
         bitmap?.let { image ->
             ImageViewerDialog(
                 bitmap = image,

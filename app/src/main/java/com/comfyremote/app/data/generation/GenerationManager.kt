@@ -26,11 +26,10 @@ class GenerationManager(
     private val appContext: Context,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val historySink = RepositoryGenerationHistorySink(container.historyRepository)
     private val taskStore = container.generationTaskStore
     private val taskLock = Any()
 
-    private val _tasks = MutableStateFlow(prune(taskStore.load()))
+    private val _tasks = MutableStateFlow(prune(normalizeLoaded(taskStore.load())))
     val tasks: StateFlow<List<GenerationTask>> = _tasks.asStateFlow()
     val activeTasks: StateFlow<List<GenerationTask>> = _tasks
         .map { list -> list.filter { it.isActive } }
@@ -39,6 +38,8 @@ class GenerationManager(
     private val jobs = ConcurrentHashMap<String, Job>()
 
     init {
+        // Persist normalization (notably CANCELLING -> CANCELLED) before any recovery work starts.
+        taskStore.save(_tasks.value)
         val persistedActive = _tasks.value.filter { it.isActive }
         if (persistedActive.isNotEmpty()) startService()
         persistedActive.forEach(::launchRecovery)
@@ -105,10 +106,7 @@ class GenerationManager(
         .stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
 
     private suspend fun execute(task: GenerationTask) {
-        val runner = GenerationRunner(
-            backend = ComfyGenerationBackend(task.request.serverUrl),
-            history = historySink,
-        )
+        val runner = runnerFor(task)
         try {
             val final = runner.run(task) { updated -> patch(updated.taskId) { updated } }
             patch(final.taskId) { final }
@@ -142,10 +140,7 @@ class GenerationManager(
             recoveryNote = original.recoveryNote ?: "Recovering after restart",
         )
         patch(task.taskId, allowTerminalExit = true) { task }
-        val runner = GenerationRunner(
-            backend = ComfyGenerationBackend(task.request.serverUrl),
-            history = historySink,
-        )
+        val runner = runnerFor(task)
         try {
             val final = runner.recover(task) { updated -> patch(updated.taskId, allowTerminalExit = true) { updated } }
             patch(final.taskId, allowTerminalExit = true) { final }
@@ -172,6 +167,11 @@ class GenerationManager(
             }
         }
     }
+
+    private fun runnerFor(task: GenerationTask) = GenerationRunner(
+        backend = ComfyGenerationBackend(task.request.serverUrl),
+        history = RepositoryGenerationHistorySink(container.historyRepository, task.request.serverUrl),
+    )
 
     private fun patchFailure(taskId: String, e: Exception) {
         patch(taskId) {
@@ -229,10 +229,33 @@ class GenerationManager(
 
     private fun mutateTasks(transform: (List<GenerationTask>) -> List<GenerationTask>) {
         synchronized(taskLock) {
-            val next = transform(_tasks.value)
+            val old = _tasks.value
+            val next = transform(old)
             _tasks.value = next
-            taskStore.save(next)
+            // Preview/progress can update many times per second; only durable recovery state hits disk.
+            if (durable(old) != durable(next)) taskStore.save(next)
         }
+    }
+
+    private fun durable(list: List<GenerationTask>): List<GenerationTask> = list.map {
+        it.copy(
+            preview = null,
+            progress = null,
+            queueRemaining = null,
+            nodeId = null,
+            nodeTitle = null,
+        )
+    }
+
+    private fun normalizeLoaded(list: List<GenerationTask>): List<GenerationTask> = list.map { task ->
+        if (task.phase == GenerationPhase.CANCELLING) {
+            task.copy(
+                phase = GenerationPhase.CANCELLED,
+                completedAt = task.completedAt ?: System.currentTimeMillis(),
+                preview = null,
+                recoveryNote = "Cancellation persisted across restart",
+            )
+        } else task.copy(preview = null)
     }
 
     private fun prune(list: List<GenerationTask>): List<GenerationTask> {

@@ -9,14 +9,49 @@ import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.repository.PromptPreset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class HistoryViewModel(private val container: AppContainer) : ViewModel() {
-    val items: StateFlow<List<HistoryItem>> = container.historyRepository.items
+    private val _query = MutableStateFlow("")
+    val query: StateFlow<String> = _query.asStateFlow()
+    private val _favoritesOnly = MutableStateFlow(false)
+    val favoritesOnly: StateFlow<Boolean> = _favoritesOnly.asStateFlow()
+
+    val items: StateFlow<List<HistoryItem>> = combine(
+        container.historyRepository.items,
+        _query,
+        _favoritesOnly,
+    ) { all, query, favoritesOnly ->
+        val q = query.trim()
+        all.filter { item ->
+            (!favoritesOnly || item.favorite) && (
+                q.isBlank() || item.wfName.contains(q, true) || item.wfPath.contains(q, true) ||
+                    item.summary.contains(q, true) || item.seeds.contains(q, true) ||
+                    item.serverUrl.contains(q, true) || item.prompts.any { it.value.contains(q, true) } ||
+                    item.tags.any { it.contains(q, true) }
+                )
+        }.sortedWith(compareByDescending<HistoryItem> { it.favorite }.thenByDescending { it.time })
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        container.historyRepository.load(),
+    )
+
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
+
+    fun setQuery(value: String) { _query.value = value }
+    fun toggleFavoritesOnly() { _favoritesOnly.value = !_favoritesOnly.value }
+    fun toggleFavorite(id: String) = container.historyRepository.toggleFavorite(id)
+    fun setTags(id: String, raw: String) = container.historyRepository.setTags(
+        id,
+        raw.split(',', '，', '#').map(String::trim).filter(String::isNotBlank),
+    )
 
     fun delete(id: String) = container.historyRepository.delete(id)
     fun deleteMany(ids: Collection<String>) = container.historyRepository.deleteMany(ids)
@@ -30,8 +65,10 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
                 prompts = item.prompts,
                 workflowPath = item.wfPath.ifBlank { null },
                 createdAt = System.currentTimeMillis(),
+                tags = (listOf("result") + item.tags).distinct(),
             )
         )
+        _message.value = com.comfyremote.app.ui.L10n.t("已加入预设库", "Saved to preset library")
     }
 
     fun prepareReuse(item: HistoryItem): DraftTransfer? {
@@ -39,6 +76,11 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
         val transfer = DraftTransfer(item.wfPath, item.wfName, item.values, item.randomSeed)
         container.draftTransferRepository.put(transfer)
         return transfer
+    }
+
+    fun serverLabel(url: String): String {
+        if (url.isBlank()) return ""
+        return container.serverRepository.load().firstOrNull { it.url == url }?.name?.takeIf { it.isNotBlank() } ?: url
     }
 
     fun save(bitmap: Bitmap) {
