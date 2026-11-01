@@ -45,7 +45,8 @@ class HistoryStore(context: Context) {
     }.getOrDefault(emptyList()).sortedByDescending { it.time }
 
     fun add(item: HistoryItem) {
-        val kept = (load() + item).sortedByDescending { it.time }.take(MAX_ITEMS)
+        // Recovery can finish the same prompt twice around a process crash; prompt_id is the identity.
+        val kept = (load().filter { it.id != item.id } + item).sortedByDescending { it.time }.take(MAX_ITEMS)
         val liveFiles = kept.flatMap { it.images }.toSet()
         dir.listFiles { f -> f.isFile && f.name != "index.json" }?.forEach { f ->
             if (f.absolutePath !in liveFiles) f.delete()
@@ -63,7 +64,7 @@ class HistoryStore(context: Context) {
 
     fun delete(id: String) {
         val victim = load().firstOrNull { it.id == id }
-        victim?.images?.forEach { runCatching { File(it).delete() } } // only the deleted item's files
+        victim?.images?.forEach { runCatching { File(it).delete() } }
         val kept = load().filter { it.id != id }
         indexFile.writeText(JSONArray().apply { kept.forEach { put(it.toJson()) } }.toString())
     }

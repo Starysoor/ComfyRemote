@@ -3,6 +3,7 @@ package com.comfyremote.app.data.generation
 import com.comfyremote.app.ComfyApi
 import com.comfyremote.app.HistoryItem
 import com.comfyremote.app.OutputImage
+import com.comfyremote.app.QueueSnapshot
 import com.comfyremote.app.WsEvent
 import com.comfyremote.app.data.repository.HistoryRepository
 import kotlinx.coroutines.flow.Flow
@@ -15,6 +16,9 @@ interface GenerationBackend {
     fun wsEvents(clientId: String): Flow<WsEvent>
     suspend fun historyEntry(promptId: String): JSONObject?
     suspend fun downloadImage(image: OutputImage): ByteArray
+
+    /** Optional for fake/legacy backends; production uses it for exact queue state and recovery. */
+    suspend fun queueSnapshot(): QueueSnapshot? = null
 }
 
 /**
@@ -28,6 +32,7 @@ class ComfyGenerationBackend(serverUrl: String) : GenerationBackend {
     override fun wsEvents(clientId: String): Flow<WsEvent> = api.wsEvents(clientId)
     override suspend fun historyEntry(promptId: String): JSONObject? = api.historyEntry(promptId)
     override suspend fun downloadImage(image: OutputImage): ByteArray = api.downloadImage(image)
+    override suspend fun queueSnapshot(): QueueSnapshot = api.queueSnapshot()
 }
 
 interface GenerationHistorySink {

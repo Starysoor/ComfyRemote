@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.SharedPreferences
 import com.comfyremote.app.data.discovery.LanServerDiscovery
 import com.comfyremote.app.data.generation.GenerationManager
+import com.comfyremote.app.data.generation.GenerationTaskStore
 import com.comfyremote.app.data.media.GalleryExporter
 import com.comfyremote.app.data.media.IncomingMediaRepository
 import com.comfyremote.app.data.repository.AiRepository
@@ -49,5 +50,6 @@ class AppContainer(val app: Application) {
     val incomingMedia = IncomingMediaRepository()
     val navigationRequests = NavigationRequestRepository()
 
+    val generationTaskStore = GenerationTaskStore(app)
     val generationManager = GenerationManager(this, app)
 }

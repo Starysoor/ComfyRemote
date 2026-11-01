@@ -40,43 +40,165 @@ class GenerationRunner(
         val (prompt, seedsUsed) = GenerationPromptBuilder.build(request)
         val clientId = task.clientId ?: error("missing clientId")
         val promptId = backend.queuePrompt(prompt, clientId)
-        update(current.copy(phase = GenerationPhase.QUEUED, promptId = promptId))
+        val seedInfo = seedsUsed.values.joinToString(", ")
+        // Persist actual random seeds immediately after queueing so process recovery can reproduce metadata.
+        update(
+            current.copy(
+                phase = GenerationPhase.QUEUED,
+                promptId = promptId,
+                seedValues = seedsUsed,
+                seedInfo = seedInfo,
+                queuePosition = null,
+            )
+        )
+        return follow(current, promptId, seedsUsed, onUpdate, useWebSocket = true)
+    }
 
+    /**
+     * Re-attaches to a prompt that was already submitted before process death.
+     * History is checked first, then /queue. A missing prompt is not guessed to be running.
+     */
+    suspend fun recover(
+        task: GenerationTask,
+        onUpdate: (GenerationTask) -> Unit,
+    ): GenerationTask {
+        var current = task.copy(preview = null, recovered = true)
+        fun update(next: GenerationTask) {
+            if (current.isTerminal) return
+            current = next
+            onUpdate(next)
+        }
+
+        val promptId = task.promptId
+        if (promptId.isNullOrBlank()) {
+            val failed = current.copy(
+                phase = GenerationPhase.FAILED,
+                error = GenerationError(ErrorKind.RECOVERY, "Task ended before a prompt_id was persisted"),
+                completedAt = System.currentTimeMillis(),
+                recoveryNote = "No prompt_id",
+            )
+            onUpdate(failed)
+            return failed
+        }
+
+        update(current.copy(phase = GenerationPhase.RECOVERING, recoveryNote = "Checking ComfyUI state"))
+        val seedsUsed = effectiveSeeds(current)
+
+        repeat(RECOVERY_PROBES) {
+            backend.historyEntry(promptId)?.let { entry ->
+                return finish(current, entry, promptId, seedsUsed, onUpdate)
+            }
+            val queue = backend.queueSnapshot()
+            if (queue == null) {
+                // Test/legacy backend without /queue support: keep the old history-authority behavior.
+                update(current.copy(phase = GenerationPhase.RUNNING, progress = null, recoveryNote = "Recovered by history polling"))
+                return follow(current, promptId, seedsUsed, onUpdate, useWebSocket = false)
+            }
+            queue.pendingPosition(promptId)?.let { position ->
+                update(
+                    current.copy(
+                        phase = GenerationPhase.QUEUED,
+                        queuePosition = position,
+                        progress = null,
+                        recoveryNote = "Recovered queued task",
+                    )
+                )
+                return follow(current, promptId, seedsUsed, onUpdate, useWebSocket = false)
+            }
+            if (queue.isRunning(promptId)) {
+                update(
+                    current.copy(
+                        phase = GenerationPhase.RUNNING,
+                        queuePosition = null,
+                        progress = current.progress ?: 0f,
+                        recoveryNote = "Recovered running task",
+                    )
+                )
+                return follow(current, promptId, seedsUsed, onUpdate, useWebSocket = false)
+            }
+            delay(RECOVERY_PROBE_DELAY_MS)
+        }
+
+        val failed = current.copy(
+            phase = GenerationPhase.FAILED,
+            error = GenerationError(
+                ErrorKind.RECOVERY,
+                "Prompt is no longer present in ComfyUI history or queue",
+            ),
+            completedAt = System.currentTimeMillis(),
+            preview = null,
+            recoveryNote = "Prompt missing on server",
+        )
+        onUpdate(failed)
+        return failed
+    }
+
+    private suspend fun follow(
+        task: GenerationTask,
+        promptId: String,
+        seedsUsed: Map<String, String>,
+        onUpdate: (GenerationTask) -> Unit,
+        useWebSocket: Boolean,
+    ): GenerationTask {
+        var current = task
+        fun update(next: GenerationTask) {
+            if (current.isTerminal) return
+            current = next
+            onUpdate(next)
+        }
+
+        val clientId = task.clientId
         val entry: JSONObject = coroutineScope {
-            val wsJob: Job = launch {
-                runCatching {
-                    backend.wsEvents(clientId).collect { event ->
-                        when (event) {
-                            is WsEvent.Preview -> update(current.copy(preview = event.bitmap))
-                            is WsEvent.Json -> {
-                                val data = event.obj.optJSONObject("data")
-                                when (event.obj.optString("type")) {
-                                    "status" -> {
-                                        val remaining = data?.optJSONObject("status")?.optJSONObject("exec_info")
-                                            ?.optInt("queue_remaining", -1) ?: -1
-                                        if (remaining >= 0) update(current.copy(queueRemaining = remaining))
-                                    }
-                                    "execution_start" -> if (data?.optString("prompt_id") == promptId) {
-                                        update(current.copy(phase = GenerationPhase.RUNNING, progress = 0f))
-                                    }
-                                    "executing" -> if (data?.optString("prompt_id") == promptId) {
-                                        val node = data.optString("node")
-                                        if (node.isNotEmpty() && node != "null") {
+            val wsJob: Job? = if (useWebSocket && !clientId.isNullOrBlank()) {
+                launch {
+                    runCatching {
+                        backend.wsEvents(clientId).collect { event ->
+                            when (event) {
+                                is WsEvent.Preview -> update(current.copy(preview = event.bitmap))
+                                is WsEvent.Json -> {
+                                    val data = event.obj.optJSONObject("data")
+                                    when (event.obj.optString("type")) {
+                                        "status" -> {
+                                            val remaining = data?.optJSONObject("status")?.optJSONObject("exec_info")
+                                                ?.optInt("queue_remaining", -1) ?: -1
+                                            if (remaining >= 0) update(current.copy(queueRemaining = remaining))
+                                        }
+                                        "execution_start" -> if (data?.optString("prompt_id") == promptId) {
                                             update(
                                                 current.copy(
-                                                    nodeId = node,
-                                                    nodeTitle = request.nodeTitles[node].orEmpty(),
-                                                    progress = null,
+                                                    phase = GenerationPhase.RUNNING,
+                                                    queuePosition = null,
+                                                    progress = 0f,
                                                 )
                                             )
                                         }
-                                    }
-                                    "progress" -> {
-                                        val eventPrompt = data?.optString("prompt_id")
-                                        if (data != null && data.has("value") && (eventPrompt.isNullOrEmpty() || eventPrompt == promptId)) {
-                                            val value = data.optDouble("value", 0.0)
-                                            val max = data.optDouble("max", 1.0).coerceAtLeast(1e-6)
-                                            update(current.copy(progress = (value / max).toFloat().coerceIn(0f, 1f)))
+                                        "executing" -> if (data?.optString("prompt_id") == promptId) {
+                                            val node = data.optString("node")
+                                            if (node.isNotEmpty() && node != "null") {
+                                                update(
+                                                    current.copy(
+                                                        phase = GenerationPhase.RUNNING,
+                                                        queuePosition = null,
+                                                        nodeId = node,
+                                                        nodeTitle = task.request.nodeTitles[node].orEmpty(),
+                                                        progress = null,
+                                                    )
+                                                )
+                                            }
+                                        }
+                                        "progress" -> {
+                                            val eventPrompt = data?.optString("prompt_id")
+                                            if (data != null && data.has("value") && (eventPrompt.isNullOrEmpty() || eventPrompt == promptId)) {
+                                                val value = data.optDouble("value", 0.0)
+                                                val max = data.optDouble("max", 1.0).coerceAtLeast(1e-6)
+                                                update(
+                                                    current.copy(
+                                                        phase = GenerationPhase.RUNNING,
+                                                        queuePosition = null,
+                                                        progress = (value / max).toFloat().coerceIn(0f, 1f),
+                                                    )
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -84,67 +206,124 @@ class GenerationRunner(
                         }
                     }
                 }
-            }
+            } else null
             try {
-                pollHistory(promptId) {
-                    if (current.phase == GenerationPhase.QUEUED) {
-                        update(current.copy(phase = GenerationPhase.RUNNING, progress = 0f))
+                pollHistory(promptId) { phase, position ->
+                    when (phase) {
+                        GenerationPhase.QUEUED -> update(
+                            current.copy(
+                                phase = GenerationPhase.QUEUED,
+                                queuePosition = position,
+                                progress = null,
+                            )
+                        )
+                        GenerationPhase.RUNNING -> update(
+                            current.copy(
+                                phase = GenerationPhase.RUNNING,
+                                queuePosition = null,
+                                progress = current.progress ?: 0f,
+                            )
+                        )
+                        else -> Unit
                     }
                 }
             } finally {
-                wsJob.cancel()
+                wsJob?.cancel()
             }
         }
 
+        return finish(current, entry, promptId, seedsUsed, onUpdate)
+    }
+
+    private suspend fun pollHistory(
+        promptId: String,
+        onServerState: (GenerationPhase, Int?) -> Unit,
+    ): JSONObject {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var first = true
+        while (System.currentTimeMillis() < deadline) {
+            backend.historyEntry(promptId)?.let { return it }
+            val queue = runCatching { backend.queueSnapshot() }.getOrNull()
+            when {
+                queue?.isRunning(promptId) == true -> onServerState(GenerationPhase.RUNNING, null)
+                queue?.pendingPosition(promptId) != null -> onServerState(
+                    GenerationPhase.QUEUED,
+                    queue.pendingPosition(promptId),
+                )
+                queue == null && first -> onServerState(GenerationPhase.RUNNING, null)
+                // A known queue snapshot that momentarily does not contain the prompt is not proof of RUNNING.
+            }
+            first = false
+            delay(pollDelayMs)
+        }
+        throw GenerationTimeoutException("Timed out waiting for ComfyUI history")
+    }
+
+    private suspend fun finish(
+        task: GenerationTask,
+        entry: JSONObject,
+        promptId: String,
+        seedsUsed: Map<String, String>,
+        onUpdate: (GenerationTask) -> Unit,
+    ): GenerationTask {
         if (historyCancelled(entry)) {
-            update(current.copy(phase = GenerationPhase.CANCELLED, completedAt = System.currentTimeMillis(), preview = null))
-            return current
+            return task.copy(
+                phase = GenerationPhase.CANCELLED,
+                completedAt = System.currentTimeMillis(),
+                preview = null,
+                queuePosition = null,
+            ).also(onUpdate)
         }
 
-        extractError(entry, request.nodeTitles)?.let { error ->
-            update(current.copy(phase = GenerationPhase.FAILED, error = error, completedAt = System.currentTimeMillis(), preview = null))
-            return current
+        extractError(entry, task.request.nodeTitles)?.let { error ->
+            return task.copy(
+                phase = GenerationPhase.FAILED,
+                error = error,
+                completedAt = System.currentTimeMillis(),
+                preview = null,
+                queuePosition = null,
+            ).also(onUpdate)
         }
 
         val outputImages = parseImages(entry)
         val results = mutableListOf<ResultImage>()
         outputImages.forEachIndexed { index, image ->
             runCatching {
-                val bytes = backend.downloadImage(image)
                 val file = history.newImageFile(promptId, index)
-                withContext(Dispatchers.IO) { file.writeBytes(bytes) }
+                if (!file.isFile || file.length() == 0L) {
+                    val bytes = backend.downloadImage(image)
+                    withContext(Dispatchers.IO) { file.writeBytes(bytes) }
+                }
                 results += ResultImage(id = "$promptId:$index", localPath = file.absolutePath)
             }
         }
         if (outputImages.isNotEmpty() && results.isEmpty()) {
-            update(
-                current.copy(
-                    phase = GenerationPhase.FAILED,
-                    error = GenerationError(ErrorKind.DOWNLOAD, "All result image downloads failed"),
-                    completedAt = System.currentTimeMillis(),
-                    preview = null,
-                )
-            )
-            return current
+            return task.copy(
+                phase = GenerationPhase.FAILED,
+                error = GenerationError(ErrorKind.DOWNLOAD, "All result image downloads failed"),
+                completedAt = System.currentTimeMillis(),
+                preview = null,
+                queuePosition = null,
+            ).also(onUpdate)
         }
 
-        val valuesUsed = request.fieldValues + seedsUsed
-        val summary = request.fields.firstOrNull { it.kind == FieldKind.TEXT }
-            ?.let { valuesUsed[it.key] ?: it.value }?.take(50) ?: request.workflowName
-        val prompts = request.fields.filter { it.kind == FieldKind.TEXT }
+        val valuesUsed = task.request.fieldValues + seedsUsed
+        val summary = task.request.fields.firstOrNull { it.kind == FieldKind.TEXT }
+            ?.let { valuesUsed[it.key] ?: it.value }?.take(50) ?: task.request.workflowName
+        val prompts = task.request.fields.filter { it.kind == FieldKind.TEXT }
             .map { LabeledText(it.label, valuesUsed[it.key] ?: it.value) }
             .filter { it.value.isNotBlank() }
-        val seedInfo = seedsUsed.values.joinToString(", ")
+        val seedInfo = seedsUsed.values.joinToString(", ").ifBlank { task.seedInfo }
 
         // Persist before publishing SUCCEEDED so History observers see the result immediately.
         history.add(
             HistoryItem(
                 id = promptId,
-                wfPath = request.workflowPath,
-                wfName = request.workflowName,
+                wfPath = task.request.workflowPath,
+                wfName = task.request.workflowName,
                 time = System.currentTimeMillis(),
                 values = valuesUsed,
-                randomSeed = request.randomSeed,
+                randomSeed = task.request.randomSeed,
                 images = results.map { it.localPath },
                 summary = summary,
                 prompts = prompts,
@@ -152,31 +331,24 @@ class GenerationRunner(
             )
         )
 
-        update(
-            current.copy(
-                phase = GenerationPhase.SUCCEEDED,
-                results = results,
-                completedAt = System.currentTimeMillis(),
-                preview = null,
-                seedInfo = seedInfo,
-                seedValues = seedsUsed,
-            )
-        )
-        return current
+        return task.copy(
+            phase = GenerationPhase.SUCCEEDED,
+            results = results,
+            completedAt = System.currentTimeMillis(),
+            preview = null,
+            seedInfo = seedInfo,
+            seedValues = seedsUsed,
+            queuePosition = null,
+            recoveryNote = if (task.recovered) "Recovered from ComfyUI" else task.recoveryNote,
+        ).also(onUpdate)
     }
 
-    private suspend fun pollHistory(promptId: String, onStillRunning: () -> Unit): JSONObject {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        var first = true
-        while (System.currentTimeMillis() < deadline) {
-            backend.historyEntry(promptId)?.let { return it }
-            if (first) {
-                first = false
-                onStillRunning()
-            }
-            delay(pollDelayMs)
+    private fun effectiveSeeds(task: GenerationTask): Map<String, String> {
+        if (task.seedValues.isNotEmpty()) return task.seedValues
+        if (task.request.randomSeed) return emptyMap()
+        return task.request.fields.filter { it.kind == FieldKind.SEED }.associate { field ->
+            field.key to (task.request.fieldValues[field.key] ?: field.value)
         }
-        throw GenerationTimeoutException("Timed out waiting for ComfyUI history")
     }
 
     private fun extractError(entry: JSONObject, nodeTitles: Map<String, String>): GenerationError? {
@@ -215,5 +387,10 @@ class GenerationRunner(
             }
         }
         return result
+    }
+
+    companion object {
+        private const val RECOVERY_PROBES = 3
+        private const val RECOVERY_PROBE_DELAY_MS = 2_000L
     }
 }

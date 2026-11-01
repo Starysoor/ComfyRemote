@@ -7,6 +7,7 @@ import com.comfyremote.app.AppContainer
 import com.comfyremote.app.ComfyApi
 import com.comfyremote.app.PromptValidationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -16,25 +17,32 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
-/** App-scoped runtime owner for all generation jobs. */
+/** App-scoped runtime owner for all generation jobs, including process-death recovery. */
 class GenerationManager(
     private val container: AppContainer,
     private val appContext: Context,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val historySink = RepositoryGenerationHistorySink(container.historyRepository)
+    private val taskStore = container.generationTaskStore
+    private val taskLock = Any()
 
-    private val _tasks = MutableStateFlow<List<GenerationTask>>(emptyList())
+    private val _tasks = MutableStateFlow(prune(taskStore.load()))
     val tasks: StateFlow<List<GenerationTask>> = _tasks.asStateFlow()
     val activeTasks: StateFlow<List<GenerationTask>> = _tasks
         .map { list -> list.filter { it.isActive } }
-        .stateIn(scope, SharingStarted.Eagerly, emptyList())
+        .stateIn(scope, SharingStarted.Eagerly, _tasks.value.filter { it.isActive })
 
     private val jobs = ConcurrentHashMap<String, Job>()
+
+    init {
+        val persistedActive = _tasks.value.filter { it.isActive }
+        if (persistedActive.isNotEmpty()) startService()
+        persistedActive.forEach(::launchRecovery)
+    }
 
     fun submit(request: GenerationRequest): String {
         val task = GenerationTask(
@@ -42,16 +50,16 @@ class GenerationManager(
             request = request,
             clientId = java.util.UUID.randomUUID().toString(),
         )
-        _tasks.update { prune(listOf(task) + it) }
-        ContextCompat.startForegroundService(appContext, Intent(appContext, GenerationService::class.java))
-        jobs[task.taskId] = scope.launch { execute(task) }
+        mutateTasks { prune(listOf(task) + it) }
+        startService()
+        launchTracked(task.taskId) { execute(task) }
         return task.taskId
     }
 
     suspend fun cancel(taskId: String) {
         val task = _tasks.value.firstOrNull { it.taskId == taskId } ?: return
         if (!task.isActive || task.phase == GenerationPhase.CANCELLING) return
-        patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING) }
+        patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }
         when (task.phase) {
             GenerationPhase.PREPARING, GenerationPhase.QUEUEING -> jobs[taskId]?.cancel()
             GenerationPhase.QUEUED -> {
@@ -64,6 +72,7 @@ class GenerationManager(
                 // ComfyUI interrupt is server-scoped. Always target this task's original server.
                 runCatching { ComfyApi(task.request.serverUrl).interrupt() }
             }
+            GenerationPhase.RECOVERING -> cancelRecovering(task)
             else -> Unit
         }
     }
@@ -71,6 +80,24 @@ class GenerationManager(
     fun retry(taskId: String): String? {
         val old = _tasks.value.firstOrNull { it.taskId == taskId } ?: return null
         return submit(old.request.copy(id = java.util.UUID.randomUUID().toString()))
+    }
+
+    /** Re-attach a previously failed recovery without submitting a duplicate prompt. */
+    fun recoverExisting(taskId: String): Boolean {
+        val current = _tasks.value.firstOrNull { it.taskId == taskId } ?: return false
+        if (current.promptId.isNullOrBlank() || current.isActive) return false
+        val recovering = current.copy(
+            phase = GenerationPhase.RECOVERING,
+            error = null,
+            completedAt = null,
+            recovered = true,
+            recoveryNote = "Retrying recovery",
+            preview = null,
+        )
+        patch(taskId, allowTerminalExit = true) { recovering }
+        startService()
+        launchRecovery(recovering)
+        return true
     }
 
     fun observe(taskId: String) = _tasks
@@ -91,39 +118,136 @@ class GenerationManager(
                     phase = GenerationPhase.CANCELLED,
                     completedAt = System.currentTimeMillis(),
                     preview = null,
+                    queuePosition = null,
                 )
             }
             throw e
         } catch (e: Exception) {
-            patch(task.taskId) {
-                it.copy(
-                    phase = GenerationPhase.FAILED,
-                    error = GenerationError(
-                        kind = when (e) {
-                            is PromptValidationException -> ErrorKind.PROMPT_VALIDATION
-                            is GenerationTimeoutException -> ErrorKind.TIMEOUT
-                            else -> ErrorKind.CONNECTION
-                        },
-                        message = e.message ?: e.toString(),
-                    ),
-                    completedAt = System.currentTimeMillis(),
-                    preview = null,
-                )
-            }
-        } finally {
-            jobs.remove(task.taskId)
+            patchFailure(task.taskId, e)
         }
     }
 
-    private fun patch(taskId: String, transform: (GenerationTask) -> GenerationTask) {
-        _tasks.update { list ->
+    private fun launchRecovery(task: GenerationTask) {
+        if (jobs.containsKey(task.taskId)) return
+        launchTracked(task.taskId) { recoverExecute(task) }
+    }
+
+    private suspend fun recoverExecute(original: GenerationTask) {
+        val task = original.copy(
+            phase = GenerationPhase.RECOVERING,
+            preview = null,
+            recovered = true,
+            error = null,
+            completedAt = null,
+        )
+        patch(task.taskId, allowTerminalExit = true) { task }
+        val runner = GenerationRunner(
+            backend = ComfyGenerationBackend(task.request.serverUrl),
+            history = historySink,
+        )
+        try {
+            val final = runner.recover(task) { updated -> patch(updated.taskId, allowTerminalExit = true) { updated } }
+            patch(final.taskId, allowTerminalExit = true) { final }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            patch(task.taskId, allowTerminalExit = true) {
+                it.copy(
+                    phase = GenerationPhase.CANCELLED,
+                    completedAt = System.currentTimeMillis(),
+                    preview = null,
+                    queuePosition = null,
+                )
+            }
+            throw e
+        } catch (e: Exception) {
+            patch(task.taskId, allowTerminalExit = true) {
+                it.copy(
+                    phase = GenerationPhase.FAILED,
+                    error = GenerationError(ErrorKind.RECOVERY, e.message ?: e.toString()),
+                    completedAt = System.currentTimeMillis(),
+                    preview = null,
+                    recoveryNote = "Reconnect failed",
+                )
+            }
+        }
+    }
+
+    private suspend fun cancelRecovering(task: GenerationTask) {
+        val promptId = task.promptId
+        if (promptId.isNullOrBlank()) {
+            jobs[task.taskId]?.cancel()
+            return
+        }
+        val api = ComfyApi(task.request.serverUrl)
+        val snapshot = runCatching { api.queueSnapshot() }.getOrNull()
+        when {
+            snapshot?.pendingPosition(promptId) != null -> {
+                runCatching { api.deleteFromQueue(promptId) }
+                jobs[task.taskId]?.cancel()
+            }
+            snapshot?.isRunning(promptId) == true -> runCatching { api.interrupt() }
+            else -> jobs[task.taskId]?.cancel()
+        }
+    }
+
+    private fun patchFailure(taskId: String, e: Exception) {
+        patch(taskId) {
+            it.copy(
+                phase = GenerationPhase.FAILED,
+                error = GenerationError(
+                    kind = when (e) {
+                        is PromptValidationException -> ErrorKind.PROMPT_VALIDATION
+                        is GenerationTimeoutException -> ErrorKind.TIMEOUT
+                        else -> ErrorKind.CONNECTION
+                    },
+                    message = e.message ?: e.toString(),
+                ),
+                completedAt = System.currentTimeMillis(),
+                preview = null,
+                queuePosition = null,
+            )
+        }
+    }
+
+    private fun launchTracked(taskId: String, block: suspend () -> Unit) {
+        if (jobs.containsKey(taskId)) return
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                block()
+            } finally {
+                jobs.remove(taskId)
+            }
+        }
+        jobs[taskId] = job
+        job.start()
+    }
+
+    private fun startService() {
+        runCatching {
+            ContextCompat.startForegroundService(appContext, Intent(appContext, GenerationService::class.java))
+        }
+    }
+
+    private fun patch(
+        taskId: String,
+        allowTerminalExit: Boolean = false,
+        transform: (GenerationTask) -> GenerationTask,
+    ) {
+        mutateTasks { list ->
             prune(list.map { current ->
                 if (current.taskId != taskId) current
                 else {
                     val next = transform(current)
-                    if (current.isTerminal && !next.isTerminal) current else next
+                    if (current.isTerminal && !next.isTerminal && !allowTerminalExit) current else next
                 }
             })
+        }
+    }
+
+    private fun mutateTasks(transform: (List<GenerationTask>) -> List<GenerationTask>) {
+        synchronized(taskLock) {
+            val next = transform(_tasks.value)
+            _tasks.value = next
+            taskStore.save(next)
         }
     }
 

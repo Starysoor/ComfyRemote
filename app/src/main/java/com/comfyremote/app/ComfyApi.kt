@@ -34,6 +34,18 @@ data class WorkflowEntry(val path: String, val name: String, val sizeKb: String)
 
 data class OutputImage(val filename: String, val subfolder: String, val type: String)
 
+/** Snapshot of the standard ComfyUI queue endpoint. */
+data class QueueSnapshot(
+    val runningPromptIds: List<String>,
+    val pendingPromptIds: List<String>,
+) {
+    fun isRunning(promptId: String): Boolean = promptId in runningPromptIds
+    fun pendingPosition(promptId: String): Int? = pendingPromptIds.indexOf(promptId)
+        .takeIf { it >= 0 }
+        ?.plus(1)
+    fun contains(promptId: String): Boolean = isRunning(promptId) || promptId in pendingPromptIds
+}
+
 sealed class WsEvent {
     class Json(val obj: JSONObject) : WsEvent()
     class Preview(val bitmap: Bitmap) : WsEvent()
@@ -149,6 +161,26 @@ class ComfyApi(base: String) {
         root.optJSONObject(promptId)
     }
 
+    /** Standard queue snapshot used for accurate queued/running state and recovery. */
+    suspend fun queueSnapshot(): QueueSnapshot = withContext(Dispatchers.IO) {
+        val root = JSONObject(httpGet("/queue"))
+        QueueSnapshot(
+            runningPromptIds = queuePromptIds(root.optJSONArray("queue_running")),
+            pendingPromptIds = queuePromptIds(root.optJSONArray("queue_pending")),
+        )
+    }
+
+    private fun queuePromptIds(array: JSONArray?): List<String> {
+        if (array == null) return emptyList()
+        val ids = mutableListOf<String>()
+        for (i in 0 until array.length()) {
+            val row = array.optJSONArray(i) ?: continue
+            val id = row.optString(1)
+            if (id.isNotBlank()) ids += id
+        }
+        return ids
+    }
+
     suspend fun downloadImage(img: OutputImage): ByteArray = withContext(Dispatchers.IO) {
         val url = "$base/view?filename=${urlEnc(img.filename)}&subfolder=${urlEnc(img.subfolder)}&type=${urlEnc(img.type)}"
         client.newCall(Request.Builder().url(url).build()).execute().use { resp ->
@@ -194,7 +226,7 @@ class ComfyApi(base: String) {
 
     /** Removes a queued (not yet running) prompt from the server queue. */
     suspend fun deleteFromQueue(promptId: String) {
-        httpPost("/queue", JSONObject().put("delete", org.json.JSONArray().put(promptId)).toString())
+        httpPost("/queue", JSONObject().put("delete", JSONArray().put(promptId)).toString())
     }
 
     fun wsEvents(clientId: String): Flow<WsEvent> = callbackFlow {
