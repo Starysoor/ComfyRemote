@@ -95,7 +95,7 @@ private fun AppNavHost(
                 val vm: ConnectViewModel = viewModel(factory = factory)
                 ConnectScreen(
                     viewModel = vm,
-                    onConnected = { navigateToCreateClearingStart(navController) },
+                    onConnected = { navigateToCreate(navController) },
                     onSettings = { navController.navigate(Routes.SETTINGS) },
                 )
             }
@@ -158,7 +158,7 @@ private fun AppNavHost(
                 ServerManagerScreen(
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
-                    onConnected = { navigateToCreateClearingStart(navController) },
+                    onConnected = { navigateToCreate(navController) },
                 )
             }
             composable(Routes.AI_SETTINGS) {
@@ -206,9 +206,10 @@ private fun navigateTopLevel(navController: NavHostController, route: String) {
     }
 }
 
-private fun navigateToCreateClearingStart(navController: NavHostController) {
+private fun navigateToCreate(navController: NavHostController) {
+    if (navController.popBackStack(Routes.CREATE, inclusive = false)) return
     navController.navigate(Routes.CREATE) {
-        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+        popUpTo(Routes.CONNECT) { inclusive = true }
         launchSingleTop = true
     }
 }
