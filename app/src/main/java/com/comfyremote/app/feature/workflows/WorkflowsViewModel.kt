@@ -48,15 +48,27 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
 
     init {
         viewModelScope.launch {
-            container.serverSession.session.collect { session -> _state.update { it.copy(session = session) } }
+            var previousUrl = container.serverSession.session.value?.url
+            container.serverSession.session.collect { session ->
+                val changed = session?.url != previousUrl
+                previousUrl = session?.url
+                _state.update {
+                    it.copy(
+                        session = session,
+                        workflows = if (session == null) emptyList() else it.workflows,
+                        error = if (session == null) null else it.error,
+                    )
+                }
+                if (changed && session != null) load(force = true)
+            }
         }
         load()
     }
 
     fun setQuery(value: String) = _state.update { it.copy(query = value) }
 
-    fun load() {
-        if (!container.serverSession.connected || _state.value.loading) return
+    fun load(force: Boolean = false) {
+        if (!container.serverSession.connected || (_state.value.loading && !force)) return
         _state.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
             runCatching { container.workflowRepository.list() }
