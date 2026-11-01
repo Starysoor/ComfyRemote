@@ -14,6 +14,7 @@ import com.comfyremote.app.FieldKind
 import com.comfyremote.app.LabeledText
 import com.comfyremote.app.PromptField
 import com.comfyremote.app.WorkflowEntry
+import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationRequest
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.media.ImagePreprocessor
@@ -88,6 +89,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
 
     private var converted: ConvertedWorkflow? = null
     private var loadedPath: String? = null
+    private val appliedSeedTasks = mutableSetOf<String>()
 
     init {
         viewModelScope.launch {
@@ -99,6 +101,19 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             container.incomingMedia.pending.collect { pending ->
                 if (pending.isNotEmpty() && _state.value.draft?.fields?.any { it.kind == FieldKind.IMAGE } == true) {
                     consumeIncomingMedia()
+                }
+            }
+        }
+        viewModelScope.launch {
+            container.generationManager.tasks.collect { list ->
+                val activeId = _state.value.activeTaskId ?: return@collect
+                val task = list.firstOrNull { it.taskId == activeId } ?: return@collect
+                if (task.phase == GenerationPhase.SUCCEEDED && task.seedValues.isNotEmpty() && appliedSeedTasks.add(task.taskId)) {
+                    updateDraft { draft ->
+                        if (draft.workflowPath == task.request.workflowPath) {
+                            draft.copy(values = draft.values + task.seedValues)
+                        } else draft
+                    }
                 }
             }
         }
@@ -202,8 +217,8 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     fun applyAi(replace: Boolean, newText: String) {
         val result = _state.value.aiResult ?: return
         updateDraft { draft ->
-            val f = draft.fields.firstOrNull { it.key == result.fieldKey }
-            val current = draft.values[result.fieldKey] ?: f?.value.orEmpty()
+            val field = draft.fields.firstOrNull { it.key == result.fieldKey }
+            val current = draft.values[result.fieldKey] ?: field?.value.orEmpty()
             val merged = if (replace || current.isBlank()) newText else "$current, $newText"
             draft.copy(values = draft.values + (result.fieldKey to merged))
         }
