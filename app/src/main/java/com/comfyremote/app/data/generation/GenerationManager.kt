@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.comfyremote.app.AppContainer
+import com.comfyremote.app.ComfyApi
 import com.comfyremote.app.PromptValidationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,10 +26,7 @@ class GenerationManager(
     private val appContext: Context,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val runner = GenerationRunner(
-        backend = SessionGenerationBackend(container.serverSession),
-        history = RepositoryGenerationHistorySink(container.historyRepository),
-    )
+    private val historySink = RepositoryGenerationHistorySink(container.historyRepository)
 
     private val _tasks = MutableStateFlow<List<GenerationTask>>(emptyList())
     val tasks: StateFlow<List<GenerationTask>> = _tasks.asStateFlow()
@@ -57,12 +55,14 @@ class GenerationManager(
         when (task.phase) {
             GenerationPhase.PREPARING, GenerationPhase.QUEUEING -> jobs[taskId]?.cancel()
             GenerationPhase.QUEUED -> {
-                task.promptId?.let { runCatching { container.serverSession.deleteFromQueue(it) } }
+                task.promptId?.let { promptId ->
+                    runCatching { ComfyApi(task.request.serverUrl).deleteFromQueue(promptId) }
+                }
                 jobs[taskId]?.cancel()
             }
             GenerationPhase.RUNNING -> {
-                // ComfyUI interrupt is server-scoped, not guaranteed per-prompt.
-                runCatching { container.serverSession.interrupt() }
+                // ComfyUI interrupt is server-scoped. Always target this task's original server.
+                runCatching { ComfyApi(task.request.serverUrl).interrupt() }
             }
             else -> Unit
         }
@@ -78,6 +78,10 @@ class GenerationManager(
         .stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
 
     private suspend fun execute(task: GenerationTask) {
+        val runner = GenerationRunner(
+            backend = ComfyGenerationBackend(task.request.serverUrl),
+            history = historySink,
+        )
         try {
             val final = runner.run(task) { updated -> patch(updated.taskId) { updated } }
             patch(final.taskId) { final }
