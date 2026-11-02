@@ -44,6 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -92,12 +94,20 @@ fun PromptLibrarySheetContent(
     presets: List<PromptPreset>,
     query: String,
     onQuery: (String) -> Unit,
-    onApply: (PromptPreset) -> Unit,
+    onApply: (PromptPreset, PresetApplyMode) -> Unit,
     onDelete: (String) -> Unit,
     onToggleFavorite: (String) -> Unit,
+    onUpdateMeta: (String, String, String, String) -> Unit,
     onSaveCurrent: () -> Unit,
     onSaveWorkflow: () -> Unit,
+    onExport: () -> String,
+    onImport: (String) -> Unit,
 ) {
+    val clipboard = LocalClipboardManager.current
+    var applyMode by remember { mutableStateOf(PresetApplyMode.ALL) }
+    var editing by remember { mutableStateOf<PromptPreset?>(null) }
+    var importing by remember { mutableStateOf(false) }
+
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -108,10 +118,19 @@ fun PromptLibrarySheetContent(
             TextButton(onClick = onSaveCurrent) { Text(L10n.t("存提示词", "Save prompt")) }
             TextButton(onClick = onSaveWorkflow) { Text(L10n.t("存整套", "Save setup")) }
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            PresetModeButton(L10n.t("整套", "All"), applyMode == PresetApplyMode.ALL) { applyMode = PresetApplyMode.ALL }
+            PresetModeButton(L10n.t("仅提示词", "Prompts"), applyMode == PresetApplyMode.PROMPTS) { applyMode = PresetApplyMode.PROMPTS }
+            PresetModeButton(L10n.t("仅参数", "Params"), applyMode == PresetApplyMode.PARAMETERS) { applyMode = PresetApplyMode.PARAMETERS }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TextButton(onClick = { clipboard.setText(AnnotatedString(onExport())) }) { Text(L10n.t("复制导出 JSON", "Copy export JSON")) }
+            TextButton(onClick = { importing = true }) { Text(L10n.t("导入 JSON", "Import JSON")) }
+        }
         OutlinedTextField(
             value = query,
             onValueChange = onQuery,
-            label = { Text(L10n.t("搜索标题、标签、参数", "Search title, tags, values")) },
+            label = { Text(L10n.t("搜索标题、文件夹、标签、参数", "Search title, folder, tags, values")) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -128,13 +147,16 @@ fun PromptLibrarySheetContent(
                     Surface(
                         shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.fillMaxWidth().clickable { onApply(preset) },
+                        modifier = Modifier.fillMaxWidth().clickable { onApply(preset, applyMode) },
                     ) {
                         Row(Modifier.padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(preset.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                                     StatusChip(if (preset.isWorkflowPreset) L10n.t("整套", "SETUP") else L10n.t("提示词", "PROMPT"))
+                                }
+                                if (preset.folder.isNotBlank()) {
+                                    Text("⌂ ${preset.folder}", fontFamily = Mono, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 }
                                 Text(
                                     preset.prompts.firstOrNull()?.value ?: preset.values.values.firstOrNull().orEmpty(),
@@ -150,6 +172,7 @@ fun PromptLibrarySheetContent(
                                     Text(L10n.t("最近使用", "RECENT"), fontFamily = Mono, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 }
                             }
+                            TextButton(onClick = { editing = preset }) { Text(L10n.t("编辑", "Edit")) }
                             TextButton(onClick = { onToggleFavorite(preset.id) }) {
                                 Text(if (preset.favorite) "★" else "☆", color = if (preset.favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -161,6 +184,54 @@ fun PromptLibrarySheetContent(
                 }
             }
         }
+    }
+
+    editing?.let { preset ->
+        var title by remember(preset.id) { mutableStateOf(preset.title) }
+        var tags by remember(preset.id) { mutableStateOf(preset.tags.joinToString(", ")) }
+        var folder by remember(preset.id) { mutableStateOf(preset.folder) }
+        AlertDialog(
+            onDismissRequest = { editing = null },
+            title = { Text(L10n.t("编辑预设", "Edit preset")) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(title, { title = it }, label = { Text(L10n.t("名称", "Title")) }, singleLine = true)
+                    OutlinedTextField(folder, { folder = it }, label = { Text(L10n.t("文件夹 / 分类", "Folder / category")) }, singleLine = true)
+                    OutlinedTextField(tags, { tags = it }, label = { Text(L10n.t("标签，用逗号分隔", "Tags, comma separated")) }, singleLine = true)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onUpdateMeta(preset.id, title, tags, folder)
+                    editing = null
+                }) { Text(L10n.t("保存", "Save")) }
+            },
+            dismissButton = { TextButton(onClick = { editing = null }) { Text(L10n.t("取消", "Cancel")) } },
+        )
+    }
+
+    if (importing) {
+        var raw by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { importing = false },
+            title = { Text(L10n.t("导入预设 JSON", "Import preset JSON")) },
+            text = { OutlinedTextField(raw, { raw = it }, minLines = 8, maxLines = 14, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = {
+                TextButton(onClick = { onImport(raw); importing = false }, enabled = raw.isNotBlank()) { Text(L10n.t("导入", "Import")) }
+            },
+            dismissButton = { TextButton(onClick = { importing = false }) { Text(L10n.t("取消", "Cancel")) } },
+        )
+    }
+}
+
+@Composable
+private fun PresetModeButton(text: String, selected: Boolean, onClick: () -> Unit) {
+    if (selected) {
+        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.primaryContainer) {
+            Text(text, modifier = Modifier.clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.onPrimaryContainer)
+        }
+    } else {
+        OutlinedButton(onClick = onClick) { Text(text) }
     }
 }
 
