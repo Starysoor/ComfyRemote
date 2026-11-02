@@ -79,15 +79,17 @@ class GenerationManager(
 
     /** Removes a finished task from the list (user-visible delete). */
     fun deleteTask(taskId: String) {
+        val task = _tasks.value.firstOrNull { it.taskId == taskId } ?: return
+        if (task.isActive) return
         jobs.remove(taskId)?.cancel()
-        _tasks.value = _tasks.value.filter { it.taskId != taskId }
+        mutateTasks { list -> list.filter { it.taskId != taskId } }
     }
 
     /** Removes every non-active task (convenience "clear finished"). */
     fun deleteFinished() {
         val activeIds = _tasks.value.filter { it.isActive }.map { it.taskId }.toSet()
-        _tasks.value = _tasks.value.filter { it.isActive }
-        jobs.keys.toList().forEach { id -> if (id !in activeIds) jobs.remove(id) }
+        mutateTasks { list -> list.filter { it.isActive } }
+        jobs.keys.toList().forEach { id -> if (id !in activeIds) jobs.remove(id)?.cancel() }
     }
 
     fun retry(taskId: String): String? {
