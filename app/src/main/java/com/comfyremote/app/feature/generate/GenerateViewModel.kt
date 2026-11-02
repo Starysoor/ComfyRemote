@@ -13,6 +13,7 @@ import com.comfyremote.app.ConvertedWorkflow
 import com.comfyremote.app.FieldKind
 import com.comfyremote.app.LabeledText
 import com.comfyremote.app.PromptField
+import com.comfyremote.app.WorkflowConverter
 import com.comfyremote.app.WorkflowEntry
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationRequest
@@ -152,6 +153,15 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                         } else draft
                     }
                 }
+                val batchId = task.batchId
+                if (!task.isActive && batchId != null) {
+                    val next = list.asSequence()
+                        .filter { it.batchId == batchId && it.isActive }
+                        .minByOrNull { it.batchIndex ?: Int.MAX_VALUE }
+                    if (next != null && next.taskId != activeId) {
+                        _state.update { it.copy(activeTaskId = next.taskId) }
+                    }
+                }
             }
         }
     }
@@ -227,8 +237,8 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             _state.update { it.copy(message = L10n.t("请先修复兼容性问题：", "Fix compatibility issue first: ") + blocking.first().message) }
             return
         }
-        val currentId = _state.value.activeTaskId
-        if (currentId != null && tasks.value.firstOrNull { it.taskId == currentId }?.isActive == true) return
+        val current = _state.value.activeTaskId?.let { id -> tasks.value.firstOrNull { it.taskId == id } }
+        if (current?.isActive == true || (current?.batchId != null && tasks.value.any { it.batchId == current.batchId && it.isActive })) return
 
         persistDraftNow(draft)
         val count = _state.value.batchCount.coerceIn(1, MAX_BATCH)
@@ -252,7 +262,11 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             draft.fields.filter { it.kind == FieldKind.SEED }.forEach { field ->
                 val raw = values[field.key] ?: field.value
                 val seed = raw.toLongOrNull()
-                if (seed != null) values = values + (field.key to (seed + batchOffset).toString())
+                if (seed != null) {
+                    val base = Math.floorMod(seed, WorkflowConverter.SEED_MAX)
+                    val varied = (base + batchOffset) % WorkflowConverter.SEED_MAX
+                    values = values + (field.key to varied.toString())
+                }
             }
         }
         return GenerationRequest(
@@ -271,7 +285,16 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
 
     fun cancelActiveTask() {
         val id = _state.value.activeTaskId ?: return
-        viewModelScope.launch { container.generationManager.cancel(id) }
+        val task = tasks.value.firstOrNull { it.taskId == id } ?: return
+        viewModelScope.launch {
+            val batchId = task.batchId
+            if (batchId == null) {
+                container.generationManager.cancel(id)
+            } else {
+                val ids = tasks.value.filter { it.batchId == batchId && it.isActive }.map { it.taskId }
+                container.generationManager.cancelMany(ids)
+            }
+        }
     }
 
     fun retryActiveTask() {
@@ -312,8 +335,8 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         val result = _state.value.aiResult ?: return
         updateDraft { draft ->
             val field = draft.fields.firstOrNull { it.key == result.fieldKey }
-            val current = draft.values[result.fieldKey] ?: field?.value.orEmpty()
-            val merged = if (replace || current.isBlank()) newText else "$current, $newText"
+            val currentText = draft.values[result.fieldKey] ?: field?.value.orEmpty()
+            val merged = if (replace || currentText.isBlank()) newText else "$currentText, $newText"
             draft.copy(values = draft.values + (result.fieldKey to merged))
         }
         dismissAiResult()
@@ -515,14 +538,14 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
 
     private fun scheduleDraftSave(draft: WorkflowDraft) {
         draftSaveJob?.cancel()
+        val serverUrl = container.serverSession.url
         draftSaveJob = viewModelScope.launch {
             delay(450)
-            persistDraftNow(draft)
+            persistDraftNow(draft, serverUrl)
         }
     }
 
-    private fun persistDraftNow(draft: WorkflowDraft) {
-        val serverUrl = container.serverSession.url
+    private fun persistDraftNow(draft: WorkflowDraft, serverUrl: String = container.serverSession.url) {
         if (serverUrl.isNotBlank()) {
             container.workflowDraftStore.save(draft.workflowPath, serverUrl, draft.values, draft.randomSeed)
         }
