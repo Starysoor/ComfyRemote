@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -85,15 +86,27 @@ fun TasksScreen(
     val tasks = remember(allTasks) {
         allTasks.sortedWith(compareByDescending<GenerationTask> { it.isActive }.thenByDescending { it.createdAt })
     }
+    val hasFinished = tasks.any { it.isTerminal }
+    var confirmClearFinished by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
-            TopAppBar(title = {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(L10n.t("任务", "Tasks"), fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.width(8.dp))
-                    Text("${tasks.count { it.isActive }}", fontFamily = Mono, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                }
-            })
+            TopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(L10n.t("任务", "Tasks"), fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(8.dp))
+                        Text("${tasks.count { it.isActive }}", fontFamily = Mono, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+                },
+                actions = {
+                    if (hasFinished) {
+                        TextButton(onClick = { confirmClearFinished = true }) {
+                            Text(L10n.t("清理已完成", "Clear finished"))
+                        }
+                    }
+                },
+            )
         }
     ) { pad ->
         if (tasks.isEmpty()) {
@@ -110,15 +123,42 @@ fun TasksScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(tasks, key = { it.taskId }) { task ->
-                    TaskCard(task, viewModel.serverLabel(task.request.serverUrl), onClick = { onOpenTask(task.taskId) })
+                    TaskCard(
+                        task = task,
+                        serverLabel = viewModel.serverLabel(task.request.serverUrl),
+                        onClick = { onOpenTask(task.taskId) },
+                        onDelete = if (task.isTerminal) ({ viewModel.delete(task.taskId) }) else null,
+                    )
                 }
             }
         }
     }
+
+    if (confirmClearFinished) {
+        AlertDialog(
+            onDismissRequest = { confirmClearFinished = false },
+            title = { Text(L10n.t("清理已完成任务？", "Clear finished tasks?")) },
+            text = { Text(L10n.t("只会移除任务列表记录，结果库中的图片和历史记录不会删除。", "This only removes task-list records. Result Library images and history are kept.")) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteFinished()
+                    confirmClearFinished = false
+                }) { Text(L10n.t("清理", "Clear")) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearFinished = false }) { Text(L10n.t("取消", "Cancel")) }
+            },
+        )
+    }
 }
 
 @Composable
-private fun TaskCard(task: GenerationTask, serverLabel: String, onClick: () -> Unit) {
+private fun TaskCard(
+    task: GenerationTask,
+    serverLabel: String,
+    onClick: () -> Unit,
+    onDelete: (() -> Unit)?,
+) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
@@ -134,11 +174,13 @@ private fun TaskCard(task: GenerationTask, serverLabel: String, onClick: () -> U
                 StatusChip(task.label(), active = task.isActive, error = task.phase == GenerationPhase.FAILED)
             }
             Text(serverLabel, fontFamily = Mono, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            task.queuePosition?.let { Text(L10n.t("队列位置 #", "Queue position #") + it, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary) }
+            task.queuePosition?.let {
+                Text(L10n.t("队列位置 #", "Queue position #") + it, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+            }
             task.nodeTitle?.takeIf(String::isNotBlank)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            task.progress?.let { p -> LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth()) }
+            RunningNodeProgress(task)
             task.error?.let {
                 Text(
                     it.uiLabel() + " · " + it.message,
@@ -157,8 +199,32 @@ private fun TaskCard(task: GenerationTask, serverLabel: String, onClick: () -> U
                     }
                     thumb?.let { Image(it.asImageBitmap(), null, Modifier.size(44.dp), contentScale = ContentScale.Crop) }
                 }
-                Text("  ›", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (onDelete != null) {
+                    TextButton(onClick = onDelete) { Text(L10n.t("删除", "Delete"), color = MaterialTheme.colorScheme.error) }
+                }
+                Text("›", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
+    }
+}
+
+@Composable
+private fun RunningNodeProgress(task: GenerationTask) {
+    if (task.phase != GenerationPhase.RUNNING) return
+    val p = task.progress?.coerceIn(0f, 1f)
+    if (p == null) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(L10n.t("当前节点执行中", "Current node running"), fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(L10n.t("当前节点进度", "Current node progress"), fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.weight(1f))
+                Text("${(p * 100).toInt()}%", fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+            }
+            LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth())
         }
     }
 }
@@ -179,6 +245,7 @@ fun TaskDetailScreen(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     var viewingPath by remember { mutableStateOf<String?>(null) }
+    var confirmDelete by remember { mutableStateOf(false) }
 
     LaunchedEffect(message) {
         message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() }
@@ -190,6 +257,13 @@ fun TaskDetailScreen(
             TopAppBar(
                 title = { Text(L10n.t("任务详情", "Task detail")) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) } },
+                actions = {
+                    if (task?.isTerminal == true) {
+                        TextButton(onClick = { confirmDelete = true }) {
+                            Text(L10n.t("删除", "Delete"), color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                },
             )
         }
     ) { pad ->
@@ -225,10 +299,7 @@ fun TaskDetailScreen(
                         Meta("CREATED", formatTimeFull(task.createdAt))
                         task.startedAt?.let { Meta("STARTED", formatTimeFull(it)) }
                         task.completedAt?.let { Meta("COMPLETED", formatTimeFull(it)) }
-                        task.progress?.let { p ->
-                            LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth())
-                            Text("${(p * 100).toInt()}%", fontFamily = Mono, fontSize = 10.sp)
-                        }
+                        RunningNodeProgress(task)
                     }
                 }
             }
@@ -284,9 +355,33 @@ fun TaskDetailScreen(
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text(L10n.t("复制诊断信息", "Copy diagnostics")) }
+                    if (task.isTerminal) {
+                        OutlinedButton(
+                            onClick = { confirmDelete = true },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(L10n.t("删除任务", "Delete task"), color = MaterialTheme.colorScheme.error) }
+                    }
                 }
             }
         }
+    }
+
+    if (confirmDelete && task != null && task.isTerminal) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(L10n.t("删除这个任务？", "Delete this task?")) },
+            text = { Text(L10n.t("只会从任务列表移除，结果库和生成图片不会删除。", "This removes it from Tasks only. Result Library entries and generated images are kept.")) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.delete(task.taskId)
+                    confirmDelete = false
+                    onBack()
+                }) { Text(L10n.t("删除", "Delete"), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text(L10n.t("取消", "Cancel")) }
+            },
+        )
     }
 
     viewingPath?.let { path ->
