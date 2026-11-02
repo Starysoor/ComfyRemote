@@ -73,6 +73,7 @@ class PromptPresetRepositoryTest {
                 values = mapOf("1:text" to "portrait", "2:seed" to "42", "3:cfg" to "6.5"),
                 randomSeed = false,
                 tags = listOf("workflow", "portrait"),
+                folder = "Portraits",
             )
         )
         repo.add(PromptPreset("prompt", "Prompt only", listOf(LabeledText("Prompt", "x")), null, 200L))
@@ -86,7 +87,36 @@ class PromptPresetRepositoryTest {
         assertEquals("42", setup.values["2:seed"])
         assertEquals(false, setup.randomSeed)
         assertEquals(listOf("workflow", "portrait"), setup.tags)
+        assertEquals("Portraits", setup.folder)
         assertEquals("setup", restored.first().id)
+    }
+
+    @Test
+    fun updateMetaAndExportImportPreserveFolderTagsAndValues() {
+        val source = PromptPresetRepository(FakePreferences())
+        source.add(
+            PromptPreset(
+                id = "portable",
+                title = "Portable",
+                prompts = listOf(LabeledText("Prompt", "misty castle")),
+                workflowPath = "castle.json",
+                createdAt = 100L,
+                values = mapOf("1:text" to "misty castle", "2:cfg" to "7"),
+                randomSeed = false,
+            )
+        )
+        source.updateMeta("portable", "Renamed", listOf("fantasy", "night", "fantasy"), "Worldbuilding")
+        val exported = source.exportJson()
+
+        val target = PromptPresetRepository(FakePreferences())
+        assertEquals(1, target.importJson(exported))
+        val restored = target.load().single()
+
+        assertEquals("Renamed", restored.title)
+        assertEquals("Worldbuilding", restored.folder)
+        assertEquals(listOf("fantasy", "night"), restored.tags)
+        assertEquals("7", restored.values["2:cfg"])
+        assertEquals(false, restored.randomSeed)
     }
 
     private class FakePreferences : SharedPreferences {
