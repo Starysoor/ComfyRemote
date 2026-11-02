@@ -66,6 +66,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -240,7 +241,11 @@ fun GenerateScreen(
                                 label = { Text(field.label) },
                                 minLines = if (field.multiline) 4 else 1,
                                 maxLines = if (field.multiline) 14 else 2,
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().onFocusChanged { st ->
+                                    if (st.isFocused && draft.values[field.key] == null && field.value.isNotBlank()) {
+                                        viewModel.updateValue(field.key, "")
+                                    }
+                                },
                             )
                             if (field.multiline) {
                                 val ordered = remember(draft.workflowName, state.skills) {
@@ -357,9 +362,17 @@ fun GenerateScreen(
                                 if (results.size > 1) TextButton(onClick = { compareOpen = true }) { Text(L10n.t("对比", "Compare")) }
                             }
                         }
+                        item("result-limit-note") {
+                            if (results.size > 2) Text(
+                                L10n.t("仅显示最近 2 张，全部见历史页", "Showing latest 2 of " + "${results.size}" + " - see History"),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         item("result-main") {
-                            val index = selectedResult.coerceIn(results.indices)
-                            val result = results[index]
+                            val recent = results.takeLast(2)
+                            val index = selectedResult.coerceIn(recent.indices)
+                            val result = recent[index]
                             val bitmap by produceState<Bitmap?>(null, result.localPath) {
                                 value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1600) }
                             }
@@ -367,8 +380,9 @@ fun GenerateScreen(
                             Text("${index + 1} / ${results.size}", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (results.size > 1) item("result-thumbs") {
+                            val recentThumbs = results.takeLast(2)
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                itemsIndexed(results, key = { i, r -> "$i:${r.localPath}" }) { index, result ->
+                                itemsIndexed(recentThumbs, key = { i, r -> "$i:${r.localPath}" }) { index, result ->
                                     val bitmap by produceState<Bitmap?>(null, result.localPath) {
                                         value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 180) }
                                     }
