@@ -64,9 +64,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -81,6 +81,7 @@ import com.comfyremote.app.data.generation.ErrorKind
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.media.decodeSampled
+import com.comfyremote.app.data.repository.WorkflowInsight
 import com.comfyremote.app.ui.L10n
 import com.comfyremote.app.ui.Mono
 import com.comfyremote.app.ui.components.ErrorCard
@@ -158,6 +159,11 @@ fun GenerateScreen(
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) }
                 },
                 actions = {
+                    if (draft != null) {
+                        TextButton(onClick = viewModel::resetRememberedDraft, enabled = !running) {
+                            Text(L10n.t("默认值", "Defaults"))
+                        }
+                    }
                     task?.let { t -> TextButton(onClick = { onOpenTask(t.taskId) }) { Text(L10n.t("任务", "Task")) } }
                 }
             )
@@ -173,8 +179,12 @@ fun GenerateScreen(
                     } else {
                         Button(
                             onClick = viewModel::generate,
+                            enabled = state.insight?.compatible != false,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).height(52.dp),
-                        ) { Text(L10n.t("生  成", "GENERATE"), fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp) }
+                        ) {
+                            val suffix = if (state.batchCount > 1) " ×${state.batchCount}" else ""
+                            Text(L10n.t("生  成", "GENERATE") + suffix, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
+                        }
                     }
                 }
             }
@@ -198,6 +208,9 @@ fun GenerateScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     item("status") { GenerationStatusCard(task, running) }
+                    state.insight?.let { insight ->
+                        item("workflow-insight") { WorkflowInsightCard(insight) }
+                    }
                     task?.error?.let { error ->
                         item("error") {
                             ErrorCard(
@@ -347,6 +360,28 @@ fun GenerateScreen(
                         }
                     }
 
+                    item("batch") {
+                        Card {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(L10n.t("批量 / Variations", "Batch / Variations"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                    OutlinedButton(onClick = { viewModel.setBatchCount(state.batchCount - 1) }, enabled = state.batchCount > 1 && !running) { Text("−") }
+                                    Text(" ${state.batchCount} ", fontFamily = Mono, fontWeight = FontWeight.Bold)
+                                    OutlinedButton(onClick = { viewModel.setBatchCount(state.batchCount + 1) }, enabled = state.batchCount < 16 && !running) { Text("+") }
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(state.batchLocalQueue, { viewModel.toggleBatchLocalQueue() }, enabled = state.batchCount > 1 && !running)
+                                    Column {
+                                        Text(L10n.t("使用本地队列，逐个发送到服务器", "Use local queue; submit one at a time"))
+                                        if (state.batchCount > 1 && !draft.randomSeed) {
+                                            Text(L10n.t("固定 Seed 模式会按 +0、+1、+2… 生成变体", "Fixed seed increments +0, +1, +2…"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (paramFields.isNotEmpty()) item("advanced") {
                         Card {
                             Column {
@@ -409,9 +444,10 @@ fun GenerateScreen(
                             val index = selectedResult.coerceIn(visibleResults.indices)
                             val result = visibleResults[index]
                             val bitmap by produceState<Bitmap?>(null, result.localPath) { value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1600) } }
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 TextButton(onClick = { shareImage(context, result.localPath) }) { Icon(Icons.Default.Share, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(L10n.t("分享", "Share")) }
                                 TextButton(onClick = { bitmap?.let(viewModel::saveResult) }) { Text(L10n.t("保存", "Save")) }
+                                if (imageFields.isNotEmpty()) TextButton(onClick = { viewModel.useLocalResultAsReference(result.localPath) }) { Text(L10n.t("作为参考图", "Use as reference")) }
                                 if (!running) TextButton(onClick = viewModel::generate) { Text(L10n.t("再生成", "Re-run")) }
                             }
                         }
@@ -434,11 +470,14 @@ fun GenerateScreen(
             presets = state.filteredPresets,
             query = state.presetQuery,
             onQuery = viewModel::setPresetQuery,
-            onApply = { viewModel.applyPreset(it); libraryOpen = false },
+            onApply = { preset, mode -> viewModel.applyPreset(preset, mode); libraryOpen = false },
             onDelete = viewModel::deletePreset,
             onToggleFavorite = viewModel::togglePresetFavorite,
+            onUpdateMeta = viewModel::updatePresetMeta,
             onSaveCurrent = viewModel::saveCurrentPreset,
             onSaveWorkflow = viewModel::saveCurrentWorkflowPreset,
+            onExport = viewModel::exportPresets,
+            onImport = viewModel::importPresets,
         )
     }
     if (compareOpen) CompareDialog(results) { compareOpen = false }
@@ -452,6 +491,33 @@ fun GenerateScreen(
                     onSave = { viewModel.saveResult(it) },
                     onShare = { shareImage(context, result.localPath) },
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkflowInsightCard(insight: WorkflowInsight) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = if (insight.compatible) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(L10n.t("工作流识别", "Workflow"), fontWeight = FontWeight.SemiBold)
+                insight.capabilities.forEach { StatusChip(it.label) }
+            }
+            if (insight.issues.isEmpty()) {
+                Text(L10n.t("未发现明显兼容性问题", "No obvious compatibility issues"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                insight.issues.take(4).forEach { issue ->
+                    Text(
+                        (if (issue.blocking) "⚠ " else "• ") + issue.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (issue.blocking) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -472,6 +538,10 @@ private fun GenerationStatusCard(task: GenerationTask?, running: Boolean) {
                     Spacer(Modifier.width(6.dp))
                     StatusChip(L10n.t("已恢复", "RECOVERED"))
                 }
+                task?.batchIndex?.let { index ->
+                    Spacer(Modifier.width(6.dp))
+                    StatusChip("$index/${task.batchSize ?: index}")
+                }
                 task?.nodeTitle?.takeIf(String::isNotBlank)?.let { Spacer(Modifier.width(8.dp)); Text(it, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp) } ?: Spacer(Modifier.weight(1f))
                 task?.queuePosition?.let { Text("#${it}", fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary) }
                     ?: task?.queueRemaining?.let { Text(L10n.t("队列 ", "Queue ") + it, fontFamily = Mono, fontSize = 10.sp) }
@@ -479,13 +549,19 @@ private fun GenerationStatusCard(task: GenerationTask?, running: Boolean) {
             task?.recoveryNote?.takeIf(String::isNotBlank)?.let {
                 Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            task?.progress?.let { p ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LinearProgressIndicator(progress = { p }, modifier = Modifier.weight(1f))
-                    Text("${(p * 100).toInt()}%", fontFamily = Mono, fontSize = 10.sp)
+            if (task?.phase == GenerationPhase.RUNNING) {
+                val p = task.progress?.coerceIn(0f, 1f)
+                if (p == null) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LinearProgressIndicator(progress = { p }, modifier = Modifier.weight(1f))
+                        Text("${(p * 100).toInt()}%", fontFamily = Mono, fontSize = 10.sp)
+                    }
                 }
+            } else if (task?.localPending == true) {
+                Text(L10n.t("等待 App 本地队列放行，不会提前塞入 ComfyUI 队列", "Waiting locally; not submitted to ComfyUI yet"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (running && task?.progress == null) LinearProgressIndicator(Modifier.fillMaxWidth())
         }
     }
 }
@@ -520,15 +596,18 @@ private fun ImageSlot(
     }
 }
 
-private fun statusLabel(task: GenerationTask?): String = when (task?.phase) {
-    null -> L10n.t("待生成", "Ready")
-    GenerationPhase.PREPARING -> L10n.t("准备中", "Preparing")
-    GenerationPhase.QUEUEING, GenerationPhase.QUEUED -> L10n.t("排队中", "Queued")
-    GenerationPhase.RUNNING -> L10n.t("生成中", "Running")
-    GenerationPhase.CANCELLING -> L10n.t("取消中", "Cancelling")
-    GenerationPhase.CANCELLED -> L10n.t("已取消", "Cancelled")
-    GenerationPhase.SUCCEEDED -> L10n.t("完成", "Done")
-    GenerationPhase.FAILED -> L10n.t("失败", "Failed")
+private fun statusLabel(task: GenerationTask?): String = when {
+    task?.localPending == true -> L10n.t("本地等待", "Local queue")
+    else -> when (task?.phase) {
+        null -> L10n.t("待生成", "Ready")
+        GenerationPhase.PREPARING -> L10n.t("准备中", "Preparing")
+        GenerationPhase.QUEUEING, GenerationPhase.QUEUED -> L10n.t("排队中", "Queued")
+        GenerationPhase.RUNNING -> L10n.t("生成中", "Running")
+        GenerationPhase.CANCELLING -> L10n.t("取消中", "Cancelling")
+        GenerationPhase.CANCELLED -> L10n.t("已取消", "Cancelled")
+        GenerationPhase.SUCCEEDED -> L10n.t("完成", "Done")
+        GenerationPhase.FAILED -> L10n.t("失败", "Failed")
+    }
 }
 
 fun errorKindLabel(kind: ErrorKind): String = when (kind) {
