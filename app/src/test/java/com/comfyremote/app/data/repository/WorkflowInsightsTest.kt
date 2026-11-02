@@ -29,7 +29,7 @@ class WorkflowInsightsTest {
     }
 
     @Test
-    fun missingModelChoiceAndReferenceAreBlocking() {
+    fun missingModelChoiceBlocksButEmptyReferenceIsOnlyWarning() {
         val prompt = JSONObject().put("1", JSONObject().put("class_type", "CheckpointLoaderSimple"))
         val fields = listOf(
             PromptField(
@@ -49,7 +49,20 @@ class WorkflowInsightsTest {
 
         assertFalse(insight.compatible)
         assertTrue(insight.blockingIssues.any { it.message.contains("missing.safetensors") })
-        assertTrue(insight.blockingIssues.any { it.message.contains("Reference") })
+        assertTrue(insight.issues.any { it.message.contains("Reference") && !it.blocking })
+    }
+
+    @Test
+    fun emptyReferenceAloneDoesNotBlockPossiblyOptionalImageInput() {
+        val insight = WorkflowInsights.analyze(
+            JSONObject().put("1", JSONObject().put("class_type", "LoadImage")),
+            listOf(PromptField("1:image", "1", "image", "Optional reference", FieldKind.IMAGE, "")),
+            emptyMap(),
+            emptyList(),
+        )
+
+        assertTrue(insight.compatible)
+        assertTrue(insight.issues.single().message.contains("Optional reference"))
     }
 
     @Test
