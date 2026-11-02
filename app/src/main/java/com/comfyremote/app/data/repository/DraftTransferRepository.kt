@@ -6,6 +6,8 @@ data class DraftTransfer(
     val workflowName: String,
     val values: Map<String, String>,
     val randomSeed: Boolean,
+    /** Local generated image to upload into the first compatible image input on reopen. */
+    val referenceLocalPath: String? = null,
 )
 
 class DraftTransferRepository {
