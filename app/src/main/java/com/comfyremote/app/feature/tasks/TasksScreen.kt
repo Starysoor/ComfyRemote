@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -25,6 +27,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,6 +75,7 @@ import com.comfyremote.app.ui.components.EmptyState
 import com.comfyremote.app.ui.components.ErrorCard
 import com.comfyremote.app.ui.components.StatusChip
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -82,53 +87,129 @@ fun TasksScreen(
     viewModel: TasksViewModel,
     onOpenTask: (String) -> Unit,
 ) {
-    val allTasks by viewModel.tasks.collectAsState()
-    val tasks = remember(allTasks) {
-        allTasks.sortedWith(compareByDescending<GenerationTask> { it.isActive }.thenByDescending { it.createdAt })
-    }
-    val hasFinished = tasks.any { it.isTerminal }
+    val ui by viewModel.uiState.collectAsState()
+    val message by viewModel.message.collectAsState()
+    val tasks = ui.visible
+    val hasFinished = ui.tasks.any { it.isTerminal }
+    val hasQueued = ui.tasks.any { it.localPending || it.phase == GenerationPhase.QUEUEING || it.phase == GenerationPhase.QUEUED }
+    val hasFailed = ui.tasks.any { it.phase == GenerationPhase.FAILED }
     var confirmClearFinished by remember { mutableStateOf(false) }
+    var serverMenu by remember { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
+
+    LaunchedEffect(message) {
+        message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(L10n.t("任务", "Tasks"), fontWeight = FontWeight.Bold)
                         Spacer(Modifier.width(8.dp))
-                        Text("${tasks.count { it.isActive }}", fontFamily = Mono, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                        Text("${ui.tasks.count { it.isActive }}", fontFamily = Mono, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                     }
                 },
                 actions = {
                     if (hasFinished) {
-                        TextButton(onClick = { confirmClearFinished = true }) {
-                            Text(L10n.t("清理已完成", "Clear finished"))
-                        }
+                        TextButton(onClick = { confirmClearFinished = true }) { Text(L10n.t("清理", "Clear")) }
                     }
                 },
             )
         }
     ) { pad ->
-        if (tasks.isEmpty()) {
-            Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) {
-                EmptyState(
-                    L10n.t("还没有任务", "No tasks yet"),
-                    L10n.t("任务会持续运行，并在 App 重启后尝试恢复", "Jobs continue outside Create and recover after app restart"),
+        Column(Modifier.padding(pad).fillMaxSize()) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                TaskFilter.values().forEach { filter ->
+                    val selected = ui.filter == filter
+                    if (selected) {
+                        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.primaryContainer) {
+                            Text(
+                                filterLabel(filter),
+                                modifier = Modifier.clickable { viewModel.setFilter(filter) }.padding(horizontal = 10.dp, vertical = 8.dp),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
+                    } else {
+                        OutlinedButton(onClick = { viewModel.setFilter(filter) }) { Text(filterLabel(filter)) }
+                    }
+                }
+            }
+
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box {
+                    OutlinedButton(onClick = { serverMenu = true }) {
+                        Text(ui.serverUrl?.let(viewModel::serverLabel) ?: L10n.t("全部服务器", "All servers"), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    DropdownMenu(expanded = serverMenu, onDismissRequest = { serverMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text(L10n.t("全部服务器", "All servers")) },
+                            onClick = { viewModel.setServerFilter(null); serverMenu = false },
+                        )
+                        ui.serverUrls.forEach { url ->
+                            DropdownMenuItem(
+                                text = { Text(viewModel.serverLabel(url)) },
+                                onClick = { viewModel.setServerFilter(url); serverMenu = false },
+                            )
+                        }
+                    }
+                }
+                OutlinedButton(onClick = viewModel::toggleLocalQueuePaused) {
+                    Text(if (ui.localQueuePaused) L10n.t("继续本地队列", "Resume local") else L10n.t("暂停本地队列", "Pause local"))
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (hasQueued) OutlinedButton(onClick = viewModel::cancelQueued) { Text(L10n.t("取消排队", "Cancel queued")) }
+                if (hasFailed) OutlinedButton(onClick = viewModel::retryFailed) { Text(L10n.t("重试失败", "Retry failed")) }
+                Text(
+                    L10n.t("本地等待 ${ui.tasks.count { it.localPending }}", "Local ${ui.tasks.count { it.localPending }}"),
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    fontFamily = Mono,
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        } else {
-            LazyColumn(
-                Modifier.padding(pad).fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(tasks, key = { it.taskId }) { task ->
-                    TaskCard(
-                        task = task,
-                        serverLabel = viewModel.serverLabel(task.request.serverUrl),
-                        onClick = { onOpenTask(task.taskId) },
-                        onDelete = if (task.isTerminal) ({ viewModel.delete(task.taskId) }) else null,
+
+            if (tasks.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    EmptyState(
+                        if (ui.tasks.isEmpty()) L10n.t("还没有任务", "No tasks yet") else L10n.t("当前筛选没有任务", "No tasks match this filter"),
+                        L10n.t("任务会持续运行，并在 App 重启后尝试恢复", "Jobs continue outside Create and recover after app restart"),
                     )
+                }
+            } else {
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    tasks.groupBy { it.request.serverUrl }.forEach { (server, serverTasks) ->
+                        item("server:$server") {
+                            Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(viewModel.serverLabel(server), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("${serverTasks.count { it.isActive }} active · ${serverTasks.size}", fontFamily = Mono, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        items(serverTasks, key = { it.taskId }) { task ->
+                            TaskCard(
+                                task = task,
+                                onClick = { onOpenTask(task.taskId) },
+                                onDelete = if (task.isTerminal) ({ viewModel.delete(task.taskId) }) else null,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -155,7 +236,6 @@ fun TasksScreen(
 @Composable
 private fun TaskCard(
     task: GenerationTask,
-    serverLabel: String,
     onClick: () -> Unit,
     onDelete: (() -> Unit)?,
 ) {
@@ -167,15 +247,18 @@ private fun TaskCard(
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(task.request.workflowName, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                task.batchIndex?.let { StatusChip("$it/${task.batchSize ?: it}"); Spacer(Modifier.width(5.dp)) }
                 if (task.recovered) {
                     StatusChip(L10n.t("已恢复", "RECOVERED"))
                     Spacer(Modifier.width(5.dp))
                 }
                 StatusChip(task.label(), active = task.isActive, error = task.phase == GenerationPhase.FAILED)
             }
-            Text(serverLabel, fontFamily = Mono, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             task.queuePosition?.let {
                 Text(L10n.t("队列位置 #", "Queue position #") + it, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+            }
+            if (task.localPending) {
+                Text(L10n.t("等待手机本地队列放行", "Waiting in app-side queue"), fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
             }
             task.nodeTitle?.takeIf(String::isNotBlank)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -192,6 +275,8 @@ private fun TaskCard(
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(formatTime(task.createdAt), fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(" · ", fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ElapsedText(task)
                 Spacer(Modifier.weight(1f))
                 task.results.firstOrNull()?.let { result ->
                     val thumb by produceState<Bitmap?>(null, result.localPath) {
@@ -206,6 +291,18 @@ private fun TaskCard(
             }
         }
     }
+}
+
+@Composable
+private fun ElapsedText(task: GenerationTask) {
+    val elapsed by produceState(initialValue = task.elapsedMs(), task.taskId, task.isActive, task.completedAt) {
+        value = task.elapsedMs()
+        while (task.isActive) {
+            delay(1_000)
+            value = task.elapsedMs()
+        }
+    }
+    Text(formatDuration(elapsed), fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
@@ -283,6 +380,7 @@ fun TaskDetailScreen(
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(task.request.workflowName, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            task.batchIndex?.let { StatusChip("$it/${task.batchSize ?: it}"); Spacer(Modifier.width(5.dp)) }
                             if (task.recovered) {
                                 StatusChip(L10n.t("恢复任务", "RECOVERED"))
                                 Spacer(Modifier.width(5.dp))
@@ -291,14 +389,17 @@ fun TaskDetailScreen(
                         }
                         Meta("SERVER", viewModel.serverLabel(task.request.serverUrl))
                         Meta("TASK", task.taskId)
+                        task.batchId?.let { Meta("BATCH", "${task.batchIndex ?: "?"}/${task.batchSize ?: "?"} · $it") }
                         task.promptId?.let { Meta("PROMPT", it) }
                         task.queuePosition?.let { Meta("QUEUE", "#$it") }
+                        if (task.localPending) Meta("QUEUE", "LOCAL")
                         task.nodeTitle?.takeIf(String::isNotBlank)?.let { Meta("NODE", "${task.nodeId ?: "?"} · $it") }
                         task.seedInfo.takeIf(String::isNotBlank)?.let { Meta("SEED", it) }
                         task.recoveryNote?.takeIf(String::isNotBlank)?.let { Meta("RECOVERY", it) }
                         Meta("CREATED", formatTimeFull(task.createdAt))
                         task.startedAt?.let { Meta("STARTED", formatTimeFull(it)) }
                         task.completedAt?.let { Meta("COMPLETED", formatTimeFull(it)) }
+                        Row { Text("ELAPSED", fontFamily = Mono, fontSize = 9.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(76.dp)); ElapsedText(task) }
                         RunningNodeProgress(task)
                     }
                 }
@@ -403,6 +504,22 @@ private fun Meta(label: String, value: String) {
         Text(label, fontFamily = Mono, fontSize = 9.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(76.dp))
         Text(value, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
     }
+}
+
+private fun filterLabel(filter: TaskFilter): String = when (filter) {
+    TaskFilter.ALL -> L10n.t("全部", "All")
+    TaskFilter.ACTIVE -> L10n.t("进行中", "Active")
+    TaskFilter.QUEUED -> L10n.t("排队", "Queued")
+    TaskFilter.FAILED -> L10n.t("失败", "Failed")
+    TaskFilter.DONE -> L10n.t("已结束", "Done")
+}
+
+private fun formatDuration(ms: Long): String {
+    val seconds = ms / 1_000
+    val hours = seconds / 3_600
+    val minutes = (seconds % 3_600) / 60
+    val secs = seconds % 60
+    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, secs) else "%02d:%02d".format(minutes, secs)
 }
 
 private fun formatTime(value: Long): String = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(value))
