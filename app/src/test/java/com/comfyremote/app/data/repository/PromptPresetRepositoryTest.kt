@@ -119,6 +119,19 @@ class PromptPresetRepositoryTest {
         assertEquals(false, restored.randomSeed)
     }
 
+    @Test
+    fun importDeduplicatesRepeatedIdsToKeepComposeKeysUnique() {
+        val raw = JSONArray()
+            .put(JSONObject().put("id", "same").put("title", "first").put("time", 1L))
+            .put(JSONObject().put("id", "same").put("title", "second").put("time", 2L))
+            .toString()
+
+        val repo = PromptPresetRepository(FakePreferences())
+        assertEquals(1, repo.importJson(raw))
+        assertEquals(1, repo.load().size)
+        assertEquals("same", repo.load().single().id)
+    }
+
     private class FakePreferences : SharedPreferences {
         private val values = linkedMapOf<String, Any?>()
 
