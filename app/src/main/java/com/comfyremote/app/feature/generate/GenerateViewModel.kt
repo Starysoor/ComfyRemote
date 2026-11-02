@@ -81,6 +81,26 @@ data class GenerateUiState(
         }
 }
 
+internal fun PromptField.looksLikeNegativePrompt(): Boolean {
+    val text = "$label $input".lowercase()
+    return listOf("negative", "neg_", "neg ", "负面", "负向", "反向").any(text::contains)
+}
+
+internal fun resolveNegativePromptSource(
+    draft: WorkflowDraft,
+    fieldKey: String,
+    currentText: String,
+): String? {
+    val currentField = draft.fields.firstOrNull { it.key == fieldKey }
+    if (currentField == null || !currentField.looksLikeNegativePrompt()) {
+        return currentText.takeIf(String::isNotBlank)
+    }
+    val positive = draft.fields.firstOrNull {
+        it.kind == FieldKind.TEXT && it.multiline && !it.looksLikeNegativePrompt()
+    } ?: return null
+    return (draft.values[positive.key] ?: positive.value).takeIf(String::isNotBlank)
+}
+
 class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(
         GenerateUiState(
@@ -200,23 +220,20 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun aiExpand(fieldKey: String, currentText: String, skill: AiSkillDef) {
-        // Negative-prompt skill auto-reads the first positive prompt field
         var source = currentText
         if (skill.id == AiSkillDef.DEFAULT_NEG_ID) {
-            val positive = _state.value.draft?.fields
-                ?.firstOrNull { it.kind == FieldKind.TEXT && it.multiline && it.key != fieldKey }
-            val posText = positive?.let { _state.value.draft?.values?.get(it.key) ?: it.value }
-            if (!posText.isNullOrBlank()) source = posText
-            else if (currentText.isBlank()) {
+            val draft = _state.value.draft
+            val resolved = draft?.let { resolveNegativePromptSource(it, fieldKey, currentText) }
+            if (resolved.isNullOrBlank()) {
                 _state.update { it.copy(message = L10n.t("先在正向提示词框输入内容，AI 才能生成对应的负面提示词", "Type a positive prompt first")) }
                 return
             }
+            source = resolved
         }
         if (source.isBlank() && skill.id != AiSkillDef.DEFAULT_NEG_ID) {
             _state.update { it.copy(message = L10n.t("先输入一些提示词", "Type a prompt first")) }
             return
         }
-        // continue with source as the text for expansion
         val settings = container.aiSettingsStore.load()
         if (!settings.configured) {
             _state.update { it.copy(message = L10n.t("请先配置 AI 设置", "Configure AI settings first")) }
