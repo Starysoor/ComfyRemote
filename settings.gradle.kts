@@ -19,5 +19,5 @@ dependencyResolutionManagement {
         maven("https://maven.aliyun.com/repository/central")
     }
 }
-rootProject.name = "ComfyRemote"
+rootProject.name = "Iris"
 include(":app")

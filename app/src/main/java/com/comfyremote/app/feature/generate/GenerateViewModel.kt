@@ -15,10 +15,16 @@ import com.comfyremote.app.LabeledText
 import com.comfyremote.app.PromptField
 import com.comfyremote.app.WorkflowConverter
 import com.comfyremote.app.WorkflowEntry
+import com.comfyremote.app.data.cloud.AutoDlConfig
+import com.comfyremote.app.data.cloud.CloudInputStore
+import com.comfyremote.app.data.cloud.CloudWorkflowMapping
+import com.comfyremote.app.data.cloud.CloudWorkflowSpec
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationRequest
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.media.ImagePreprocessor
+import com.comfyremote.app.data.media.decodeSampled
+import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.repository.PromptPreset
 import com.comfyremote.app.data.repository.WorkflowInsight
 import com.comfyremote.app.data.repository.WorkflowInsights
@@ -33,6 +39,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 
@@ -45,7 +52,16 @@ data class WorkflowDraft(
     val warnings: List<String> = emptyList(),
     val notes: List<String> = emptyList(),
     val nodeTitles: Map<String, String> = emptyMap(),
-)
+    /** Non-null for a hosted cloud workflow snapshot. */
+    val cloud: CloudWorkflowSpec? = null,
+    val cloudBaseUrl: String? = null,
+) {
+    val isCloud: Boolean get() = cloud != null
+
+    /** Drafts are scoped per server; cloud drafts use a stable pseudo-server. */
+    val storageServerUrl: String
+        get() = if (isCloud) cloudBaseUrl ?: AutoDlConfig.BASE_URL else ""
+}
 
 enum class ImageUploadPhase { UPLOADING, FAILED }
 
@@ -55,6 +71,14 @@ data class ImageUploadStatus(
 )
 
 enum class PresetApplyMode { ALL, PROMPTS, PARAMETERS }
+
+data class CloudConfirmation(
+    val workflowName: String,
+    val priceLabel: String,
+    val estimatedCost: Int?,
+    val duration: String,
+    val resolution: String,
+)
 
 data class GenerateUiState(
     val loading: Boolean = false,
@@ -70,6 +94,7 @@ data class GenerateUiState(
     val uploads: Map<String, ImageUploadStatus> = emptyMap(),
     val batchCount: Int = 1,
     val batchLocalQueue: Boolean = true,
+    val cloudConfirm: CloudConfirmation? = null,
     val message: String? = null,
 ) {
     val filteredPresets: List<PromptPreset>
@@ -115,10 +140,13 @@ internal fun resolveNegativePromptSource(
 }
 
 class GenerateViewModel(private val container: AppContainer) : ViewModel() {
+    private val appSettings = container.appSettingsStore.settings.value
     private val _state = MutableStateFlow(
         GenerateUiState(
             skills = container.aiSkillStore.load(),
             presets = container.promptPresetRepository.load(),
+            batchCount = appSettings.defaultBatchCount,
+            batchLocalQueue = appSettings.defaultLocalQueue,
         )
     )
     val state: StateFlow<GenerateUiState> = _state.asStateFlow()
@@ -128,6 +156,8 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     private var loadedPath: String? = null
     private val appliedSeedTasks = mutableSetOf<String>()
     private var draftSaveJob: Job? = null
+    private var pendingStoryboardProjectId: String? = null
+    private var pendingStoryboardShotId: String? = null
 
     init {
         viewModelScope.launch {
@@ -170,27 +200,26 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         if (path.isBlank()) return
         if (loadedPath == path && (_state.value.loading || _state.value.draft != null)) return
         loadedPath = path
+        pendingStoryboardProjectId = null
+        pendingStoryboardShotId = null
         _state.update { it.copy(loading = true, error = null, draft = null, insight = null) }
         viewModelScope.launch {
-            runCatching { container.workflowRepository.convert(WorkflowEntry(path, name, "")) }
-                .onSuccess { conv ->
+            runCatching { buildDraft(path, name) }
+                .onSuccess { (baseDraft, conv) ->
                     converted = conv
-                    val titles = conv.prompt.keys().asSequence().associateWith { nodeId ->
-                        conv.prompt.optJSONObject(nodeId)?.optJSONObject("_meta")?.optString("title").orEmpty()
-                    }
                     val transfer = container.draftTransferRepository.consume(path)
+                    pendingStoryboardProjectId = transfer?.storyboardProjectId
+                    pendingStoryboardShotId = transfer?.storyboardShotId
                     val remembered = if (transfer == null) {
-                        container.workflowDraftStore.load(path, container.serverSession.url)
+                        container.workflowDraftStore.load(
+                            path,
+                            baseDraft.storageServerUrl.ifBlank { container.serverSession.url },
+                        )
                     } else null
-                    val draft = WorkflowDraft(
-                        workflowPath = path,
-                        workflowName = name,
-                        fields = conv.fields,
+                    val draft = baseDraft.copy(
                         values = transfer?.values ?: remembered?.values.orEmpty(),
-                        randomSeed = transfer?.randomSeed ?: remembered?.randomSeed ?: true,
-                        warnings = conv.warnings,
-                        notes = conv.notes,
-                        nodeTitles = titles,
+                        randomSeed = transfer?.randomSeed ?: remembered?.randomSeed
+                            ?: container.appSettingsStore.settings.value.defaultRandomSeed,
                     )
                     _state.update {
                         it.copy(
@@ -210,6 +239,43 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    private suspend fun buildDraft(path: String, name: String): Pair<WorkflowDraft, ConvertedWorkflow> {
+        val cloudProvider = container.cloudProviders.forPath(path)
+        if (cloudProvider != null) {
+            val workflowId = path.removePrefix(cloudProvider.pathPrefix)
+            val spec = cloudProvider.detail(workflowId)
+            val fields = CloudWorkflowMapping.fields(spec)
+            val warnings = CloudWorkflowMapping.warnings(spec)
+            val notes = listOf(
+                spec.name,
+                spec.description,
+                L10n.t("云端工作流 · 由 AutoDL.Art 执行", "Cloud workflow · executed by AutoDL.Art"),
+            ).filter(String::isNotBlank)
+            val prompt = spec.toJson()
+            return WorkflowDraft(
+                workflowPath = path,
+                workflowName = spec.name.ifBlank { name },
+                fields = fields,
+                warnings = warnings,
+                notes = notes,
+                cloud = spec,
+                cloudBaseUrl = cloudProvider.baseUrl,
+            ) to ConvertedWorkflow(prompt, fields, warnings, notes)
+        }
+        val conv = container.workflowRepository.convert(WorkflowEntry(path, name, ""))
+        val titles = conv.prompt.keys().asSequence().associateWith { nodeId ->
+            conv.prompt.optJSONObject(nodeId)?.optJSONObject("_meta")?.optString("title").orEmpty()
+        }
+        return WorkflowDraft(
+            workflowPath = path,
+            workflowName = name,
+            fields = conv.fields,
+            warnings = conv.warnings,
+            notes = conv.notes,
+            nodeTitles = titles,
+        ) to conv
+    }
+
     fun updateValue(key: String, value: String) = updateDraft { it.copy(values = it.values + (key to value)) }
     fun toggleRandomSeed() = updateDraft { it.copy(randomSeed = !it.randomSeed) }
     fun setPresetQuery(value: String) = _state.update { it.copy(presetQuery = value) }
@@ -220,17 +286,34 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
 
     fun resetRememberedDraft() {
         val draft = _state.value.draft ?: return
-        container.workflowDraftStore.clear(draft.workflowPath, container.serverSession.url)
-        updateDraft { it.copy(values = emptyMap(), randomSeed = true) }
+        container.workflowDraftStore.clear(
+            draft.workflowPath,
+            draft.storageServerUrl.ifBlank { container.serverSession.url },
+        )
+        updateDraft {
+            it.copy(
+                values = emptyMap(),
+                randomSeed = container.appSettingsStore.settings.value.defaultRandomSeed,
+            )
+        }
         _state.update { it.copy(message = L10n.t("已恢复工作流默认值", "Workflow defaults restored")) }
     }
 
-    fun generate() {
+    fun generate(confirmed: Boolean = false) {
         val draft = _state.value.draft ?: return
         val cv = converted ?: return
-        if (!container.serverSession.connected) {
+        if (!draft.isCloud && !container.serverSession.connected) {
             _state.update { it.copy(message = L10n.t("服务器已断开", "Server disconnected")) }
             return
+        }
+        if (draft.isCloud) {
+            val provider = container.cloudProviders.forPath(draft.workflowPath)
+            if (provider == null || !provider.configured()) {
+                _state.update {
+                    it.copy(message = L10n.t("请先在设置 → 云端服务中配置 Token", "Configure a cloud token in Settings → Cloud"))
+                }
+                return
+            }
         }
         val blocking = _state.value.insight?.blockingIssues.orEmpty()
         if (blocking.isNotEmpty()) {
@@ -239,6 +322,11 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         }
         val current = _state.value.activeTaskId?.let { id -> tasks.value.firstOrNull { it.taskId == id } }
         if (current?.isActive == true || (current?.batchId != null && tasks.value.any { it.batchId == current.batchId && it.isActive })) return
+        if (draft.isCloud && !confirmed && container.appSettingsStore.settings.value.confirmCloudSubmit) {
+            _state.update { it.copy(cloudConfirm = cloudConfirmation(draft, draft.values)) }
+            return
+        }
+        _state.update { it.copy(cloudConfirm = null) }
 
         persistDraftNow(draft)
         val count = _state.value.batchCount.coerceIn(1, MAX_BATCH)
@@ -248,12 +336,60 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         } else {
             container.generationManager.submitBatch(requests, localQueue = _state.value.batchLocalQueue)
         }
+        val projectId = pendingStoryboardProjectId
+        val shotId = pendingStoryboardShotId
+        if (projectId != null && shotId != null && ids.isNotEmpty()) {
+            container.storyboardStore.attachTask(projectId, shotId, ids.first())
+            pendingStoryboardProjectId = null
+            pendingStoryboardShotId = null
+        }
         _state.update {
             it.copy(
                 activeTaskId = ids.firstOrNull(),
                 message = if (ids.size > 1) L10n.t("已创建 ${ids.size} 个批量任务", "Created ${ids.size} batch tasks") else null,
             )
         }
+    }
+
+    fun confirmCloudSubmit() = generate(confirmed = true)
+
+    fun dismissCloudConfirm() = _state.update { it.copy(cloudConfirm = null) }
+
+    private fun cloudConfirmation(draft: WorkflowDraft, values: Map<String, String>): CloudConfirmation {
+        val spec = draft.cloud
+        val duration = fieldValue(draft, values, "duration")
+            ?: fieldValue(draft, values, "audio_duration").orEmpty()
+        val resolution = fieldValue(draft, values, "resolution").orEmpty()
+        val estimate = if (spec?.kind == "audio" && duration.isBlank()) {
+            null
+        } else {
+            spec?.pricing?.estimate(resolution, duration.toIntOrNull())
+        }
+        return CloudConfirmation(
+            workflowName = spec?.name ?: draft.workflowName,
+            priceLabel = spec?.pricing?.label ?: L10n.t("按平台计费", "Platform billing"),
+            estimatedCost = estimate,
+            duration = duration,
+            resolution = resolution,
+        )
+    }
+
+    private fun fieldValue(
+        draft: WorkflowDraft,
+        values: Map<String, String>,
+        inputName: String,
+    ): String? {
+        val field = draft.fields.firstOrNull { it.input == inputName } ?: return null
+        return (values[field.key] ?: field.value).takeIf { it.isNotBlank() }
+    }
+
+    private fun cloudCostEstimate(draft: WorkflowDraft, values: Map<String, String>): Int? {
+        val spec = draft.cloud ?: return null
+        val duration = fieldValue(draft, values, "duration")
+            ?: fieldValue(draft, values, "audio_duration")
+        if (spec.kind == "audio" && duration == null) return null
+        val resolution = fieldValue(draft, values, "resolution")
+        return spec.pricing?.estimate(resolution, duration?.toIntOrNull())
     }
 
     private fun buildRequest(draft: WorkflowDraft, cv: ConvertedWorkflow, batchOffset: Int): GenerationRequest {
@@ -269,9 +405,11 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 }
             }
         }
+        val cloudProvider = if (draft.isCloud) container.cloudProviders.forPath(draft.workflowPath) else null
         return GenerationRequest(
             id = UUID.randomUUID().toString(),
-            serverUrl = container.serverSession.url,
+            provider = cloudProvider?.id ?: "comfyui",
+            serverUrl = cloudProvider?.baseUrl ?: container.serverSession.url,
             workflowPath = draft.workflowPath,
             workflowName = draft.workflowName,
             fieldValues = values,
@@ -280,6 +418,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             fields = draft.fields,
             convertedPrompt = JSONObject(cv.prompt.toString()),
             createdAt = System.currentTimeMillis() + batchOffset,
+            estimatedCloudCost = if (draft.isCloud) cloudCostEstimate(draft, values) else null,
         )
     }
 
@@ -438,10 +577,32 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun uploadImage(fieldKey: String, uri: Uri) {
-        if (!container.serverSession.connected) return
+        val draft = _state.value.draft ?: return
+        if (!draft.isCloud && !container.serverSession.connected) return
         viewModelScope.launch {
             setUpload(fieldKey, ImageUploadStatus(ImageUploadPhase.UPLOADING))
-            runCatching { uploadOne(container.serverSession.require(), uri, 0) }
+            runCatching {
+                if (draft.isCloud) {
+                    container.cloudInputStore.saveFromUri(uri, cloudImageDimension())
+                } else {
+                    uploadOne(container.serverSession.require(), uri, 0)
+                }
+            }.onSuccess { name ->
+                updateValue(fieldKey, name)
+                clearUpload(fieldKey)
+            }.onFailure { e -> setUpload(fieldKey, ImageUploadStatus(ImageUploadPhase.FAILED, e.message)) }
+        }
+    }
+
+    fun uploadAudio(fieldKey: String, uri: Uri) {
+        val draft = _state.value.draft ?: return
+        if (!draft.isCloud) {
+            _state.update { it.copy(message = L10n.t("本地 ComfyUI 工作流暂不支持音频输入", "Local ComfyUI audio inputs are not supported yet")) }
+            return
+        }
+        viewModelScope.launch {
+            setUpload(fieldKey, ImageUploadStatus(ImageUploadPhase.UPLOADING))
+            runCatching { container.cloudInputStore.saveAudioFromUri(uri) }
                 .onSuccess { name ->
                     updateValue(fieldKey, name)
                     clearUpload(fieldKey)
@@ -453,12 +614,18 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     fun uploadImagesBatch(uris: List<Uri>) {
         val draft = _state.value.draft ?: return
         val imageFields = draft.fields.filter { it.kind == FieldKind.IMAGE }
-        if (uris.isEmpty() || imageFields.isEmpty() || !container.serverSession.connected) return
+        if (uris.isEmpty() || imageFields.isEmpty()) return
+        if (!draft.isCloud && !container.serverSession.connected) return
         viewModelScope.launch {
             imageFields.zip(uris).forEachIndexed { index, (field, uri) ->
                 setUpload(field.key, ImageUploadStatus(ImageUploadPhase.UPLOADING))
-                runCatching { uploadOne(container.serverSession.require(), uri, index) }
-                    .onSuccess { name -> updateValue(field.key, name); clearUpload(field.key) }
+                runCatching {
+                    if (draft.isCloud) {
+                        container.cloudInputStore.saveFromUri(uri, cloudImageDimension())
+                    } else {
+                        uploadOne(container.serverSession.require(), uri, index)
+                    }
+                }.onSuccess { name -> updateValue(field.key, name); clearUpload(field.key) }
                     .onFailure { e -> setUpload(field.key, ImageUploadStatus(ImageUploadPhase.FAILED, e.message)) }
             }
         }
@@ -471,14 +638,18 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             _state.update { it.copy(message = L10n.t("当前工作流没有可接收参考图的输入", "This workflow has no reference-image input")) }
             return
         }
-        if (!container.serverSession.connected) return
+        if (!draft.isCloud && !container.serverSession.connected) return
         viewModelScope.launch {
             setUpload(field.key, ImageUploadStatus(ImageUploadPhase.UPLOADING))
             runCatching {
-                val file = File(localPath)
-                val bytes = withContext(Dispatchers.IO) { file.readBytes() }
-                val ext = file.extension.ifBlank { "png" }
-                container.serverSession.require().uploadImage(bytes, "result_ref_${System.currentTimeMillis()}.$ext")
+                if (draft.isCloud) {
+                    container.cloudInputStore.saveFromFile(localPath, cloudImageDimension())
+                } else {
+                    val file = File(localPath)
+                    val bytes = withContext(Dispatchers.IO) { file.readBytes() }
+                    val ext = file.extension.ifBlank { "png" }
+                    container.serverSession.require().uploadImage(bytes, "result_ref_${System.currentTimeMillis()}.$ext")
+                }
             }.onSuccess { name ->
                 updateValue(field.key, name)
                 clearUpload(field.key)
@@ -489,13 +660,127 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** One-tap handoff from a generated image to the configured cloud video workflow. */
+    fun prepareCloudVideo(localPath: String): Pair<String, String>? {
+        val workflowId = container.appSettingsStore.settings.value.defaultVideoWorkflowId.trim()
+        if (workflowId.isBlank()) {
+            _state.update {
+                it.copy(message = L10n.t("请先在设置中配置默认云端视频工作流", "Set a default cloud video workflow in Settings"))
+            }
+            return null
+        }
+        val path = AutoDlConfig.PATH_PREFIX + workflowId
+        val name = L10n.t("云端视频", "Cloud video")
+        container.draftTransferRepository.put(
+            DraftTransfer(
+                workflowPath = path,
+                workflowName = name,
+                values = emptyMap(),
+                randomSeed = true,
+                referenceLocalPath = localPath,
+            )
+        )
+        return path to name
+    }
+
+    /**
+     * Sends the actual image + the user's instruction to the vision model and
+     * proposes a rewritten prompt. The model sees the picture; this is not a
+     * text-only "imagine the image" request.
+     */
+    fun visionRewrite(targetFieldKey: String?, imageValue: String, instruction: String) {
+        if (_state.value.aiBusy != null) return
+        val draft = _state.value.draft ?: return
+        if (imageValue.isBlank()) {
+            _state.update { it.copy(message = L10n.t("请先选择一张图片", "Pick an image first")) }
+            return
+        }
+        val target = draft.fields.firstOrNull { it.key == targetFieldKey && it.kind == FieldKind.TEXT }
+            ?: draft.fields.firstOrNull {
+                it.kind == FieldKind.TEXT && it.multiline && !it.looksLikeNegativePrompt()
+            }
+            ?: draft.fields.firstOrNull { it.kind == FieldKind.TEXT }
+        if (target == null) {
+            _state.update { it.copy(message = L10n.t("当前工作流没有可改写的提示词框", "This workflow has no prompt field")) }
+            return
+        }
+        val settings = container.aiSettingsStore.load()
+        if (!settings.configured) {
+            _state.update { it.copy(message = L10n.t("请先配置 AI 设置", "Configure AI settings first")) }
+            return
+        }
+        val skill = container.aiSkillStore.load().firstOrNull { it.id == AiSkillDef.DEFAULT_VISION_ID }
+            ?: AiSkillDef.VISION_REWRITE_DEFAULT
+        val busy = "vision:${target.key}"
+        _state.update { it.copy(aiBusy = busy) }
+        viewModelScope.launch {
+            runCatching {
+                val bytes = loadVisionImageBytes(imageValue)
+                    ?: throw ComfyException(L10n.t("无法读取图片", "Could not read the image"))
+                val (prepared, ext) = withContext(Dispatchers.IO) {
+                    ImagePreprocessor.prepare(bytes, null, 1024, 84)
+                }
+                val current = draft.values[target.key] ?: target.value
+                val userText = buildString {
+                    append(L10n.t("用户的修改要求：", "User's requested change: "))
+                    append(instruction.trim().ifBlank { L10n.t("在保留画面主体与风格的前提下优化提示词", "Refine the prompt while preserving the subject and style") })
+                    if (current.isNotBlank()) {
+                        append("\n")
+                        append(L10n.t("当前提示词：", "Current prompt: "))
+                        append(current)
+                    }
+                    append("\n")
+                    append(L10n.t("请直接观察这张图片，再输出改写后的提示词。", "Look at this image and output the rewritten prompt."))
+                }
+                container.aiRepository.visionChat(
+                    systemPrompt = skill.systemPrompt,
+                    userText = userText,
+                    imageBytes = prepared,
+                    mime = CloudInputStore.mimeForExt(ext),
+                )
+            }.onSuccess { out ->
+                _state.update { it.copy(aiBusy = null, aiResult = AiResult(target.key, out)) }
+            }.onFailure { e ->
+                _state.update { it.copy(aiBusy = null, message = e.message ?: "AI vision error") }
+            }
+        }
+    }
+
+    private suspend fun loadVisionImageBytes(value: String): ByteArray? = withContext(Dispatchers.IO) {
+        container.cloudInputStore.readBytes(value)?.let { return@withContext it }
+        if (value.startsWith("data:")) {
+            return@withContext runCatching {
+                java.util.Base64.getDecoder().decode(value.substringAfter(','))
+            }.getOrNull()
+        }
+        val bitmap = runCatching { container.serverSession.require().fetchInputImage(value) }.getOrNull()
+            ?: return@withContext null
+        ByteArrayOutputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 88, out)
+            out.toByteArray()
+        }
+    }
+
+    private fun cloudImageDimension(): Int =
+        container.appSettingsStore.settings.value.maxImageDimension.coerceAtMost(1024)
+
     suspend fun loadInputBitmap(name: String): Bitmap? = withContext(Dispatchers.IO) {
-        runCatching { container.serverSession.require().fetchInputImage(name) }.getOrNull()
+        val local = container.cloudInputStore.localPath(name)
+        if (local != null) decodeSampled(local, 512)
+        else runCatching { container.serverSession.require().fetchInputImage(name) }.getOrNull()
     }
 
     fun saveResult(bitmap: Bitmap) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { container.galleryExporter.savePng(bitmap) }
+                .onSuccess { _state.update { it.copy(message = container.galleryExporter.savedMessage()) } }
+                .onFailure { e -> _state.update { it.copy(message = container.galleryExporter.failMessage(e)) } }
+        }
+    }
+
+    fun saveMedia(path: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { container.galleryExporter.saveMediaFile(path) }
                 .onSuccess { _state.update { it.copy(message = container.galleryExporter.savedMessage()) } }
                 .onFailure { e -> _state.update { it.copy(message = container.galleryExporter.failMessage(e)) } }
         }
@@ -519,12 +804,19 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         } ?: throw ComfyException(L10n.t("读取图片失败", "Failed to read image"))
         val (bytes, ext) = withContext(Dispatchers.IO) {
-            ImagePreprocessor.prepare(raw, ctx.contentResolver.getType(uri))
+            ImagePreprocessor.prepare(
+                raw,
+                ctx.contentResolver.getType(uri),
+                container.appSettingsStore.settings.value.maxImageDimension,
+            )
         }
         return api.uploadImage(bytes, "mobile_${System.currentTimeMillis()}_$seq.$ext")
     }
 
     private fun insightFor(draft: WorkflowDraft, cv: ConvertedWorkflow? = converted): WorkflowInsight {
+        draft.cloud?.let { spec ->
+            return CloudWorkflowMapping.analyze(spec, draft.fields, draft.values)
+        }
         val actual = cv ?: return WorkflowInsight(emptySet(), emptyList())
         return WorkflowInsights.analyze(actual.prompt, draft.fields, draft.values, draft.warnings)
     }
@@ -538,16 +830,18 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
 
     private fun scheduleDraftSave(draft: WorkflowDraft) {
         draftSaveJob?.cancel()
-        val serverUrl = container.serverSession.url
+        val serverUrl = draft.storageServerUrl.ifBlank { container.serverSession.url }
         draftSaveJob = viewModelScope.launch {
             delay(450)
             persistDraftNow(draft, serverUrl)
         }
     }
 
-    private fun persistDraftNow(draft: WorkflowDraft, serverUrl: String = container.serverSession.url) {
-        if (serverUrl.isNotBlank()) {
-            container.workflowDraftStore.save(draft.workflowPath, serverUrl, draft.values, draft.randomSeed)
+    private fun persistDraftNow(draft: WorkflowDraft, serverUrl: String = "") {
+        if (!container.appSettingsStore.settings.value.autoSaveDrafts) return
+        val key = serverUrl.ifBlank { draft.storageServerUrl.ifBlank { container.serverSession.url } }
+        if (key.isNotBlank()) {
+            container.workflowDraftStore.save(draft.workflowPath, key, draft.values, draft.randomSeed)
         }
     }
 

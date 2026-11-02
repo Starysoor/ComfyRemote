@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -47,6 +48,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.comfyremote.app.AiSkillDef
 import com.comfyremote.app.ui.L10n
 import com.comfyremote.app.ui.Mono
@@ -81,9 +83,25 @@ fun AiSettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Text(L10n.t("快捷服务商", "Quick providers"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AI_PRESETS.forEach { preset ->
+                    OutlinedButton(onClick = { viewModel.applyPreset(preset.baseUrl, preset.model, preset.visionModel) }) {
+                        Text(preset.label, fontSize = 11.sp)
+                    }
+                }
+            }
             OutlinedTextField(settings.baseUrl, viewModel::updateBase, label = { Text("Base URL") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(settings.apiKey, viewModel::updateKey, label = { Text("API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(settings.model, viewModel::updateModel, label = { Text(L10n.t("模型", "Model")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                settings.visionModel,
+                viewModel::updateVisionModel,
+                label = { Text(L10n.t("视觉模型（看图改写）", "Vision model (image rewrite)")) },
+                supportingText = { Text(L10n.t("留空则复用上方模型；需支持 image_url 输入", "Blank reuses the model above; must accept image_url input")) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
 
             Card {
                 Column {
@@ -254,6 +272,22 @@ private fun SkillEditDialog(
         },
     )
 }
+
+private data class AiProviderPreset(
+    val label: String,
+    val baseUrl: String,
+    val model: String,
+    val visionModel: String = "",
+)
+
+private val AI_PRESETS = listOf(
+    AiProviderPreset("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat"),
+    AiProviderPreset("智谱 GLM", "https://open.bigmodel.cn/api/paas/v4", "glm-4.5", "glm-4.5v"),
+    AiProviderPreset("OpenAI", "https://api.openai.com/v1", "gpt-4o-mini", "gpt-4o-mini"),
+    AiProviderPreset("Qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus", "qwen-vl-max"),
+    AiProviderPreset("Moonshot", "https://api.moonshot.cn/v1", "moonshot-v1-8k"),
+    AiProviderPreset("Ollama", "http://10.0.2.2:11434/v1", "qwen2.5", "llava"),
+)
 
 private fun thinkingLabel(mode: String): String = when (mode) {
     "glm_off" -> L10n.t("GLM · 关闭思考", "GLM · thinking off")

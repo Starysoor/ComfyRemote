@@ -6,6 +6,7 @@ import androidx.core.content.ContextCompat
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.ComfyApi
 import com.comfyremote.app.PromptValidationException
+import com.comfyremote.app.data.cloud.AutoDlConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +56,9 @@ class GenerationManager(
     /** Submits one request immediately to its bound server. */
     fun submit(request: GenerationRequest): String {
         val task = newTask(request)
+        if (request.provider == AutoDlConfig.PROVIDER) {
+            container.cloudSpendStore.record(request.workflowName, request.estimatedCloudCost)
+        }
         mutateTasks { prune(listOf(task) + it) }
         startService()
         launchTracked(task.taskId) { execute(task) }
@@ -76,6 +80,11 @@ class GenerationManager(
                 batchSize = requests.size,
                 recoveryNote = if (localQueue) "Waiting in local queue" else null,
             )
+        }
+        requests.forEach { request ->
+            if (request.provider == AutoDlConfig.PROVIDER) {
+                container.cloudSpendStore.record(request.workflowName, request.estimatedCloudCost)
+            }
         }
         mutateTasks { prune(tasks + it) }
         startService()
@@ -121,17 +130,26 @@ class GenerationManager(
         }
 
         patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }
+        val cloud = task.request.provider == AutoDlConfig.PROVIDER
         when (task.phase) {
             GenerationPhase.PREPARING, GenerationPhase.QUEUEING -> jobs[taskId]?.cancel()
             GenerationPhase.QUEUED -> {
-                task.promptId?.let { promptId ->
-                    runCatching { ComfyApi(task.request.serverUrl).deleteFromQueue(promptId) }
+                if (!cloud) {
+                    task.promptId?.let { promptId ->
+                        runCatching { ComfyApi(task.request.serverUrl).deleteFromQueue(promptId) }
+                    }
                 }
                 jobs[taskId]?.cancel()
             }
             GenerationPhase.RUNNING -> {
-                // ComfyUI interrupt is server-scoped. Always target this task's original server.
-                runCatching { ComfyApi(task.request.serverUrl).interrupt() }
+                if (cloud) {
+                    // AutoDL's hosted API has no public per-task cancel endpoint.
+                    // Stop tracking locally; the remote job may still finish/bill.
+                    jobs[taskId]?.cancel()
+                } else {
+                    // ComfyUI interrupt is server-scoped. Always target this task's original server.
+                    runCatching { ComfyApi(task.request.serverUrl).interrupt() }
+                }
             }
             else -> Unit
         }
@@ -284,10 +302,28 @@ class GenerationManager(
         }
     }
 
-    private fun runnerFor(task: GenerationTask) = GenerationRunner(
-        backend = ComfyGenerationBackend(task.request.serverUrl),
-        history = RepositoryGenerationHistorySink(container.historyRepository, task.request.serverUrl),
-    )
+    private fun runnerFor(task: GenerationTask): GenerationRunner {
+        val request = task.request
+        val history = RepositoryGenerationHistorySink(container.historyRepository, request.serverUrl)
+        val resolver: (String) -> String? = { container.cloudInputStore.toRequestValue(it) }
+        return if (request.provider != "comfyui") {
+            val provider = container.cloudProviders.byId(request.provider)
+                ?: error("Unknown cloud provider ${request.provider}")
+            val workflowId = request.workflowPath.removePrefix(provider.pathPrefix)
+            GenerationRunner(
+                backend = CloudWorkflowBackend(provider, workflowId),
+                history = history,
+                timeoutMs = 60 * 60_000L,
+                resolveCloudImage = resolver,
+            )
+        } else {
+            GenerationRunner(
+                backend = ComfyGenerationBackend(request.serverUrl),
+                history = history,
+                resolveCloudImage = resolver,
+            )
+        }
+    }
 
     private fun patchFailure(taskId: String, e: Exception) {
         patch(taskId) {

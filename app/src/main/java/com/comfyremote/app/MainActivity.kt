@@ -4,10 +4,14 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import com.comfyremote.app.data.generation.GenerationNotificationController
 import com.comfyremote.app.navigation.ComfyRemoteRoot
 import com.comfyremote.app.navigation.Routes
 import com.comfyremote.app.ui.ComfyTheme
+import com.comfyremote.app.ui.LocalAppSettings
 
 class MainActivity : ComponentActivity() {
     private val container: AppContainer
@@ -17,7 +21,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         handleEntryIntent(intent)
         setContent {
-            ComfyTheme { ComfyRemoteRoot(container) }
+            val settings by container.appSettingsStore.settings.collectAsState()
+            ComfyTheme(settings.themeMode) {
+                CompositionLocalProvider(LocalAppSettings provides settings) {
+                    ComfyRemoteRoot(container)
+                }
+            }
         }
     }
 

@@ -3,6 +3,7 @@ package com.comfyremote.app.data.generation
 import com.comfyremote.app.FieldKind
 import com.comfyremote.app.PromptField
 import com.comfyremote.app.WorkflowConverter
+import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -56,7 +57,7 @@ class GenerationPromptBuilderTest {
     }
 
     @Test
-    fun fixedSeedSubmissionKeepsUserPromptImageAndSeed() {
+    fun fixedSeedSubmissionKeepsUserPromptImageAndSeed() = runBlocking {
         val req = request(
             randomSeed = false,
             values = mapOf(
@@ -75,7 +76,7 @@ class GenerationPromptBuilderTest {
     }
 
     @Test
-    fun randomSeedSubmissionStillKeepsUserPromptAndUsesGeneratedSeed() {
+    fun randomSeedSubmissionStillKeepsUserPromptAndUsesGeneratedSeed() = runBlocking {
         val req = request(
             randomSeed = true,
             values = mapOf(

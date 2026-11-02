@@ -9,6 +9,8 @@ import java.util.UUID
 /** Immutable snapshot of what the user asked for. Editing after submit cannot affect it. */
 data class GenerationRequest(
     val id: String = UUID.randomUUID().toString(),
+    /** "comfyui" for a direct server, "autodl" for AutoDL's hosted workflow API. */
+    val provider: String = "comfyui",
     val serverUrl: String,
     val workflowPath: String,
     val workflowName: String,
@@ -18,6 +20,8 @@ data class GenerationRequest(
     val fields: List<PromptField>,
     val convertedPrompt: JSONObject,
     val createdAt: Long = System.currentTimeMillis(),
+    /** Best-effort platform price estimate captured at submit time. */
+    val estimatedCloudCost: Int? = null,
 )
 
 enum class GenerationPhase { PREPARING, QUEUEING, QUEUED, RUNNING, CANCELLING, CANCELLED, SUCCEEDED, FAILED }

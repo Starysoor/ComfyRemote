@@ -51,4 +51,7 @@ class HistoryRepository(private val store: HistoryStore) {
     }
 
     fun newImageFile(promptId: String, index: Int) = store.newImageFile(promptId, index)
+
+    fun newMediaFile(promptId: String, index: Int, extension: String) =
+        store.newMediaFile(promptId, index, extension)
 }

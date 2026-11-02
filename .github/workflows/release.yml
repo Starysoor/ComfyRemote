@@ -79,7 +79,7 @@ jobs:
           sha256sum "$APK"
 
       - name: Name release APK
-        run: cp app/build/outputs/apk/release/app-release.apk "app/build/outputs/apk/release/ComfyRemote-${RELEASE_TAG}.apk"
+        run: cp app/build/outputs/apk/release/app-release.apk "app/build/outputs/apk/release/Iris-${RELEASE_TAG}.apk"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -88,4 +88,4 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: ${{ env.RELEASE_TAG }}
           generate_release_notes: true
-          files: app/build/outputs/apk/release/ComfyRemote-${{ env.RELEASE_TAG }}.apk
+          files: app/build/outputs/apk/release/Iris-${{ env.RELEASE_TAG }}.apk

@@ -1,31 +1,53 @@
-# ComfyRemote
+# Iris · 灵瞳
 
 [中文](#中文) | [English](#english)
 
-Android remote client for your PC's ComfyUI: pick a workflow, type a prompt, generate — no canvas needed.
+[![Release](https://img.shields.io/github/v/release/Starysoor/Iris?display_name=tag)](https://github.com/Starysoor/Iris/releases)
+[![CI](https://github.com/Starysoor/Iris/actions/workflows/test.yml/badge.svg)](https://github.com/Starysoor/Iris/actions/workflows/test.yml)
 
-<a href="docs/screen-generate.png"><img src="docs/screen-generate.png" width="240"/></a>
-<a href="docs/screen-results.png"><img src="docs/screen-results.png" width="240"/></a>
-<a href="docs/screen-compare.png"><img src="docs/screen-compare.png" width="240"/></a>
+One lens, every model. Android client for local ComfyUI **and** hosted cloud workflows — pick a model, write a prompt, generate images, video or audio.
 
-## <a id="english"></a>English
+**v2.1.0** · [AutoDL cloud guide](docs/AutoDL.md) · [Screenshots](docs/verification)
 
-**ComfyRemote** turns your phone into a remote for a ComfyUI server running on your PC:
+<a href="docs/verification/iris-local.png"><img src="docs/verification/iris-local.png" width="200"/></a>
+<a href="docs/verification/iris-result2.png"><img src="docs/verification/iris-result2.png" width="200"/></a>
+<a href="docs/verification/iris-storyboard-done.png"><img src="docs/verification/iris-storyboard-done.png" width="200"/></a>
+<a href="docs/verification/iris-real-video-player.png"><img src="docs/verification/iris-real-video-player.png" width="200"/></a>
 
-- **Workflow picker** — lists every workflow saved in ComfyUI and converts the canvas JSON to the API format automatically; you only edit the prompts
-- **Smart fields** — discovers prompt boxes, seeds, reference images and advanced params (steps/CFG/sampler/LoRA strength…) from the workflow; workflow author notes are shown too
-- **AI prompt expansion** — "AI expand" (natural language, MOSS/Qwen style) and "AI tag" (Danbooru tags, SDXL/Anima style) buttons via any OpenAI-compatible API (DeepSeek/Zhipu/OpenAI/local Ollama); skills are fully customizable, plus temperature / max tokens / thinking mode / extra JSON
-- **Live progress** — foreground service keeps generation alive in background; node + progress on screen, in the notification, and a live latent preview; cancel anytime (status shows "Cancelled", not an error)
-- **History** — every run is stored locally with full prompts + seeds, thumbnails, one-tap re-generate, A/B result comparison
-- **Auto-update** — the app checks GitHub Releases and updates itself (no token needed, the repo is public)
-- **img2img** — album multi-select, camera, or **share an image straight from your gallery** into the reference slot; large photos are auto-downscaled for fast upload
-- **LAN discovery** — one tap scans the local subnet for running ComfyUI servers
-- **Prompt bookmarks** — save current prompts or bookmark from history; tap to refill the editor
-- **Bilingual UI** (Chinese/English, follows system) and light/dark themes
+## English
 
-## <a id="中文"></a>中文
+**Iris** turns your phone into a remote for generation models running on your PC or in the cloud:
 
-安卓手机遥控电脑 ComfyUI：选工作流 → 填提示词 → 出图，全程无需碰电脑画布。
+- **Local + cloud workflows** — browse saved ComfyUI workflows from a local server, or AutoDL.Art hosted workflows (MiniMax H3 video, Wan2.2 motion transfer and more) from one Create screen
+- **Workflow conversion** — converts ComfyUI canvas JSON to API format automatically and discovers prompts, seeds, reference images and advanced parameters
+- **Cloud video + audio** — image-to-video, first/last-frame, multi-image/multi-audio, lip-sync and TTS workflows; results are downloaded immediately because hosted URLs expire
+- **Cost guardrails** — platform price, per-run estimate and confirmation before a paid submit; local spend estimate and cancel warnings
+- **Storyboard** — chain multiple cloud video shots; the previous shot's last frame automatically becomes the next shot's reference
+- **Vision-aware AI** — the built-in “AI vision rewrite” actually sends your image to a multimodal model, then rewrites the prompt around what it sees
+- **AI prompt skills** — expand / tag / translate / negative / vision skills via any OpenAI-compatible endpoint (DeepSeek, Zhipu, OpenAI, Qwen, Moonshot, Ollama); custom skills and per-workflow bindings
+- **Live progress** — foreground service, node-level progress, latent preview, cancel, task recovery after process death, local batch queue
+- **History** — full prompts + seeds, image/video/audio thumbnails and playback, one-tap reuse, A/B comparison for images, image → video handoff
+- **Multi-server** — saved servers, LAN discovery, health/queue probing, least-busy switching
+- **Configurable UI** — compact layout, recent-result count, theme, default batch/seed/queue, upload size and more in Settings
+- **Encrypted secrets** — AI keys, AutoDL token and GitHub token are stored with an Android Keystore-backed AES/GCM key
+
+## 中文
+
+**Iris（灵瞳）**把手机变成生成模型的遥控器：本地 ComfyUI 与云端工作流，一个入口完成。
+
+### 核心能力
+
+- **本地 + 云端**：创作页一键切换本地 ComfyUI 与 AutoDL.Art 托管工作流（MiniMax H3 视频、Wan2.2 动作迁移等）
+- **云端视频 + 音频**：图生视频、首尾帧、多图参考、多图多音频、对口型与 TTS；云端结果是临时链接，成功后立即下载到手机
+- **费用护栏**：提交前显示平台计价、本次预估并二次确认；本地记录预估消耗；取消云端任务会提示平台侧可能继续计费
+- **分镜**：把多个云端视频镜头串成项目，上一镜的尾帧自动成为下一镜参考图
+- **真正看图改写的 AI**：内置「AI 看图改写」会把参考图作为图片输入发给多模态模型，再结合你的修改要求重写提示词；不是纯文本猜测
+- **AI 提示词技能**：扩写、标签、翻译、负面、看图改写等，兼容任意 OpenAI 风格接口（DeepSeek、智谱、OpenAI、Qwen、Moonshot、Ollama），支持自定义技能与按工作流绑定
+- **实时反馈**：前台服务保活、节点进度、latent 预览、取消、进程重启恢复、本地批量队列
+- **结果库**：完整提示词 + 实际 seed、图片/视频/音频缩略图与播放、一键复用、图片 A/B 对比、图片一键转云端视频
+- **多服务器**：保存地址、局域网发现、健康/队列探测、最空闲切换
+- **可定制界面**：紧凑布局、最近结果数量、主题、默认批量/种子/队列、上传尺寸等，全部集中在设置页
+- **密钥加密**：AI Key、AutoDL Token、GitHub Token 使用 Android Keystore 的 AES/GCM 加密存储
 
 ### 连接方式
 
@@ -33,42 +55,39 @@ Android remote client for your PC's ComfyUI: pick a workflow, type a prompt, gen
 |---|---|
 | 模拟器 | `http://10.0.2.2:8188` |
 | 手机与电脑同一 Wi-Fi | `http://<电脑局域网IP>:8188` |
-| 任意网络（推荐） | 电脑与手机都装 [Tailscale](https://tailscale.com)，填电脑的 Tailscale IP，如 `http://100.x.x.x:8188` |
+| 任意网络 | 电脑与手机都装 [Tailscale](https://tailscale.com)，填电脑的 Tailscale IP |
+| 云端（无需本地显卡） | 设置 → 云端服务，填 AutoDL.Art 的 ComfyUI 分组 Token |
 
-ComfyUI 需以 `--listen 0.0.0.0` 启动；连接页支持多服务器别名（长按 chip 重命名/删除）。
+ComfyUI 需以 `--listen 0.0.0.0` 启动。连接页可直接选择“仅使用云端模型”。
 
-### 功能
+### 云端计费提醒
 
-- **工作流列表**：自动拉取 ComfyUI 保存的全部工作流（UI 格式画布 JSON → API 格式）
-- **智能字段识别**：提示词、种子、参考图片、高级参数（步数/CFG/采样器/LoRA 强度…）；工作流内 MarkdownNote 说明会折叠展示
-- **AI 提示词扩写**：内置「AI 扩写」（自然语言，MOSS/Qwen 风格）与「AI 标签」（Danbooru 标签）技能，可编辑、可新增任意技能；按钮按工作流类型自动排序；支持温度/最大输出 tokens/思考模式/附加 JSON 参数
-- **任务中心**：生成提交后可离开页面继续干别的，任务后台照跑；Tasks 页统一查看进行中/已完成/失败任务，支持取消与一键重试
-- **实时反馈**：前台服务保活（锁屏不中断），通知栏实时节点与百分比（点击跳回 App），latent 实时预览，随时取消（状态正确显示"已取消"而非报错）
-- **本地历史**：完整提示词 + 实际种子落盘，缩略图、一键按原参数重新生成、结果 A/B 并排对比
-- **应用内自动更新**：检查 GitHub Releases → 下载 → 安装，无需 token（公开仓库）
-- **图生图**：相册多选 / 拍照 / **系统分享直接进 App 填入参考图**；大图自动压缩到 1536px 加速上传
-- **双语界面** + 浅色/深色主题跟随系统
-
-### 常见问题（Troubleshooting）
-
-| 现象 | 处理 |
-|---|---|
-| 连接失败 `failed to connect` | ComfyUI 启动参数需加 `--listen 0.0.0.0`；确认地址和端口；确认手机与电脑在同一网络（或 Tailscale 已连接） |
-| 能连上但生成排队不动 | 电脑上可能有其他任务在跑；界面和通知栏显示队列数量 |
-| 手机连不上、电脑能连 | Windows 防火墙放行 8188 入站（建议限定局域网/Tailscale 网段） |
-| 提示"未知节点 xxx 已跳过" | 工作流用到了未安装的自定义节点，在电脑上装齐后刷新 |
-| 更新下载失败 | 用"复制下载链接"在浏览器下载后手动安装 |
+AutoDL.Art 的托管工作流按次/按秒计费。应用会在提交前显示平台价与本次预估并请求确认，设置中可关闭确认（不建议）。云端任务目前没有公开的远程取消接口，取消只会停止手机端跟踪，平台侧可能继续执行并计费；本地“预估消耗”只是记录，不是账单。
 
 ## Build
 
 ```bash
-# Requires JDK 17+ and an Android SDK (compileSdk 34)
-gradle :app:assembleDebug          # debug APK
-gradle :app:testDebugUnitTest      # converter unit tests (real workflow fixtures)
+# Requires JDK 17+ and an Android SDK (compileSdk 34) + Gradle 8.7 wrapper
+./gradlew :app:assembleDebug          # debug APK
+./gradlew :app:testDebugUnitTest      # converter + generation + cloud/storyboard tests
+./gradlew :app:lintDebug              # Android lint
 ```
+
+On Windows PowerShell use `.\gradlew.bat`. If your Windows user profile path contains non-ASCII characters, set an ASCII `GRADLE_USER_HOME` so Gradle test workers can launch.
 
 Release builds are produced by GitHub Actions on `v*` tags (signing key provided via repo secrets).
 `tools/ai_mock.mjs` runs a local mock OpenAI server for keyless testing of the AI expansion flow.
+`tools/fetch_fixtures.mjs` refreshes the real ComfyUI workflow fixtures.
+
+> The technical package name (`com.comfyremote.app`) is intentionally retained after the Iris rebrand so existing installs can still receive in-app updates. Change `applicationId` only when you are ready for a clean install.
+
+### Documentation
+
+- [AutoDL cloud workflows, parameters and billing](docs/AutoDL.md)
+- [Verification screenshots](docs/verification)
+- [Changelog](CHANGELOG.md)
+
+The repository was renamed from `Starysoor/ComfyRemote` to `Starysoor/Iris`; GitHub redirects old URLs, and the in-app updater points at the new repository.
 
 ## License
 

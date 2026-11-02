@@ -19,8 +19,8 @@ android {
         applicationId = "com.comfyremote.app"
         minSdk = 29
         targetSdk = 34
-        versionCode = 18
-        versionName = "1.12"
+        versionCode = 20
+        versionName = "2.1.0"
     }
 
     signingConfigs {

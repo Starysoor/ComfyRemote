@@ -60,6 +60,7 @@ import com.comfyremote.app.ui.Mono
 fun ConnectScreen(
     viewModel: ConnectViewModel,
     onConnected: () -> Unit,
+    onCloudOnly: () -> Unit,
     onSettings: () -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
@@ -73,6 +74,7 @@ fun ConnectScreen(
             state = state,
             viewModel = viewModel,
             onboarding = true,
+            onCloudOnly = onCloudOnly,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -103,6 +105,7 @@ fun ServerManagerScreen(
             state = state,
             viewModel = viewModel,
             onboarding = false,
+            onCloudOnly = null,
             modifier = Modifier.padding(pad).fillMaxSize(),
         )
     }
@@ -113,6 +116,7 @@ private fun ServerEditor(
     state: ConnectUiState,
     viewModel: ConnectViewModel,
     onboarding: Boolean,
+    onCloudOnly: (() -> Unit)?,
     modifier: Modifier,
 ) {
     var managing by remember { mutableStateOf<ServerEntry?>(null) }
@@ -122,16 +126,22 @@ private fun ServerEditor(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (onboarding) {
-            Text("ComfyRemote", fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
-            Spacer(Modifier.height(5.dp))
+            Text("Iris", fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+            Spacer(Modifier.height(4.dp))
             Text(
-                "COMFYUI · REMOTE CONTROL",
+                L10n.t("灵瞳 · 一眸万象", "ONE LENS · EVERY MODEL"),
                 fontFamily = Mono,
                 fontSize = 10.sp,
-                letterSpacing = 2.3.sp,
+                letterSpacing = 2.0.sp,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                L10n.t("本地 ComfyUI · 云端模型 · 图像与视频", "Local ComfyUI · cloud models · image & video"),
+                fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(30.dp))
+            Spacer(Modifier.height(26.dp))
         } else {
             state.session?.let { session ->
                 Surface(
@@ -226,6 +236,12 @@ private fun ServerEditor(
             }
         }
 
+        if (onCloudOnly != null) {
+            Spacer(Modifier.height(6.dp))
+            TextButton(onClick = onCloudOnly) {
+                Text(L10n.t("跳过本地连接，仅使用云端模型 →", "Skip local server, use cloud models only →"))
+            }
+        }
         Spacer(Modifier.height(16.dp))
         TextButton(onClick = viewModel::scanLan, enabled = !state.scanning) {
             Text(if (state.scanning) L10n.t("扫描局域网…", "Scanning LAN…") else L10n.t("查找附近的 ComfyUI", "Find nearby ComfyUI"))

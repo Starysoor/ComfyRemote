@@ -1,0 +1,126 @@
+package com.comfyremote.app.data.cloud
+
+import android.content.Context
+import android.net.Uri
+import com.comfyremote.app.data.media.ImagePreprocessor
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.Base64
+
+/**
+ * Durable copy of images selected for a hosted workflow. AutoDL accepts
+ * `data:image/...;base64,...` values, so the image never needs to be uploaded to
+ * a ComfyUI input folder. Files live in filesDir so history reuse still works
+ * after a restart.
+ */
+class CloudInputStore(private val context: Context) {
+    private val dir = File(context.filesDir, "cloud_inputs").apply { mkdirs() }
+    private val audioDir = File(context.filesDir, "cloud_audio").apply { mkdirs() }
+
+    /** Copies a gallery/camera Uri into app storage and returns `local:<path>`. */
+    suspend fun saveFromUri(uri: Uri, maxDimension: Int = 1024): String = withContext(Dispatchers.IO) {
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: throw IllegalStateException("读取图片失败")
+        val mime = context.contentResolver.getType(uri)
+        saveBytes(bytes, mime, maxDimension)
+    }
+
+    /** Copies a generated result (image) and returns `local:<path>`. */
+    suspend fun saveFromFile(path: String, maxDimension: Int = 1024): String = withContext(Dispatchers.IO) {
+        val file = File(path)
+        if (!file.isFile) throw IllegalStateException("图片文件不存在")
+        saveBytes(file.readBytes(), mimeForExt(file.extension), maxDimension)
+    }
+
+    /** Copies an audio file used by a hosted TTS/lip-sync workflow. */
+    suspend fun saveAudioFromUri(uri: Uri): String = withContext(Dispatchers.IO) {
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: throw IllegalStateException("读取音频失败")
+        val mime = context.contentResolver.getType(uri)
+        val ext = extensionForAudio(mime, uri.lastPathSegment)
+        val target = File(audioDir, "cloud_audio_${System.currentTimeMillis()}_${(1000..9999).random()}.$ext")
+        target.writeBytes(bytes)
+        PREFIX + target.absolutePath
+    }
+
+    fun isAudioValue(value: String): Boolean {
+        val path = localPath(value) ?: return false
+        return File(path).extension.lowercase() in AUDIO_EXTENSIONS
+    }
+
+    suspend fun saveBytes(bytes: ByteArray, mime: String?, maxDimension: Int = 1024): String =
+        withContext(Dispatchers.IO) {
+            val (prepared, ext) = ImagePreprocessor.prepare(bytes, mime, maxDimension, 84)
+            val name = "cloud_${System.currentTimeMillis()}_${(1000..9999).random()}.$ext"
+            val target = File(dir, name)
+            target.writeBytes(prepared)
+            PREFIX + target.absolutePath
+        }
+
+    /** Reads a `local:` value; null for remote URLs, data URLs, or missing files. */
+    fun readBytes(value: String): ByteArray? {
+        val path = localPath(value) ?: return null
+        val file = File(path)
+        return if (file.isFile) runCatching { file.readBytes() }.getOrNull() else null
+    }
+
+    fun localPath(value: String): String? =
+        value.takeIf { it.startsWith(PREFIX) }?.removePrefix(PREFIX)?.takeIf { it.isNotBlank() }
+
+    fun mimeType(value: String): String {
+        val path = localPath(value) ?: return "image/jpeg"
+        return mimeForExt(File(path).extension)
+    }
+
+    /** Converts a local image to a data URL; passes remote/data URLs through. */
+    fun toRequestValue(value: String): String? {
+        if (value.isBlank()) return null
+        if (value.startsWith("http://") || value.startsWith("https://") || value.startsWith("data:")) {
+            return value
+        }
+        val path = localPath(value) ?: return null
+        val file = File(path)
+        if (!file.isFile) return null
+        val bytes = runCatching { file.readBytes() }.getOrNull() ?: return null
+        val encoded = Base64.getEncoder().encodeToString(bytes)
+        return "data:${mimeForExt(file.extension)};base64,$encoded"
+    }
+
+    fun clearAll() {
+        dir.listFiles()?.forEach { runCatching { it.delete() } }
+        audioDir.listFiles()?.forEach { runCatching { it.delete() } }
+    }
+
+    companion object {
+        const val PREFIX = "local:"
+
+        private val AUDIO_EXTENSIONS = setOf("wav", "mp3", "m4a", "ogg", "flac", "aac")
+
+        fun mimeForExt(ext: String): String = when (ext.lowercase()) {
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            "gif" -> "image/gif"
+            "wav" -> "audio/wav"
+            "mp3" -> "audio/mpeg"
+            "m4a" -> "audio/mp4"
+            "ogg" -> "audio/ogg"
+            "flac" -> "audio/flac"
+            "aac" -> "audio/aac"
+            else -> "image/jpeg"
+        }
+
+        private fun extensionForAudio(mime: String?, name: String?): String {
+            val fromName = name?.substringAfterLast('.', "")?.lowercase().orEmpty()
+            if (fromName in AUDIO_EXTENSIONS) return fromName
+            return when (mime?.lowercase()) {
+                "audio/mpeg", "audio/mp3" -> "mp3"
+                "audio/mp4", "audio/x-m4a" -> "m4a"
+                "audio/ogg" -> "ogg"
+                "audio/flac", "audio/x-flac" -> "flac"
+                "audio/aac" -> "aac"
+                else -> "wav"
+            }
+        }
+    }
+}

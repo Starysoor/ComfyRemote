@@ -23,6 +23,8 @@ class GenerationRunner(
     private val history: GenerationHistorySink,
     private val pollDelayMs: Long = 4_000L,
     private val timeoutMs: Long = 30 * 60_000L,
+    /** Resolves `local:` image values to data URLs for hosted workflows. */
+    private val resolveCloudImage: (String) -> String? = { null },
 ) {
     suspend fun run(
         task: GenerationTask,
@@ -37,7 +39,7 @@ class GenerationRunner(
 
         val request = task.request
         update(current.copy(phase = GenerationPhase.QUEUEING, startedAt = System.currentTimeMillis()))
-        val (prompt, seedsUsed) = GenerationPromptBuilder.build(request)
+        val (prompt, seedsUsed) = GenerationPromptBuilder.build(request, resolveCloudImage)
         val clientId = task.clientId ?: error("missing clientId")
         val promptId = backend.queuePrompt(prompt, clientId)
         val seedInfo = seedsUsed.values.joinToString(", ")
@@ -288,7 +290,7 @@ class GenerationRunner(
         val results = mutableListOf<ResultImage>()
         outputImages.forEachIndexed { index, image ->
             runCatching {
-                val file = history.newImageFile(promptId, index)
+                val file = history.newMediaFile(promptId, index, extensionFor(image))
                 if (!file.isFile || file.length() == 0L) {
                     val bytes = backend.downloadImage(image)
                     withContext(Dispatchers.IO) { file.writeBytes(bytes) }
@@ -376,17 +378,45 @@ class GenerationRunner(
         val result = mutableListOf<OutputImage>()
         val outputs = entry.optJSONObject("outputs") ?: return result
         outputs.keys().forEach { key ->
-            val images = outputs.optJSONObject(key)?.optJSONArray("images") ?: return@forEach
-            for (i in 0 until images.length()) {
-                val image = images.optJSONObject(i) ?: continue
-                result += OutputImage(
-                    image.optString("filename"),
-                    image.optString("subfolder"),
-                    image.optString("type", "output"),
-                )
-            }
+            val node = outputs.optJSONObject(key) ?: return@forEach
+            // ComfyUI uses `images` and `gifs`; AutoDL results are normalised into
+            // `images`/`videos`. Audio is persisted too so cloud TTS can share the
+            // same history pipeline.
+            listOf("images" to "image", "gifs" to "image", "videos" to "video", "audio" to "audio")
+                .forEach { (arrayName, defaultKind) ->
+                    val array = node.optJSONArray(arrayName) ?: return@forEach
+                    for (i in 0 until array.length()) {
+                        val image = array.optJSONObject(i) ?: continue
+                        val url = image.optString("url").takeIf { it.isNotBlank() }
+                        result += OutputImage(
+                            filename = image.optString("filename").ifBlank { url.orEmpty() },
+                            subfolder = image.optString("subfolder"),
+                            type = image.optString("type", "output"),
+                            url = url,
+                            mediaKind = image.optString("media_kind").ifBlank { defaultKind },
+                            fileType = image.optString("file_type"),
+                        )
+                    }
+                }
         }
         return result
+    }
+
+    private fun extensionFor(image: OutputImage): String {
+        val reported = image.fileType.trim().removePrefix(".").lowercase()
+        if (reported.matches(Regex("[a-z0-9]{2,5}"))) return reported
+        val fromUrl = image.url
+            ?.substringBefore('?')
+            ?.substringBefore('#')
+            ?.substringAfterLast('.', "")
+            ?.lowercase()
+            .orEmpty()
+        if (fromUrl.matches(Regex("[a-z0-9]{2,5}"))) return fromUrl
+        return when (image.mediaKind) {
+            "video" -> "mp4"
+            "audio" -> "wav"
+            else -> "png"
+        }
     }
 
     companion object {

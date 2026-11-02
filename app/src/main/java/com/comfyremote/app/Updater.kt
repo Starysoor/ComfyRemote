@@ -23,7 +23,7 @@ data class GhRelease(
 
 object Updater {
 
-    private const val REPO = "Starysoor/ComfyRemote"
+    private const val REPO = "Starysoor/Iris"
     // HTTP/1.1 only: HTTP/2 connection reuse breaks on some networks between
     // api.github.com and the S3 redirect target ("SETTINGS preface" errors).
     private val http = OkHttpClient.Builder()

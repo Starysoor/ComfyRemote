@@ -35,6 +35,11 @@ class AiSettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun updateBase(v: String) = edit { it.copy(baseUrl = v) }
     fun updateKey(v: String) = edit { it.copy(apiKey = v) }
     fun updateModel(v: String) = edit { it.copy(model = v) }
+    fun updateVisionModel(v: String) = edit { it.copy(visionModel = v) }
+
+    fun applyPreset(baseUrl: String, model: String, visionModel: String) = edit {
+        it.copy(baseUrl = baseUrl, model = model, visionModel = visionModel)
+    }
     fun updateTemp(v: String) = edit { it.copy(temperatureText = v.filter { c -> c.isDigit() || c == '.' }) }
     fun updateMaxTokens(v: String) = edit { it.copy(maxTokensText = v.filter(Char::isDigit)) }
     fun updateExtra(v: String) = edit { it.copy(extraJson = v) }

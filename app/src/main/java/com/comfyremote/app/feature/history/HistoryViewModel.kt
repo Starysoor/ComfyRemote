@@ -5,8 +5,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.HistoryItem
+import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.repository.PromptPreset
+import com.comfyremote.app.ui.L10n
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -67,6 +69,25 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
     fun prepareReuse(item: HistoryItem): DraftTransfer? = prepareTransfer(item, null, reproduceSeed = true)
     fun prepareReference(item: HistoryItem, localPath: String): DraftTransfer? = prepareTransfer(item, localPath, reproduceSeed = false)
 
+    /** Continue a still image into the configured cloud video workflow. */
+    fun prepareVideo(item: HistoryItem, localPath: String): DraftTransfer? {
+        val workflowId = container.appSettingsStore.settings.value.defaultVideoWorkflowId.trim()
+        if (workflowId.isBlank()) {
+            _message.value = L10n.t("请先在设置中配置默认云端视频工作流", "Set a default cloud video workflow in Settings")
+            return null
+        }
+        val transfer = DraftTransfer(
+            workflowPath = AutoDlConfig.PATH_PREFIX + workflowId,
+            workflowName = L10n.t("云端视频", "Cloud video"),
+            values = emptyMap(),
+            randomSeed = true,
+            serverUrl = null,
+            referenceLocalPath = localPath,
+        )
+        container.draftTransferRepository.put(transfer)
+        return transfer
+    }
+
     private fun prepareTransfer(item: HistoryItem, referenceLocalPath: String?, reproduceSeed: Boolean): DraftTransfer? {
         if (item.wfPath.isBlank()) return null
         val transfer = DraftTransfer(
@@ -89,6 +110,14 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
     fun save(bitmap: Bitmap) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { container.galleryExporter.savePng(bitmap) }
+                .onSuccess { _message.value = container.galleryExporter.savedMessage() }
+                .onFailure { _message.value = container.galleryExporter.failMessage(it) }
+        }
+    }
+
+    fun saveMedia(path: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { container.galleryExporter.saveMediaFile(path) }
                 .onSuccess { _message.value = container.galleryExporter.savedMessage() }
                 .onFailure { _message.value = container.galleryExporter.failMessage(it) }
         }

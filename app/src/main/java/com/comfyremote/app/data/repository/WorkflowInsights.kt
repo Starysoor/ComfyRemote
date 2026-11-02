@@ -10,9 +10,12 @@ enum class WorkflowCapability(val label: String) {
     INPAINT("INPAINT"),
     UPSCALE("UPSCALE"),
     VIDEO("VIDEO"),
+    TXT2VIDEO("TXT2VIDEO"),
+    IMG2VIDEO("IMG2VIDEO"),
     CONTROL("CONTROL"),
     MULTI_REFERENCE("MULTI-REF"),
     LORA("LORA"),
+    AUDIO("AUDIO"),
 }
 
 data class WorkflowCompatibilityIssue(
@@ -84,11 +87,12 @@ object WorkflowInsights {
         imageFields.forEach { field ->
             val current = values[field.key] ?: field.value
             if (current.isBlank()) {
-                // PromptField currently does not preserve required-vs-optional schema metadata.
-                // Treat an empty image slot as a warning so optional reference inputs do not
-                // make an otherwise valid workflow impossible to run; ComfyUI remains the
-                // authority for required-input validation at /prompt.
-                issues += WorkflowCompatibilityIssue("${field.label}: reference image is empty", blocking = false)
+                // Required image inputs must be visible before submit; optional reference
+                // slots stay a warning because ComfyUI is still the authority for them.
+                issues += WorkflowCompatibilityIssue(
+                    "${field.label}: reference image is empty",
+                    blocking = field.required,
+                )
             }
         }
 

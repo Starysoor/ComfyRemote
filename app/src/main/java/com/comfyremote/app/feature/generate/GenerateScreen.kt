@@ -32,6 +32,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -83,6 +84,7 @@ import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.media.decodeSampled
 import com.comfyremote.app.data.repository.WorkflowInsight
 import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.ui.LocalAppSettings
 import com.comfyremote.app.ui.Mono
 import com.comfyremote.app.ui.components.ErrorCard
 import com.comfyremote.app.ui.components.SectionHeader
@@ -99,9 +101,11 @@ fun GenerateScreen(
     workflowName: String,
     onBack: () -> Unit,
     onOpenTask: (String) -> Unit,
+    onOpenCloudVideo: (String, String) -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
     val tasks by viewModel.tasks.collectAsState()
+    val appSettings = LocalAppSettings.current
     val draft = state.draft
     val task = tasks.firstOrNull { it.taskId == state.activeTaskId }
     val running = task?.isActive == true
@@ -121,11 +125,18 @@ fun GenerateScreen(
     }
 
     var pendingField by remember { mutableStateOf<String?>(null) }
+    var pendingAudioField by remember { mutableStateOf<String?>(null) }
+    var audioPreview by remember { mutableStateOf<String?>(null) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val key = pendingField
         pendingField = null
         if (uri != null && key != null) viewModel.uploadImage(key, uri)
+    }
+    val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val key = pendingAudioField
+        pendingAudioField = null
+        if (uri != null && key != null) viewModel.uploadAudio(key, uri)
     }
     val multiPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if (uris.isNotEmpty()) viewModel.uploadImagesBatch(uris)
@@ -138,12 +149,18 @@ fun GenerateScreen(
         if (ok && key != null && uri != null) viewModel.uploadImage(key, uri)
     }
 
-    var advancedOpen by rememberSaveable { mutableStateOf(false) }
-    var notesOpen by rememberSaveable { mutableStateOf(false) }
+    var advancedOpen by rememberSaveable { mutableStateOf(appSettings.advancedExpandedByDefault) }
+    var notesOpen by rememberSaveable { mutableStateOf(appSettings.notesExpandedByDefault) }
     var libraryOpen by remember { mutableStateOf(false) }
     var compareOpen by remember { mutableStateOf(false) }
     var viewingResult by remember { mutableStateOf<Int?>(null) }
     var selectedResult by rememberSaveable { mutableStateOf(0) }
+    var visionTarget by remember { mutableStateOf<VisionRequest?>(null) }
+    var confirmCloudCancel by remember { mutableStateOf(false) }
+    val primaryTextKey = draft?.fields
+        ?.firstOrNull { it.kind == FieldKind.TEXT && it.multiline && !it.looksLikeNegativePrompt() }
+        ?.key
+        ?: draft?.fields?.firstOrNull { it.kind == FieldKind.TEXT }?.key
 
     LaunchedEffect(task?.taskId) {
         selectedResult = 0
@@ -154,7 +171,19 @@ fun GenerateScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text(draft?.workflowName ?: workflowName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                title = {
+                    Column {
+                        Text(draft?.workflowName ?: workflowName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (draft?.isCloud == true) {
+                            Text(
+                                "AUTODL · CLOUD",
+                                fontFamily = Mono,
+                                fontSize = 9.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) }
                 },
@@ -173,7 +202,9 @@ fun GenerateScreen(
                 Surface(tonalElevation = 3.dp) {
                     if (running) {
                         OutlinedButton(
-                            onClick = viewModel::cancelActiveTask,
+                            onClick = {
+                                if (draft.isCloud) confirmCloudCancel = true else viewModel.cancelActiveTask()
+                            },
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).height(52.dp),
                         ) { Text(L10n.t("取消生成", "Cancel generation")) }
                     } else {
@@ -198,6 +229,7 @@ fun GenerateScreen(
             draft == null -> Unit
             else -> {
                 val imageFields = draft.fields.filter { it.kind == FieldKind.IMAGE }
+                val audioFields = draft.fields.filter { it.kind == FieldKind.AUDIO }
                 val textFields = draft.fields.filter { it.kind == FieldKind.TEXT }
                 val seedFields = draft.fields.filter { it.kind == FieldKind.SEED }
                 val paramFields = draft.fields.filter { it.kind == FieldKind.PARAM }
@@ -207,7 +239,7 @@ fun GenerateScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    item("status") { GenerationStatusCard(task, running) }
+                    task?.let { item("status") { GenerationStatusCard(task, running) } }
                     state.insight?.let { insight ->
                         item("workflow-insight") { WorkflowInsightCard(insight) }
                     }
@@ -268,7 +300,10 @@ fun GenerateScreen(
                             )
                             if (field.multiline) {
                                 val ordered = remember(draft.workflowName, state.skills) {
-                                    AiSkillDef.recommendedOrder(state.skills, draft.workflowName)
+                                    AiSkillDef.recommendedOrder(
+                                        state.skills.filter { it.id != AiSkillDef.DEFAULT_VISION_ID },
+                                        draft.workflowName,
+                                    )
                                 }
                                 val primary = ordered.take(2)
                                 val rest = ordered.drop(2)
@@ -337,6 +372,75 @@ fun GenerateScreen(
                                     ) { Text(L10n.t("拍照", "Cam"), fontSize = 11.sp) }
                                 }
                                 if (upload?.phase == ImageUploadPhase.FAILED) Text(upload.message ?: L10n.t("上传失败", "Upload failed"), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                if (current.isNotBlank()) {
+                                    TextButton(
+                                        onClick = {
+                                            visionTarget = VisionRequest(primaryTextKey, current, field.label)
+                                        },
+                                        enabled = state.aiBusy == null && !running,
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                    ) {
+                                        Text(
+                                            if (state.aiBusy?.startsWith("vision:") == true) {
+                                                L10n.t("看图改写中…", "Looking…")
+                                            } else {
+                                                L10n.t("AI 看图改写", "AI vision rewrite")
+                                            },
+                                            fontSize = 11.sp,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (audioFields.isNotEmpty()) {
+                        item("audio-header") { SectionHeader(L10n.t("音频参考", "Audio references")) }
+                        itemsIndexed(audioFields, key = { _, f -> f.key }) { _, field ->
+                            val current = draft.values[field.key] ?: field.value
+                            val upload = state.uploads[field.key]
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(field.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (current.isNotBlank()) {
+                                        MediaThumbnail(
+                                            path = current.removePrefix("local:"),
+                                            size = 44.dp,
+                                            modifier = Modifier.clickable { audioPreview = current.removePrefix("local:") },
+                                        )
+                                        Text(
+                                            audioDisplayName(current),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        TextButton(onClick = { viewModel.updateValue(field.key, "") }) {
+                                            Text(L10n.t("清除", "Clear"))
+                                        }
+                                    } else {
+                                        Text(
+                                            L10n.t("未选择音频", "No audio selected"),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            pendingAudioField = field.key
+                                            audioPicker.launch("audio/*")
+                                        },
+                                        enabled = !running,
+                                    ) { Text(L10n.t("选择音频", "Pick audio")) }
+                                }
+                                if (upload?.phase == ImageUploadPhase.FAILED) {
+                                    Text(
+                                        upload.message ?: L10n.t("音频读取失败", "Could not read audio"),
+                                        color = MaterialTheme.colorScheme.error,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
                             }
                         }
                     }
@@ -361,22 +465,35 @@ fun GenerateScreen(
                     }
 
                     item("batch") {
-                        Card {
-                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(L10n.t("批量 / Variations", "Batch / Variations"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                                    OutlinedButton(onClick = { viewModel.setBatchCount(state.batchCount - 1) }, enabled = state.batchCount > 1 && !running) { Text("−") }
-                                    Text(" ${state.batchCount} ", fontFamily = Mono, fontWeight = FontWeight.Bold)
-                                    OutlinedButton(onClick = { viewModel.setBatchCount(state.batchCount + 1) }, enabled = state.batchCount < 16 && !running) { Text("+") }
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(L10n.t("批量", "Batch"), fontWeight = FontWeight.SemiBold)
+                                    Spacer(Modifier.weight(1f))
+                                    TextButton(
+                                        onClick = { viewModel.setBatchCount(state.batchCount - 1) },
+                                        enabled = state.batchCount > 1 && !running,
+                                        contentPadding = PaddingValues(horizontal = 8.dp),
+                                    ) { Text("−") }
+                                    Text("${state.batchCount}", fontFamily = Mono, fontWeight = FontWeight.Bold)
+                                    TextButton(
+                                        onClick = { viewModel.setBatchCount(state.batchCount + 1) },
+                                        enabled = state.batchCount < 16 && !running,
+                                        contentPadding = PaddingValues(horizontal = 8.dp),
+                                    ) { Text("+") }
                                     Checkbox(state.batchLocalQueue, { viewModel.toggleBatchLocalQueue() }, enabled = state.batchCount > 1 && !running)
-                                    Column {
-                                        Text(L10n.t("使用本地队列，逐个发送到服务器", "Use local queue; submit one at a time"))
-                                        if (state.batchCount > 1 && !draft.randomSeed) {
-                                            Text(L10n.t("固定 Seed 模式会按 +0、+1、+2… 生成变体", "Fixed seed increments +0, +1, +2…"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    }
+                                    Text(L10n.t("本地队列", "Local queue"), fontSize = 12.sp)
+                                }
+                                if (state.batchCount > 1 && !draft.randomSeed) {
+                                    Text(
+                                        L10n.t("固定 Seed 会按 +0、+1、+2… 生成变体", "Fixed seed increments +0, +1, +2…"),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
                             }
                         }
@@ -400,7 +517,9 @@ fun GenerateScreen(
                     if (visibleResults.isNotEmpty()) {
                         item("result-header") {
                             SectionHeader(L10n.t("生成结果", "Results")) {
-                                if (results.size > 1) TextButton(onClick = { compareOpen = true }) { Text(L10n.t("对比", "Compare")) }
+                                if (results.size > 1 && results.none { isNonImageMedia(it.localPath) }) {
+                                    TextButton(onClick = { compareOpen = true }) { Text(L10n.t("对比", "Compare")) }
+                                }
                             }
                         }
                         item("result-limit-note") {
@@ -414,26 +533,35 @@ fun GenerateScreen(
                             val index = selectedResult.coerceIn(visibleResults.indices)
                             val result = visibleResults[index]
                             val globalIndex = results.size - visibleResults.size + index
-                            val bitmap by produceState<Bitmap?>(null, result.localPath) {
-                                value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1600) }
+                            if (isNonImageMedia(result.localPath)) {
+                                MediaThumbnail(
+                                    path = result.localPath,
+                                    size = 220.dp,
+                                    modifier = Modifier.fillMaxWidth().clickable { viewingResult = index },
+                                )
+                            } else {
+                                val bitmap by produceState<Bitmap?>(null, result.localPath) {
+                                    value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1600) }
+                                }
+                                bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxWidth().clickable { viewingResult = index }, contentScale = ContentScale.FillWidth) }
                             }
-                            bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxWidth().clickable { viewingResult = index }, contentScale = ContentScale.FillWidth) }
                             Text("${globalIndex + 1} / ${results.size}", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (visibleResults.size > 1) item("result-thumbs") {
                             val selectedIndex = selectedResult.coerceIn(visibleResults.indices)
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 itemsIndexed(visibleResults, key = { i, r -> "$i:${r.localPath}" }) { index, result ->
-                                    val bitmap by produceState<Bitmap?>(null, result.localPath) {
-                                        value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 180) }
-                                    }
-                                    bitmap?.let {
-                                        Image(
-                                            it.asImageBitmap(), null,
-                                            Modifier.size(72.dp).then(if (index == selectedIndex) Modifier.border(2.dp, MaterialTheme.colorScheme.primary) else Modifier).clickable { selectedResult = index },
-                                            contentScale = ContentScale.Crop,
-                                        )
-                                    }
+                                    MediaThumbnail(
+                                        path = result.localPath,
+                                        size = 72.dp,
+                                        modifier = Modifier
+                                            .then(
+                                                if (index == selectedIndex) {
+                                                    Modifier.border(2.dp, MaterialTheme.colorScheme.primary)
+                                                } else Modifier
+                                            )
+                                            .clickable { selectedResult = index },
+                                    )
                                 }
                             }
                         }
@@ -443,12 +571,25 @@ fun GenerateScreen(
                         item("result-actions") {
                             val index = selectedResult.coerceIn(visibleResults.indices)
                             val result = visibleResults[index]
-                            val bitmap by produceState<Bitmap?>(null, result.localPath) { value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1600) } }
+                            val visual = !isNonImageMedia(result.localPath)
                             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                TextButton(onClick = { shareImage(context, result.localPath) }) { Icon(Icons.Default.Share, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(L10n.t("分享", "Share")) }
-                                TextButton(onClick = { bitmap?.let(viewModel::saveResult) }) { Text(L10n.t("保存", "Save")) }
-                                if (imageFields.isNotEmpty()) TextButton(onClick = { viewModel.useLocalResultAsReference(result.localPath) }) { Text(L10n.t("作为参考图", "Use as reference")) }
-                                if (!running) TextButton(onClick = viewModel::generate) { Text(L10n.t("再生成", "Re-run")) }
+                                TextButton(onClick = { shareMedia(context, result.localPath) }) { Icon(Icons.Default.Share, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(L10n.t("分享", "Share")) }
+                                TextButton(onClick = { viewModel.saveMedia(result.localPath) }) { Text(L10n.t("保存", "Save")) }
+                                TextButton(
+                                    onClick = {
+                                        visionTarget = VisionRequest(primaryTextKey, result.localPath, L10n.t("生成结果", "Result"))
+                                    },
+                                    enabled = visual && state.aiBusy == null,
+                                ) { Text(L10n.t("AI 看图改写", "Vision rewrite")) }
+                                if (visual) {
+                                    TextButton(onClick = {
+                                        viewModel.prepareCloudVideo(result.localPath)?.let { (path, name) ->
+                                            onOpenCloudVideo(path, name)
+                                        }
+                                    }) { Text(L10n.t("生成视频", "Make video")) }
+                                }
+                                if (visual && imageFields.isNotEmpty()) TextButton(onClick = { viewModel.useLocalResultAsReference(result.localPath) }) { Text(L10n.t("作为参考图", "Use as reference")) }
+                                if (!running) TextButton(onClick = { viewModel.generate() }) { Text(L10n.t("再生成", "Re-run")) }
                             }
                         }
                     }
@@ -481,18 +622,62 @@ fun GenerateScreen(
         )
     }
     if (compareOpen) CompareDialog(results) { compareOpen = false }
+    audioPreview?.let { path ->
+        MediaViewerDialog(
+            path = path,
+            onClose = { audioPreview = null },
+            onShare = { shareMedia(context, path) },
+        )
+    }
     viewingResult?.let { index ->
         visibleResults.getOrNull(index)?.let { result ->
-            val bitmap by produceState<Bitmap?>(null, result.localPath) { value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1800) } }
-            bitmap?.let {
-                ImageViewerDialog(
-                    bitmap = it,
-                    onClose = { viewingResult = null },
-                    onSave = { viewModel.saveResult(it) },
-                    onShare = { shareImage(context, result.localPath) },
-                )
-            }
+            MediaViewerDialog(
+                path = result.localPath,
+                onClose = { viewingResult = null },
+                onSave = { viewModel.saveMedia(result.localPath) },
+                onShare = { shareMedia(context, result.localPath) },
+            )
         }
+    }
+    visionTarget?.let { target ->
+        VisionInstructionDialog(
+            targetLabel = target.label,
+            onDismiss = { visionTarget = null },
+            onRun = { instruction ->
+                viewModel.visionRewrite(target.fieldKey, target.imageValue, instruction)
+                visionTarget = null
+            },
+        )
+    }
+    state.cloudConfirm?.let { confirmation ->
+        CloudConfirmDialog(
+            confirmation = confirmation,
+            onConfirm = viewModel::confirmCloudSubmit,
+            onDismiss = viewModel::dismissCloudConfirm,
+        )
+    }
+    if (confirmCloudCancel) {
+        AlertDialog(
+            onDismissRequest = { confirmCloudCancel = false },
+            title = { Text(L10n.t("取消云端任务？", "Cancel cloud task?")) },
+            text = {
+                Text(
+                    L10n.t(
+                        "这里只能停止手机端跟踪；AutoDL 平台侧任务可能继续执行并产生费用。",
+                        "This only stops local tracking. The AutoDL job may keep running and billing.",
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmCloudCancel = false
+                    viewModel.cancelActiveTask()
+                }) { Text(L10n.t("仍然取消", "Cancel anyway"), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmCloudCancel = false }) { Text(L10n.t("继续等待", "Keep waiting")) }
+            },
+        )
     }
 }
 
@@ -595,6 +780,9 @@ private fun ImageSlot(
         }
     }
 }
+
+private fun audioDisplayName(value: String): String =
+    value.substringAfterLast('/').substringAfterLast(':').ifBlank { value }
 
 private fun statusLabel(task: GenerationTask?): String = when {
     task?.localPending == true -> L10n.t("本地等待", "Local queue")

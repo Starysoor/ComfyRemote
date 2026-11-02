@@ -2,6 +2,10 @@ package com.comfyremote.app
 
 import android.app.Application
 import android.content.SharedPreferences
+import com.comfyremote.app.data.cloud.AutoDlRepository
+import com.comfyremote.app.data.cloud.AutoDlSettingsStore
+import com.comfyremote.app.data.cloud.CloudInputStore
+import com.comfyremote.app.data.cloud.CloudSpendStore
 import com.comfyremote.app.data.discovery.LanServerDiscovery
 import com.comfyremote.app.data.generation.GenerationManager
 import com.comfyremote.app.data.generation.GenerationTaskStore
@@ -9,6 +13,7 @@ import com.comfyremote.app.data.media.GalleryExporter
 import com.comfyremote.app.data.media.IncomingMediaRepository
 import com.comfyremote.app.data.repository.AiRepository
 import com.comfyremote.app.data.repository.AiSettingsStore
+import com.comfyremote.app.data.repository.AppSettingsStore
 import com.comfyremote.app.data.repository.AiSkillBindingStore
 import com.comfyremote.app.data.repository.AiSkillStore
 import com.comfyremote.app.data.repository.DraftTransferRepository
@@ -25,12 +30,24 @@ import com.comfyremote.app.data.repository.UpdateSettingsStore
 import com.comfyremote.app.data.repository.WorkflowDraftStore
 import com.comfyremote.app.data.repository.WorkflowRepository
 import com.comfyremote.app.data.repository.WorkflowUsageRepository
+import com.comfyremote.app.data.security.SecretStore
+import com.comfyremote.app.data.storyboard.StoryboardStore
 
 /** Lightweight application-scoped dependency container. */
 class AppContainer(val app: Application) {
     private val prefs: SharedPreferences = app.getSharedPreferences("comfyremote", Application.MODE_PRIVATE)
 
-    val aiSettingsStore = AiSettingsStore(prefs)
+    val appSettingsStore = AppSettingsStore(prefs)
+    private val secretStore = SecretStore(prefs)
+
+    val autoDlSettingsStore = AutoDlSettingsStore(secretStore)
+    val autoDlRepository = AutoDlRepository(autoDlSettingsStore)
+    val cloudProviders = com.comfyremote.app.data.cloud.CloudProviderRegistry(listOf(autoDlRepository))
+    val cloudInputStore = CloudInputStore(app)
+    val cloudSpendStore = CloudSpendStore(prefs)
+    val storyboardStore = StoryboardStore(app)
+
+    val aiSettingsStore = AiSettingsStore(prefs, secretStore)
     val aiSkillStore = AiSkillStore(prefs)
     val aiSkillBindingStore = AiSkillBindingStore(prefs)
     val aiRepository = AiRepository(aiSettingsStore)
@@ -40,7 +57,7 @@ class AppContainer(val app: Application) {
     val serverDiscoveryRepository = ServerDiscoveryRepository(LanServerDiscovery())
     val serverHealthRepository = ServerHealthRepository()
 
-    val updateSettingsStore = UpdateSettingsStore(prefs)
+    val updateSettingsStore = UpdateSettingsStore(prefs, secretStore)
     val updateRepository = UpdateRepository(app)
 
     val promptPresetRepository = PromptPresetRepository(prefs)

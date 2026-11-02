@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -61,15 +62,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.generation.label
 import com.comfyremote.app.data.generation.uiLabel
 import com.comfyremote.app.data.media.decodeSampled
 import com.comfyremote.app.data.repository.DraftTransfer
-import com.comfyremote.app.feature.generate.ImageViewerDialog
-import com.comfyremote.app.feature.generate.shareImage
+import com.comfyremote.app.feature.generate.MediaThumbnail
+import com.comfyremote.app.feature.generate.MediaViewerDialog
+import com.comfyremote.app.feature.generate.isNonImageMedia
+import com.comfyremote.app.feature.generate.shareMedia
 import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.ui.LocalAppSettings
 import com.comfyremote.app.ui.Mono
 import com.comfyremote.app.ui.components.EmptyState
 import com.comfyremote.app.ui.components.ErrorCard
@@ -95,6 +100,7 @@ fun TasksScreen(
     val hasFailed = ui.tasks.any { it.phase == GenerationPhase.FAILED }
     var confirmClearFinished by remember { mutableStateOf(false) }
     var serverMenu by remember { mutableStateOf(false) }
+    var actionMenu by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
@@ -110,11 +116,6 @@ fun TasksScreen(
                         Text(L10n.t("任务", "Tasks"), fontWeight = FontWeight.Bold)
                         Spacer(Modifier.width(8.dp))
                         Text("${ui.tasks.count { it.isActive }}", fontFamily = Mono, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                    }
-                },
-                actions = {
-                    if (hasFinished) {
-                        TextButton(onClick = { confirmClearFinished = true }) { Text(L10n.t("清理", "Clear")) }
                     }
                 },
             )
@@ -148,7 +149,11 @@ fun TasksScreen(
             ) {
                 Box {
                     OutlinedButton(onClick = { serverMenu = true }) {
-                        Text(ui.serverUrl?.let(viewModel::serverLabel) ?: L10n.t("全部服务器", "All servers"), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            ui.serverUrl?.let(viewModel::serverLabel) ?: L10n.t("全部服务器", "All servers"),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                     DropdownMenu(expanded = serverMenu, onDismissRequest = { serverMenu = false }) {
                         DropdownMenuItem(
@@ -163,23 +168,40 @@ fun TasksScreen(
                         }
                     }
                 }
-                OutlinedButton(onClick = viewModel::toggleLocalQueuePaused) {
-                    Text(if (ui.localQueuePaused) L10n.t("继续本地队列", "Resume local") else L10n.t("暂停本地队列", "Pause local"))
-                }
-            }
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                if (hasQueued) OutlinedButton(onClick = viewModel::cancelQueued) { Text(L10n.t("取消排队", "Cancel queued")) }
-                if (hasFailed) OutlinedButton(onClick = viewModel::retryFailed) { Text(L10n.t("重试失败", "Retry failed")) }
                 Text(
-                    L10n.t("本地等待 ${ui.tasks.count { it.localPending }}", "Local ${ui.tasks.count { it.localPending }}"),
-                    modifier = Modifier.padding(vertical = 12.dp),
+                    "LOCAL ${ui.tasks.count { it.localPending }}",
                     fontFamily = Mono,
-                    fontSize = 10.sp,
+                    fontSize = 9.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Spacer(Modifier.weight(1f))
+                Box {
+                    IconButton(onClick = { actionMenu = true }) { Icon(Icons.Default.MoreVert, L10n.t("更多", "More")) }
+                    DropdownMenu(expanded = actionMenu, onDismissRequest = { actionMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text(if (ui.localQueuePaused) L10n.t("继续本地队列", "Resume local queue") else L10n.t("暂停本地队列", "Pause local queue")) },
+                            onClick = { viewModel.toggleLocalQueuePaused(); actionMenu = false },
+                        )
+                        if (hasQueued) {
+                            DropdownMenuItem(
+                                text = { Text(L10n.t("取消排队", "Cancel queued")) },
+                                onClick = { viewModel.cancelQueued(); actionMenu = false },
+                            )
+                        }
+                        if (hasFailed) {
+                            DropdownMenuItem(
+                                text = { Text(L10n.t("重试失败", "Retry failed")) },
+                                onClick = { viewModel.retryFailed(); actionMenu = false },
+                            )
+                        }
+                        if (hasFinished) {
+                            DropdownMenuItem(
+                                text = { Text(L10n.t("清理已结束任务", "Clear finished")) },
+                                onClick = { confirmClearFinished = true; actionMenu = false },
+                            )
+                        }
+                    }
+                }
             }
 
             if (tasks.isEmpty()) {
@@ -206,7 +228,6 @@ fun TasksScreen(
                             TaskCard(
                                 task = task,
                                 onClick = { onOpenTask(task.taskId) },
-                                onDelete = if (task.isTerminal) ({ viewModel.delete(task.taskId) }) else null,
                             )
                         }
                     }
@@ -237,14 +258,17 @@ fun TasksScreen(
 private fun TaskCard(
     task: GenerationTask,
     onClick: () -> Unit,
-    onDelete: (() -> Unit)?,
 ) {
+    val compact = LocalAppSettings.current.compactUi
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Column(
+            Modifier.padding(if (compact) 10.dp else 14.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 7.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(task.request.workflowName, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 task.batchIndex?.let { StatusChip("$it/${task.batchSize ?: it}"); Spacer(Modifier.width(5.dp)) }
@@ -279,13 +303,7 @@ private fun TaskCard(
                 ElapsedText(task)
                 Spacer(Modifier.weight(1f))
                 task.results.firstOrNull()?.let { result ->
-                    val thumb by produceState<Bitmap?>(null, result.localPath) {
-                        value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 96) }
-                    }
-                    thumb?.let { Image(it.asImageBitmap(), null, Modifier.size(44.dp), contentScale = ContentScale.Crop) }
-                }
-                if (onDelete != null) {
-                    TextButton(onClick = onDelete) { Text(L10n.t("删除", "Delete"), color = MaterialTheme.colorScheme.error) }
+                    MediaThumbnail(result.localPath, 44.dp)
                 }
                 Text("›", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -343,6 +361,7 @@ fun TaskDetailScreen(
     val clipboard = LocalClipboardManager.current
     var viewingPath by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var confirmCloudCancel by remember { mutableStateOf(false) }
 
     LaunchedEffect(message) {
         message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() }
@@ -354,13 +373,6 @@ fun TaskDetailScreen(
             TopAppBar(
                 title = { Text(L10n.t("任务详情", "Task detail")) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) } },
-                actions = {
-                    if (task?.isTerminal == true) {
-                        TextButton(onClick = { confirmDelete = true }) {
-                            Text(L10n.t("删除", "Delete"), color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                },
             )
         }
     ) { pad ->
@@ -413,40 +425,55 @@ fun TaskDetailScreen(
             if (task.results.isNotEmpty()) {
                 item { Text(L10n.t("结果", "Results"), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary) }
                 items(task.results, key = { it.id }) { result ->
-                    val bitmap by produceState<Bitmap?>(null, result.localPath) {
-                        value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1200) }
+                    if (isNonImageMedia(result.localPath)) {
+                        MediaThumbnail(
+                            path = result.localPath,
+                            size = 220.dp,
+                            modifier = Modifier.fillMaxWidth().clickable { viewingPath = result.localPath },
+                        )
+                    } else {
+                        val bitmap by produceState<Bitmap?>(null, result.localPath) {
+                            value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1200) }
+                        }
+                        if (bitmap == null) {
+                            Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                        } else {
+                            Image(bitmap!!.asImageBitmap(), null, Modifier.fillMaxWidth().clickable { viewingPath = result.localPath }, contentScale = ContentScale.FillWidth)
+                        }
                     }
-                    if (bitmap == null) Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                    else Image(bitmap!!.asImageBitmap(), null, Modifier.fillMaxWidth().clickable { viewingPath = result.localPath }, contentScale = ContentScale.FillWidth)
                 }
             }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        when {
-                            task.isActive -> OutlinedButton(
-                                onClick = { viewModel.cancel(task.taskId) },
+                        if (task.isActive) {
+                            OutlinedButton(
+                                onClick = {
+                                    if (task.request.provider == AutoDlConfig.PROVIDER) confirmCloudCancel = true
+                                    else viewModel.cancel(task.taskId)
+                                },
                                 enabled = task.phase != GenerationPhase.CANCELLING,
                                 modifier = Modifier.weight(1f),
                             ) { Text(L10n.t("取消", "Cancel")) }
-                            task.phase == GenerationPhase.FAILED || task.phase == GenerationPhase.CANCELLED -> Button(
+                        } else {
+                            Button(
                                 onClick = { viewModel.retry(task.taskId)?.let(onRetry) },
                                 modifier = Modifier.weight(1f),
-                            ) { Text(L10n.t("重新生成", "Retry")) }
+                            ) {
+                                Text(
+                                    if (task.phase == GenerationPhase.SUCCEEDED) L10n.t("再生成", "Run again")
+                                    else L10n.t("重新生成", "Retry")
+                                )
+                            }
                         }
                         OutlinedButton(
                             onClick = { viewModel.prepareReuse(task.taskId)?.let(onReuse) },
                             modifier = Modifier.weight(1f),
                         ) { Text(L10n.t("复用参数", "Reuse")) }
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (!task.isActive && !task.promptId.isNullOrBlank()) {
-                            OutlinedButton(onClick = { viewModel.recover(task.taskId) }, modifier = Modifier.weight(1f)) {
-                                Text(L10n.t("恢复原任务", "Recover original"))
-                            }
-                        }
-                        OutlinedButton(onClick = { viewModel.duplicate(task.taskId)?.let(onRetry) }, modifier = Modifier.weight(1f)) {
-                            Text(L10n.t("复制任务", "Duplicate"))
+                    if (!task.isActive && !task.promptId.isNullOrBlank()) {
+                        OutlinedButton(onClick = { viewModel.recover(task.taskId) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(L10n.t("恢复原任务", "Recover original"))
                         }
                     }
                     TextButton(
@@ -465,6 +492,30 @@ fun TaskDetailScreen(
                 }
             }
         }
+    }
+
+    if (confirmCloudCancel) {
+        AlertDialog(
+            onDismissRequest = { confirmCloudCancel = false },
+            title = { Text(L10n.t("取消云端任务？", "Cancel cloud task?")) },
+            text = {
+                Text(
+                    L10n.t(
+                        "这里只能停止手机端跟踪；AutoDL 平台侧任务可能继续执行并产生费用。",
+                        "This only stops local tracking. The AutoDL job may keep running and billing.",
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmCloudCancel = false
+                    task?.let { viewModel.cancel(it.taskId) }
+                }) { Text(L10n.t("仍然取消", "Cancel anyway"), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmCloudCancel = false }) { Text(L10n.t("继续等待", "Keep waiting")) }
+            },
+        )
     }
 
     if (confirmDelete && task != null && task.isTerminal) {
@@ -486,15 +537,12 @@ fun TaskDetailScreen(
     }
 
     viewingPath?.let { path ->
-        val bitmap by produceState<Bitmap?>(null, path) { value = withContext(Dispatchers.IO) { decodeSampled(path, 1800) } }
-        bitmap?.let { image ->
-            ImageViewerDialog(
-                bitmap = image,
-                onClose = { viewingPath = null },
-                onSave = { viewModel.saveResult(image) },
-                onShare = { shareImage(context, path) },
-            )
-        }
+        MediaViewerDialog(
+            path = path,
+            onClose = { viewingPath = null },
+            onSave = { viewModel.saveMedia(path) },
+            onShare = { shareMedia(context, path) },
+        )
     }
 }
 

@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -61,7 +64,10 @@ import androidx.compose.ui.window.DialogProperties
 import com.comfyremote.app.HistoryItem
 import com.comfyremote.app.data.media.decodeSampled
 import com.comfyremote.app.data.repository.DraftTransfer
-import com.comfyremote.app.feature.generate.shareImage
+import com.comfyremote.app.feature.generate.MediaThumbnail
+import com.comfyremote.app.feature.generate.MediaViewerDialog
+import com.comfyremote.app.feature.generate.isNonImageMedia
+import com.comfyremote.app.feature.generate.shareMedia
 import com.comfyremote.app.ui.L10n
 import com.comfyremote.app.ui.Mono
 import com.comfyremote.app.ui.components.EmptyState
@@ -86,6 +92,7 @@ fun HistoryScreen(
     var selecting by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(setOf<String>()) }
     var viewingId by remember { mutableStateOf<String?>(null) }
+    var viewingMediaPath by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() } }
@@ -167,16 +174,30 @@ fun HistoryScreen(
             item = item,
             serverLabel = viewModel.serverLabel(item.serverUrl),
             onClose = { viewingId = null },
-            onSave = viewModel::save,
-            onShare = { shareImage(context, it) },
+            onSave = viewModel::saveMedia,
+            onShare = { shareMedia(context, it) },
             onContinue = { path ->
                 viewModel.prepareReference(item, path)?.let(onReuse)
                 viewingId = null
             },
+            onGenerateVideo = { path ->
+                viewModel.prepareVideo(item, path)?.let(onReuse)
+                viewingId = null
+            },
+            onOpenMedia = { path -> viewingMediaPath = path },
             onBookmark = { viewModel.bookmark(item) },
             onReuse = { viewModel.prepareReuse(item)?.let(onReuse); viewingId = null },
             onFavorite = { viewModel.toggleFavorite(item.id) },
             onSetTags = { viewModel.setTags(item.id, it) },
+        )
+    }
+
+    viewingMediaPath?.let { path ->
+        MediaViewerDialog(
+            path = path,
+            onClose = { viewingMediaPath = null },
+            onSave = { viewModel.saveMedia(path) },
+            onShare = { shareMedia(context, path) },
         )
     }
 }
@@ -201,13 +222,8 @@ private fun HistoryCard(
                     Spacer(Modifier.width(4.dp))
                 }
                 item.images.firstOrNull()?.let { path ->
-                    val bitmap by produceState<Bitmap?>(null, path) {
-                        value = withContext(Dispatchers.IO) { decodeSampled(path, 160) }
-                    }
-                    bitmap?.let {
-                        Image(it.asImageBitmap(), null, Modifier.size(68.dp), contentScale = ContentScale.Crop)
-                        Spacer(Modifier.width(10.dp))
-                    }
+                    MediaThumbnail(path, 68.dp)
+                    Spacer(Modifier.width(10.dp))
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -242,9 +258,11 @@ fun HistoryDetailDialog(
     item: HistoryItem,
     serverLabel: String,
     onClose: () -> Unit,
-    onSave: (Bitmap) -> Unit,
+    onSave: (String) -> Unit,
     onShare: (String) -> Unit,
     onContinue: (String) -> Unit,
+    onGenerateVideo: (String) -> Unit,
+    onOpenMedia: (String) -> Unit,
     onBookmark: () -> Unit,
     onReuse: () -> Unit,
     onFavorite: () -> Unit,
@@ -271,15 +289,31 @@ fun HistoryDetailDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(item.images, key = { it }) { path ->
-                    val bitmap by produceState<Bitmap?>(null, path) {
-                        value = withContext(Dispatchers.IO) { decodeSampled(path, 1600) }
+                    val nonImage = isNonImageMedia(path)
+                    if (nonImage) {
+                        MediaThumbnail(
+                            path,
+                            220.dp,
+                            Modifier.fillMaxWidth().clickable { onOpenMedia(path) },
+                        )
+                    } else {
+                        val bitmap by produceState<Bitmap?>(null, path) {
+                            value = withContext(Dispatchers.IO) { decodeSampled(path, 1600) }
+                        }
+                        bitmap?.let {
+                            Image(
+                                it.asImageBitmap(), null,
+                                Modifier.fillMaxWidth().clickable { onOpenMedia(path) },
+                                contentScale = ContentScale.FillWidth,
+                            )
+                        }
                     }
-                    bitmap?.let {
-                        Image(it.asImageBitmap(), null, Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
-                        Row(Modifier.fillMaxWidth()) {
-                            TextButton(onClick = { onSave(it) }) { Text(L10n.t("保存", "Save")) }
-                            TextButton(onClick = { onShare(path) }) { Text(L10n.t("分享", "Share")) }
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        TextButton(onClick = { onSave(path) }) { Text(L10n.t("保存", "Save")) }
+                        TextButton(onClick = { onShare(path) }) { Text(L10n.t("分享", "Share")) }
+                        if (!nonImage) {
                             TextButton(onClick = { onContinue(path) }) { Text(L10n.t("作为参考继续", "Continue as reference")) }
+                            TextButton(onClick = { onGenerateVideo(path) }) { Text(L10n.t("生成视频", "Make video")) }
                         }
                     }
                 }

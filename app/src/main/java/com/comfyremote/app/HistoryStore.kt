@@ -92,6 +92,11 @@ class HistoryStore(context: Context) {
 
     fun newImageFile(id: String, idx: Int): File = File(dir, "${id}_${idx}.png")
 
+    fun newMediaFile(id: String, idx: Int, extension: String): File {
+        val ext = extension.trim().removePrefix(".").ifBlank { "png" }
+        return File(dir, "${id}_${idx}.$ext")
+    }
+
     private fun writeItems(items: List<HistoryItem>) {
         indexFile.writeText(JSONArray().apply { items.forEach { put(it.toJson()) } }.toString())
     }

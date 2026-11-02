@@ -60,9 +60,17 @@ private val Shapes = Shapes(
 val Mono: FontFamily = FontFamily.Monospace
 
 @Composable
-fun ComfyTheme(content: @Composable () -> Unit) {
+fun ComfyTheme(
+    themeMode: String = "system",
+    content: @Composable () -> Unit,
+) {
+    val dark = when (themeMode) {
+        "light" -> false
+        "dark" -> true
+        else -> isSystemInDarkTheme()
+    }
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkScheme else LightScheme,
+        colorScheme = if (dark) DarkScheme else LightScheme,
         shapes = Shapes,
         content = content,
     )

@@ -17,8 +17,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+enum class WorkflowSource { LOCAL, CLOUD }
+
 data class WorkflowsUiState(
     val workflows: List<WorkflowEntry> = emptyList(),
+    val cloudWorkflows: List<WorkflowEntry> = emptyList(),
+    val source: WorkflowSource = WorkflowSource.LOCAL,
+    val cloudLoading: Boolean = false,
+    val cloudError: String? = null,
+    val cloudLoaded: Boolean = false,
+    val autoDlConfigured: Boolean = false,
     val query: String = "",
     val loading: Boolean = false,
     val error: String? = null,
@@ -38,8 +46,12 @@ data class WorkflowsUiState(
         get() {
             val q = query.trim()
             val recentRank = recentPaths.withIndex().associate { it.value to it.index }
-            return workflows.asSequence()
-                .filter { q.isBlank() || it.name.contains(q, true) || it.path.contains(q, true) }
+            val sourceList = if (source == WorkflowSource.CLOUD) cloudWorkflows else workflows
+            return sourceList.asSequence()
+                .filter {
+                    q.isBlank() || it.name.contains(q, true) || it.path.contains(q, true) ||
+                        it.description.contains(q, true)
+                }
                 .sortedWith(
                     compareByDescending<WorkflowEntry> { it.path in favoritePaths }
                         .thenBy { recentRank[it.path] ?: Int.MAX_VALUE }
@@ -58,6 +70,8 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
             recentResults = recentResults(container.historyRepository.load(), container.serverSession.session.value?.url),
             session = container.serverSession.session.value,
             servers = container.serverRepository.load(),
+            source = if (container.serverSession.connected) WorkflowSource.LOCAL else WorkflowSource.CLOUD,
+            autoDlConfigured = container.autoDlRepository.configured(),
         )
     )
     val state: StateFlow<WorkflowsUiState> = _state.asStateFlow()
@@ -109,11 +123,53 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
         }
         load()
         refreshServerHealth()
+        if (_state.value.source == WorkflowSource.CLOUD) loadCloud(force = false)
     }
 
     fun setQuery(value: String) = _state.update { it.copy(query = value) }
     fun clearMessage() = _state.update { it.copy(message = null) }
-    fun load() = loadInternal(force = false)
+
+    fun setSource(source: WorkflowSource) {
+        if (_state.value.source == source) return
+        _state.update { it.copy(source = source, query = "") }
+        if (source == WorkflowSource.CLOUD && !_state.value.cloudLoaded) loadCloud(force = false)
+        if (source == WorkflowSource.LOCAL) {
+            _state.update { it.copy(autoDlConfigured = container.autoDlRepository.configured()) }
+            loadInternal(force = false)
+        }
+    }
+
+    fun load() {
+        if (_state.value.source == WorkflowSource.CLOUD) loadCloud(force = true)
+        else loadInternal(force = false)
+    }
+
+    fun loadCloud(force: Boolean = false) {
+        if (_state.value.cloudLoading) return
+        _state.update { it.copy(cloudLoading = true, cloudError = null, autoDlConfigured = container.autoDlRepository.configured()) }
+        viewModelScope.launch {
+            runCatching { container.autoDlRepository.catalog(force) }
+                .onSuccess { list ->
+                    _state.update {
+                        it.copy(
+                            cloudLoading = false,
+                            cloudLoaded = true,
+                            cloudWorkflows = list.map { workflow -> workflow.toEntry() },
+                            autoDlConfigured = container.autoDlRepository.configured(),
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    _state.update {
+                        it.copy(
+                            cloudLoading = false,
+                            cloudError = L10n.t("获取云端工作流失败：", "Failed to load cloud workflows: ") + (e.message ?: "error"),
+                            autoDlConfigured = container.autoDlRepository.configured(),
+                        )
+                    }
+                }
+        }
+    }
 
     fun refreshServerHealth() {
         val servers = container.serverRepository.load()
@@ -134,7 +190,9 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                 .onSuccess {
                     container.serverRepository.remember(url)
                     container.serverRepository.saveLastUrl(url)
-                    _state.update { state -> state.copy(message = L10n.t("已切换服务器", "Server switched")) }
+                    _state.update { state ->
+                        state.copy(source = WorkflowSource.LOCAL, message = L10n.t("已切换服务器", "Server switched"))
+                    }
                     refreshServerHealth()
                 }
                 .onFailure { error ->
@@ -231,14 +289,14 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
 
         private fun recentResults(items: List<HistoryItem>, serverUrl: String?): List<HistoryItem> = items
             .asSequence()
-            .filter { serverUrl.isNullOrBlank() || it.serverUrl.isBlank() || it.serverUrl == serverUrl }
             .sortedByDescending { it.time }
-            .take(4)
+            .take(8)
             .toList()
     }
 }
 
 fun workflowType(entry: WorkflowEntry): String = when {
+    entry.cloud -> entry.kind.uppercase().ifBlank { "CLOUD" }
     entry.name.contains("video", true) || entry.name.contains("wan", true) -> "VIDEO"
     entry.name.contains("upscale", true) -> "UPSCALE"
     entry.name.contains("inpaint", true) -> "INPAINT"

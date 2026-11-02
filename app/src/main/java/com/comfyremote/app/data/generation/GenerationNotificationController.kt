@@ -53,7 +53,7 @@ class GenerationNotificationController(private val context: Context) {
         }
         return NotificationCompat.Builder(context, CHANNEL_RUNNING)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle(L10n.t("ComfyUI 生成中", "ComfyUI generating"))
+            .setContentTitle(L10n.t("灵瞳生成中", "Iris generating"))
             .setContentText(task.request.workflowName + " · " + text.trim())
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -65,6 +65,9 @@ class GenerationNotificationController(private val context: Context) {
     }
 
     fun notifyFinished(task: GenerationTask) {
+        val settings = (context.applicationContext as? com.comfyremote.app.ComfyRemoteApp)
+            ?.container?.appSettingsStore?.settings?.value
+        if (settings?.notifyOnFinish == false) return
         val nm = NotificationManagerCompat.from(context)
         if (!nm.areNotificationsEnabled()) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

@@ -30,9 +30,31 @@ class PromptValidationException(message: String) : ComfyException(message)
 
 data class SysInfo(val version: String, val device: String, val vramGb: String)
 
-data class WorkflowEntry(val path: String, val name: String, val sizeKb: String)
+data class WorkflowEntry(
+    val path: String,
+    val name: String,
+    val sizeKb: String,
+    /** True for a hosted cloud workflow (currently AutoDL ComfyUI workflows). */
+    val cloud: Boolean = false,
+    /** "video" / "image" / "audio" / "" for local ComfyUI workflows. */
+    val kind: String = "",
+    val description: String = "",
+    val priceType: String = "",
+    /** Human-readable platform price, e.g. "40–100 / run" or "1 / sec, min 10". */
+    val priceLabel: String = "",
+)
 
-data class OutputImage(val filename: String, val subfolder: String, val type: String)
+data class OutputImage(
+    val filename: String,
+    val subfolder: String,
+    val type: String,
+    /** Direct URL for hosted-cloud results; null for a local ComfyUI /view download. */
+    val url: String? = null,
+    /** image / video / audio; drives the saved file extension and preview UI. */
+    val mediaKind: String = "image",
+    /** Optional extension reported by a hosted provider (mp4, png, wav...). */
+    val fileType: String = "",
+)
 
 /** Snapshot of the standard ComfyUI queue endpoint. */
 data class QueueSnapshot(

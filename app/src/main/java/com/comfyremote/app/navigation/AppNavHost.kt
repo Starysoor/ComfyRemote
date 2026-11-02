@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -41,7 +42,14 @@ import com.comfyremote.app.feature.generate.GenerateScreen
 import com.comfyremote.app.feature.generate.GenerateViewModel
 import com.comfyremote.app.feature.history.HistoryScreen
 import com.comfyremote.app.feature.history.HistoryViewModel
+import com.comfyremote.app.feature.settings.AppSettingsScreen
+import com.comfyremote.app.feature.settings.AppSettingsViewModel
+import com.comfyremote.app.feature.settings.CloudSettingsScreen
+import com.comfyremote.app.feature.settings.CloudSettingsViewModel
 import com.comfyremote.app.feature.settings.SettingsScreen
+import com.comfyremote.app.feature.storyboard.StoryboardDetailScreen
+import com.comfyremote.app.feature.storyboard.StoryboardScreen
+import com.comfyremote.app.feature.storyboard.StoryboardViewModel
 import com.comfyremote.app.feature.tasks.TaskDetailScreen
 import com.comfyremote.app.feature.tasks.TasksScreen
 import com.comfyremote.app.feature.tasks.TasksViewModel
@@ -78,7 +86,7 @@ private fun AppNavHost(
     val scope = rememberCoroutineScope()
     val backStack by navController.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
-    val showBottom = route in setOf(Routes.CREATE, Routes.TASKS, Routes.HISTORY)
+    val showBottom = route in setOf(Routes.CREATE, Routes.TASKS, Routes.HISTORY, Routes.STORYBOARD)
 
     fun openTransfer(transfer: DraftTransfer) {
         scope.launch {
@@ -121,6 +129,7 @@ private fun AppNavHost(
                 ConnectScreen(
                     viewModel = vm,
                     onConnected = { navigateToCreate(navController) },
+                    onCloudOnly = { navigateToCreate(navController) },
                     onSettings = { navController.navigate(Routes.SETTINGS) },
                 )
             }
@@ -141,6 +150,25 @@ private fun AppNavHost(
                 val vm: HistoryViewModel = viewModel(factory = factory)
                 HistoryScreen(vm, onReuse = ::openTransfer)
             }
+            composable(Routes.STORYBOARD) {
+                val vm: StoryboardViewModel = viewModel(factory = factory)
+                StoryboardScreen(
+                    viewModel = vm,
+                    onOpenProject = { projectId -> navController.navigate(Routes.storyboard(projectId)) },
+                )
+            }
+            composable(
+                Routes.STORYBOARD_DETAIL_PATTERN,
+                arguments = listOf(navArgument("projectId") { type = NavType.StringType })
+            ) { entry ->
+                val vm: StoryboardViewModel = viewModel(factory = factory)
+                StoryboardDetailScreen(
+                    viewModel = vm,
+                    projectId = entry.arguments?.getString("projectId").orEmpty(),
+                    onBack = { navController.popBackStack() },
+                    onOpenShot = { path, name -> navController.navigate(Routes.generate(path, name)) },
+                )
+            }
             composable(
                 Routes.GENERATE_PATTERN,
                 arguments = listOf(
@@ -155,6 +183,9 @@ private fun AppNavHost(
                     workflowName = entry.arguments?.getString("name").orEmpty(),
                     onBack = { navController.popBackStack() },
                     onOpenTask = { navController.navigate(Routes.task(it)) },
+                    onOpenCloudVideo = { path, name ->
+                        navController.navigate(Routes.generate(path, name))
+                    },
                 )
             }
             composable(
@@ -174,10 +205,20 @@ private fun AppNavHost(
                 SettingsScreen(
                     version = container.updateRepository.currentVersion(),
                     onBack = { navController.popBackStack() },
+                    onApp = { navController.navigate(Routes.APP_SETTINGS) },
                     onServers = { navController.navigate(Routes.SERVERS) },
                     onAi = { navController.navigate(Routes.AI_SETTINGS) },
+                    onCloud = { navController.navigate(Routes.CLOUD_SETTINGS) },
                     onUpdate = { navController.navigate(Routes.UPDATE) },
                 )
+            }
+            composable(Routes.APP_SETTINGS) {
+                val vm: AppSettingsViewModel = viewModel(factory = factory)
+                AppSettingsScreen(vm) { navController.popBackStack() }
+            }
+            composable(Routes.CLOUD_SETTINGS) {
+                val vm: CloudSettingsViewModel = viewModel(factory = factory)
+                CloudSettingsScreen(vm) { navController.popBackStack() }
             }
             composable(Routes.SERVERS) {
                 val vm: ConnectViewModel = viewModel(factory = factory)
@@ -219,6 +260,12 @@ private fun MainBottomBar(navController: NavHostController, current: String?) {
             onClick = { navigateTopLevel(navController, Routes.HISTORY) },
             icon = { Icon(Icons.AutoMirrored.Filled.List, null) },
             label = { Text(L10n.t("结果", "Results")) },
+        )
+        NavigationBarItem(
+            selected = current == Routes.STORYBOARD,
+            onClick = { navigateTopLevel(navController, Routes.STORYBOARD) },
+            icon = { Icon(Icons.Default.PlayArrow, null) },
+            label = { Text(L10n.t("分镜", "Board")) },
         )
     }
 }

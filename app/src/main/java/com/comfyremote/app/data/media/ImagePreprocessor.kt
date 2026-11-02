@@ -15,17 +15,23 @@ object ImagePreprocessor {
 
     /**
      * Returns (bytes, extension). Big camera/gallery photos are downscaled to
-     * [MAX_DIMENSION] JPEG (EXIF rotation aware); small images pass through.
+     * [maxDimension] JPEG (EXIF rotation aware); small images pass through.
      */
-    fun prepare(bytes: ByteArray, mime: String?): Pair<ByteArray, String> {
+    fun prepare(
+        bytes: ByteArray,
+        mime: String?,
+        maxDimension: Int = MAX_DIMENSION,
+        jpegQuality: Int = JPEG_QUALITY,
+    ): Pair<ByteArray, String> {
+        val limit = maxDimension.coerceAtLeast(256)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         if (bounds.outWidth <= 0) return Pair(bytes, extFor(mime))
         val maxDim = maxOf(bounds.outWidth, bounds.outHeight)
-        if (maxDim <= MAX_DIMENSION) return Pair(bytes, extFor(mime))
+        if (maxDim <= limit) return Pair(bytes, extFor(mime))
 
         val opts = BitmapFactory.Options().apply {
-            inSampleSize = (maxDim / MAX_DIMENSION).coerceAtLeast(1)
+            inSampleSize = (maxDim / limit).coerceAtLeast(1)
         }
         val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
             ?: return Pair(bytes, "jpg")
@@ -43,7 +49,7 @@ object ImagePreprocessor {
             Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
         } else bmp
         val bos = ByteArrayOutputStream()
-        oriented.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, bos)
+        oriented.compress(Bitmap.CompressFormat.JPEG, jpegQuality, bos)
         return Pair(bos.toByteArray(), "jpg")
     }
 

@@ -31,8 +31,10 @@ import com.comfyremote.app.ui.Mono
 fun SettingsScreen(
     version: String,
     onBack: () -> Unit,
+    onApp: () -> Unit,
     onServers: () -> Unit,
     onAi: () -> Unit,
+    onCloud: () -> Unit,
     onUpdate: () -> Unit,
 ) {
     Scaffold(
@@ -47,11 +49,13 @@ fun SettingsScreen(
             Modifier.padding(pad).fillMaxSize().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            SettingsRow(L10n.t("应用与界面", "App & interface"), L10n.t("主题、紧凑布局、最近结果数量、创作默认值", "Theme, compact layout, recent counts, creation defaults"), onApp)
             SettingsRow(L10n.t("服务器", "Servers"), L10n.t("连接、保存地址、局域网发现", "Connection, saved addresses, LAN discovery"), onServers)
-            SettingsRow(L10n.t("AI 提示词", "AI prompts"), L10n.t("模型、API Key、Skills", "Model, API key and skills"), onAi)
+            SettingsRow(L10n.t("AI 提示词", "AI prompts"), L10n.t("模型、看图改写、API Key、Skills", "Model, vision rewrite, API key and skills"), onAi)
+            SettingsRow(L10n.t("云端服务", "Cloud services"), L10n.t("AutoDL Token、默认视频工作流", "AutoDL token and default video workflow"), onCloud)
             SettingsRow(L10n.t("软件更新", "Software update"), L10n.t("检查并安装 GitHub Release", "Check and install GitHub Releases"), onUpdate)
             Spacer(Modifier.weight(1f))
-            Text("ComfyRemote · v$version", fontFamily = Mono, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.CenterHorizontally))
+            Text("Iris · v$version", fontFamily = Mono, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.CenterHorizontally))
         }
     }
 }

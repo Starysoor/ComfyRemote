@@ -51,6 +51,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.comfyremote.app.PromptField
@@ -62,6 +63,112 @@ import com.comfyremote.app.ui.Mono
 import com.comfyremote.app.ui.components.StatusChip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+/** UI request to let a vision model look at one image and rewrite the prompt. */
+data class VisionRequest(
+    val fieldKey: String?,
+    val imageValue: String,
+    val label: String,
+)
+
+@Composable
+fun VisionInstructionDialog(
+    targetLabel: String,
+    onDismiss: () -> Unit,
+    onRun: (String) -> Unit,
+) {
+    var instruction by remember {
+        mutableStateOf(
+            L10n.t(
+                "根据图片内容优化当前提示词，保留主体与风格，补充镜头、光影、动作和氛围细节",
+                "Refine the current prompt based on the image; keep the subject and style, add camera, light, motion and mood",
+            )
+        )
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(L10n.t("AI 看图改写", "AI vision rewrite")) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(targetLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                OutlinedTextField(
+                    value = instruction,
+                    onValueChange = { instruction = it },
+                    label = { Text(L10n.t("修改要求", "Requested change")) },
+                    minLines = 3,
+                    maxLines = 7,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    L10n.t(
+                        "模型会真正读取这张图片，再结合要求改写提示词。",
+                        "The model will actually view this image before rewriting the prompt.",
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onRun(instruction) }) { Text(L10n.t("改写", "Rewrite")) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(L10n.t("取消", "Cancel")) } },
+    )
+}
+
+@Composable
+fun CloudConfirmDialog(
+    confirmation: CloudConfirmation,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(L10n.t("确认云端提交", "Confirm cloud submission")) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(confirmation.workflowName, fontWeight = FontWeight.SemiBold)
+                Text(
+                    L10n.t("平台计价：", "Platform price: ") + confirmation.priceLabel,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontFamily = Mono,
+                    fontSize = 12.sp,
+                )
+                confirmation.estimatedCost?.let {
+                    Text(
+                        L10n.t("本次预计：$it（平台单位）", "Estimated this run: $it (platform units)"),
+                        fontFamily = Mono,
+                        fontSize = 12.sp,
+                    )
+                }
+                if (confirmation.duration.isNotBlank() || confirmation.resolution.isNotBlank()) {
+                    Text(
+                        listOf(
+                            confirmation.duration.takeIf { it.isNotBlank() }?.let { L10n.t("时长 ${it}s", "duration ${it}s") },
+                            confirmation.resolution.takeIf { it.isNotBlank() },
+                        ).filterNotNull().joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    L10n.t(
+                        "实际扣费以 AutoDL 账单为准。提交后取消不一定停止平台侧执行，仍可能计费。",
+                        "Actual billing is determined by AutoDL. Cancelling locally may not stop the remote job, which can still be billed.",
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(L10n.t("确认提交", "Submit")) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(L10n.t("取消", "Cancel")) }
+        },
+    )
+}
 
 @Composable
 fun AiResultDialog(
@@ -312,6 +419,10 @@ fun ParamField(field: PromptField, value: String, onChange: (String) -> Unit) {
                 }
             },
             label = { Text(field.label) },
+            supportingText = {
+                val range = listOfNotNull(field.min, field.max)
+                if (range.isNotEmpty()) Text(range.joinToString(" – "))
+            },
             singleLine = true,
             keyboardOptions = KeyboardOptions(
                 keyboardType = when (field.ptype) {

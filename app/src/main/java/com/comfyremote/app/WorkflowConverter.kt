@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.random.Random
 
-enum class FieldKind { TEXT, SEED, IMAGE, PARAM }
+enum class FieldKind { TEXT, SEED, IMAGE, AUDIO, PARAM }
 
 /**
  * A user-editable parameter discovered in the workflow: a text prompt, a seed,
@@ -24,6 +24,8 @@ data class PromptField(
     val options: List<String> = emptyList(),
     val min: String? = null,
     val max: String? = null,
+    /** True when the workflow schema marks this input as required. */
+    val required: Boolean = false,
 )
 
 class ConvertedWorkflow(
@@ -125,8 +127,15 @@ object WorkflowConverter {
             val title = n.optString("title").ifEmpty { def.optString("display_name", type) }
 
             val order = mutableListOf<String>()
+            val requiredNames = mutableSetOf<String>()
             def.optJSONObject("input_order")?.let { io ->
-                io.optJSONArray("required")?.let { a -> for (j in 0 until a.length()) order.add(a.optString(j)) }
+                io.optJSONArray("required")?.let { a ->
+                    for (j in 0 until a.length()) {
+                        val inputName = a.optString(j)
+                        order.add(inputName)
+                        requiredNames.add(inputName)
+                    }
+                }
                 io.optJSONArray("optional")?.let { a -> for (j in 0 until a.length()) order.add(a.optString(j)) }
             }
             val schema = HashMap<String, JSONArray>()
@@ -183,11 +192,27 @@ object WorkflowConverter {
                 if (v == null) v = cfg.opt("default")
                 if (cfg.has("control_after_generate")) {
                     if (queue.isNotEmpty()) queue.removeFirst() // the control widget value
-                    fields.add(PromptField("$id:$name", id, name, "$title · $name", FieldKind.SEED, v?.toString() ?: "0"))
+                    fields.add(
+                        PromptField(
+                            "$id:$name", id, name, "$title · $name", FieldKind.SEED, v?.toString() ?: "0",
+                            required = name in requiredNames,
+                        )
+                    )
                 } else if (t == "STRING") {
-                    fields.add(PromptField("$id:$name", id, name, "$title · $name", FieldKind.TEXT, v?.toString() ?: "", cfg.optBoolean("multiline", false)))
+                    fields.add(
+                        PromptField(
+                            "$id:$name", id, name, "$title · $name", FieldKind.TEXT, v?.toString() ?: "",
+                            multiline = cfg.optBoolean("multiline", false),
+                            required = name in requiredNames,
+                        )
+                    )
                 } else if (isCombo && cfg.optBoolean("image_upload", false)) {
-                    fields.add(PromptField("$id:$name", id, name, "$title · $name", FieldKind.IMAGE, v?.toString() ?: ""))
+                    fields.add(
+                        PromptField(
+                            "$id:$name", id, name, "$title · $name", FieldKind.IMAGE, v?.toString() ?: "",
+                            required = name in requiredNames,
+                        )
+                    )
                 } else {
                     val pt = when {
                         t == "INT" -> "int"
@@ -201,7 +226,8 @@ object WorkflowConverter {
                             PromptField(
                                 "$id:$name", id, name, "$title · $name", FieldKind.PARAM, v?.toString() ?: "",
                                 ptype = pt, options = comboOptions(t, cfg),
-                                min = cfg.opt("min")?.toString(), max = cfg.opt("max")?.toString()
+                                min = cfg.opt("min")?.toString(), max = cfg.opt("max")?.toString(),
+                                required = name in requiredNames,
                             )
                         )
                     }
@@ -264,13 +290,14 @@ object WorkflowConverter {
                 val cfg = (if (spec.length() > 1 && spec.opt(1) is JSONObject) spec.optJSONObject(1) else null)
                     ?: JSONObject()
                 val v = ins.opt(name)
+                val required = def.optJSONObject("input")?.optJSONObject("required")?.has(name) == true
                 when {
                     cfg.has("control_after_generate") ->
-                        fields.add(PromptField("$id:$name", id, name, "$title · $name", FieldKind.SEED, v?.toString() ?: "0"))
+                        fields.add(PromptField("$id:$name", id, name, "$title · $name", FieldKind.SEED, v?.toString() ?: "0", required = required))
                     t == "STRING" ->
-                        fields.add(PromptField("$id:$name", id, name, "$title · $name", FieldKind.TEXT, v?.toString() ?: "", cfg.optBoolean("multiline", false)))
+                        fields.add(PromptField("$id:$name", id, name, "$title · $name", FieldKind.TEXT, v?.toString() ?: "", cfg.optBoolean("multiline", false), required = required))
                     (t is JSONArray || t == "COMBO") && cfg.optBoolean("image_upload", false) ->
-                        fields.add(PromptField("$id:$name", id, name, "$title · $name", FieldKind.IMAGE, v?.toString() ?: ""))
+                        fields.add(PromptField("$id:$name", id, name, "$title · $name", FieldKind.IMAGE, v?.toString() ?: "", required = required))
                 }
             }
         }
@@ -294,7 +321,7 @@ object WorkflowConverter {
             val ins = node.optJSONObject("inputs") ?: continue
             when (f.kind) {
                 FieldKind.TEXT -> values[f.key]?.let { ins.put(f.input, it) }
-                FieldKind.IMAGE -> values[f.key]?.takeIf { it.isNotEmpty() }?.let { ins.put(f.input, it) }
+                FieldKind.IMAGE, FieldKind.AUDIO -> values[f.key]?.takeIf { it.isNotEmpty() }?.let { ins.put(f.input, it) }
                 FieldKind.SEED -> {
                     val used = if (randomSeed) Random.nextLong(SEED_MAX)
                     else values[f.key]?.toLongOrNull() ?: ins.optLong(f.input, 0L)

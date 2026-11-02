@@ -77,6 +77,7 @@ object GenerationTaskCodec {
 
     private fun requestToJson(request: GenerationRequest): JSONObject = JSONObject()
         .put("id", request.id)
+        .put("provider", request.provider)
         .put("serverUrl", request.serverUrl)
         .put("workflowPath", request.workflowPath)
         .put("workflowName", request.workflowName)
@@ -86,10 +87,12 @@ object GenerationTaskCodec {
         .put("fields", JSONArray().apply { request.fields.forEach { put(fieldToJson(it)) } })
         .put("convertedPrompt", JSONObject(request.convertedPrompt.toString()))
         .put("createdAt", request.createdAt)
+        .put("estimatedCloudCost", request.estimatedCloudCost ?: JSONObject.NULL)
 
     private fun requestFromJson(o: JSONObject): GenerationRequest? = runCatching {
         GenerationRequest(
             id = o.optString("id"),
+            provider = o.optString("provider", "comfyui"),
             serverUrl = o.getString("serverUrl"),
             workflowPath = o.getString("workflowPath"),
             workflowName = o.optString("workflowName"),
@@ -99,6 +102,7 @@ object GenerationTaskCodec {
             fields = fieldList(o.optJSONArray("fields")),
             convertedPrompt = o.optJSONObject("convertedPrompt") ?: JSONObject(),
             createdAt = o.optLong("createdAt", System.currentTimeMillis()),
+            estimatedCloudCost = nullableInt(o, "estimatedCloudCost"),
         )
     }.getOrNull()
 
@@ -114,6 +118,7 @@ object GenerationTaskCodec {
         .put("options", JSONArray().apply { field.options.forEach { put(it) } })
         .put("min", field.min ?: JSONObject.NULL)
         .put("max", field.max ?: JSONObject.NULL)
+        .put("required", field.required)
 
     private fun fieldList(array: JSONArray?): List<PromptField> {
         if (array == null) return emptyList()
@@ -132,6 +137,7 @@ object GenerationTaskCodec {
                 options = stringList(o.optJSONArray("options")),
                 min = nullableString(o, "min"),
                 max = nullableString(o, "max"),
+                required = o.optBoolean("required", false),
             )
         }
     }

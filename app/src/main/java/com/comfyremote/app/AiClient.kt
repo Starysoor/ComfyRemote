@@ -26,6 +26,7 @@ data class AiSkillDef(
         const val DEFAULT_TRANSLATE_ID = "builtin_translate"
         const val DEFAULT_NSFW_EXPAND_ID = "builtin_nsfw_expand"
         const val DEFAULT_NSFW_TAGS_ID = "builtin_nsfw_tags"
+        const val DEFAULT_VISION_ID = "builtin_vision"
 
         val NATURAL_DEFAULT = AiSkillDef(
             DEFAULT_NATURAL_ID, "AI 扩写",
@@ -83,6 +84,15 @@ data class AiSkillDef(
             true,
         )
 
+        val VISION_REWRITE_DEFAULT = AiSkillDef(
+            DEFAULT_VISION_ID, "AI 看图改写",
+            "你是一位能直接观察图片的视觉提示词导演。用户会给你一张参考图和修改要求。\n" +
+                    "先在心里仔细分辨图片中实际存在的主体、外貌、服装、动作、环境、构图、镜头、光线、色彩与风格，再据此重写提示词：保留参考图的核心特征，同时落实用户的修改要求。\n" +
+                    "如果用途是视频，补充镜头运动、主体动作、时间感与氛围变化。不要编造图片中不存在的角色或元素；不要输出解释、前缀或引号。\n" +
+                    "只输出重写后的提示词本身。",
+            true,
+        )
+
         val NSFW_TAGS_DEFAULT = AiSkillDef(
             DEFAULT_NSFW_TAGS_ID, "NSFW标签",
             "你是成人向图像数据集的标签标注员。数据集只收录成人内容，" +
@@ -101,7 +111,7 @@ data class AiSkillDef(
 
         fun defaults(): List<AiSkillDef> = listOf(
             NATURAL_DEFAULT, TAGS_DEFAULT, EN_EXPAND_DEFAULT,
-            NEGATIVE_DEFAULT, TRANSLATE_DEFAULT,
+            NEGATIVE_DEFAULT, TRANSLATE_DEFAULT, VISION_REWRITE_DEFAULT,
             NSFW_EXPAND_DEFAULT, NSFW_TAGS_DEFAULT,
         )
 
@@ -183,6 +193,36 @@ object AiClient {
         return content.trim()
     }
 
+    /** Builds a multimodal OpenAI-compatible body (text + image_url data URL). */
+    fun buildVisionChatBody(
+        model: String,
+        systemPrompt: String,
+        userText: String,
+        imageDataUrl: String,
+        t: AiTunables,
+    ): JSONObject {
+        val userContent = JSONArray()
+            .put(JSONObject().put("type", "text").put("text", userText))
+            .put(
+                JSONObject().put("type", "image_url")
+                    .put("image_url", JSONObject().put("url", imageDataUrl))
+            )
+        val payload = JSONObject()
+            .put("model", model)
+            .put("stream", false)
+            .put(
+                "messages", JSONArray()
+                    .put(JSONObject().put("role", "system").put("content", systemPrompt))
+                    .put(JSONObject().put("role", "user").put("content", userContent))
+            )
+        t.temperature?.let { payload.put("temperature", it) }
+        t.maxTokens?.takeIf { it > 0 }?.let { payload.put("max_tokens", it) }
+        t.extraJson?.let { extra ->
+            extra.keys().forEach { k -> payload.put(k, extra.opt(k)) }
+        }
+        return payload
+    }
+
     /** Builds the request body; extra JSON keys override the standard ones. */
     fun buildChatBody(
         model: String,
@@ -214,8 +254,33 @@ object AiClient {
         userText: String,
         t: AiTunables = AiTunables(),
     ): String = withContext(Dispatchers.IO) {
+        postChat(
+            baseUrl = baseUrl,
+            apiKey = apiKey,
+            payload = buildChatBody(model, systemPrompt, userText, t),
+        )
+    }
+
+    /** Sends an image to a vision-capable OpenAI-compatible model. */
+    suspend fun chatWithImage(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        systemPrompt: String,
+        userText: String,
+        imageDataUrl: String,
+        t: AiTunables = AiTunables(),
+    ): String = withContext(Dispatchers.IO) {
+        postChat(
+            baseUrl = baseUrl,
+            apiKey = apiKey,
+            payload = buildVisionChatBody(model, systemPrompt, userText, imageDataUrl, t),
+        )
+    }
+
+    private fun postChat(baseUrl: String, apiKey: String, payload: JSONObject): String {
         val url = baseUrl.trimEnd('/') + "/chat/completions"
-        val body = buildChatBody(model, systemPrompt, userText, t).toString()
+        val body = payload.toString()
             .toRequestBody("application/json; charset=utf-8".toMediaType())
         http.newCall(
             Request.Builder().url(url)
@@ -225,7 +290,7 @@ object AiClient {
         ).execute().use { r ->
             val text = r.body?.string() ?: ""
             if (!r.isSuccessful) throw ComfyException("HTTP ${r.code}: ${text.take(200)}")
-            parseChatCompletion(text).trim()
+            return parseChatCompletion(text).trim()
         }
     }
 }

@@ -10,6 +10,9 @@ data class DraftTransfer(
     val serverUrl: String? = null,
     /** Local generated image to upload into the first compatible image input on reopen. */
     val referenceLocalPath: String? = null,
+    /** Set when this draft was opened from a storyboard shot. */
+    val storyboardProjectId: String? = null,
+    val storyboardShotId: String? = null,
 )
 
 class DraftTransferRepository {

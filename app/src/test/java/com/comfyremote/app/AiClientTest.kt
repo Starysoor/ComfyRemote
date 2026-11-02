@@ -70,6 +70,27 @@ class AiClientTest {
     }
 
     @Test
+    fun buildVisionChatBodyUsesOpenAiImageUrlContent() {
+        val body = AiClient.buildVisionChatBody(
+            model = "vision-model",
+            systemPrompt = "look",
+            userText = "rewrite",
+            imageDataUrl = "data:image/jpeg;base64,AA==",
+            t = AiTunables(),
+        )
+        val messages = body.getJSONArray("messages")
+        assertEquals("look", messages.getJSONObject(0).getString("content"))
+        val content = messages.getJSONObject(1).getJSONArray("content")
+        assertEquals("text", content.getJSONObject(0).getString("type"))
+        assertEquals("rewrite", content.getJSONObject(0).getString("text"))
+        assertEquals("image_url", content.getJSONObject(1).getString("type"))
+        assertEquals(
+            "data:image/jpeg;base64,AA==",
+            content.getJSONObject(1).getJSONObject("image_url").getString("url"),
+        )
+    }
+
+    @Test
     fun applyThinkingModeWritesExpectedFields() {
         // mirrors MainViewModel.applyThinkingMode mapping via the same JSON contract
         val extra = JSONObject()

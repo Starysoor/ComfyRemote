@@ -152,5 +152,13 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun saveMedia(path: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { container.galleryExporter.saveMediaFile(path) }
+                .onSuccess { _message.value = container.galleryExporter.savedMessage() }
+                .onFailure { _message.value = container.galleryExporter.failMessage(it) }
+        }
+    }
+
     fun clearMessage() { _message.value = null }
 }

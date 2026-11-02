@@ -34,6 +34,11 @@ class ComfyGenerationBackend(serverUrl: String) : GenerationBackend {
 
 interface GenerationHistorySink {
     fun newImageFile(promptId: String, index: Int): File
+
+    /** Media-aware variant; legacy/test sinks can keep overriding [newImageFile]. */
+    fun newMediaFile(promptId: String, index: Int, extension: String): File =
+        newImageFile(promptId, index)
+
     fun add(item: HistoryItem)
 }
 
@@ -42,6 +47,9 @@ class RepositoryGenerationHistorySink(
     private val serverUrl: String = "",
 ) : GenerationHistorySink {
     override fun newImageFile(promptId: String, index: Int): File = repository.newImageFile(promptId, index)
+    override fun newMediaFile(promptId: String, index: Int, extension: String): File =
+        repository.newMediaFile(promptId, index, extension)
+
     override fun add(item: HistoryItem) = repository.add(
         if (serverUrl.isBlank() || item.serverUrl.isNotBlank()) item else item.copy(serverUrl = serverUrl)
     )

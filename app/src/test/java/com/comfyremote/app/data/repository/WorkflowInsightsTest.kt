@@ -66,6 +66,31 @@ class WorkflowInsightsTest {
     }
 
     @Test
+    fun requiredEmptyImageBlocksGenerationButOptionalDoesNot() {
+        val required = WorkflowInsights.analyze(
+            JSONObject().put("1", JSONObject().put("class_type", "LoadImage")),
+            listOf(
+                PromptField(
+                    "1:image", "1", "image", "Required reference", FieldKind.IMAGE, "",
+                    required = true,
+                )
+            ),
+            emptyMap(),
+            emptyList(),
+        )
+        assertFalse(required.compatible)
+        assertTrue(required.blockingIssues.any { it.message.contains("Required reference") })
+
+        val optional = WorkflowInsights.analyze(
+            JSONObject().put("1", JSONObject().put("class_type", "LoadImage")),
+            listOf(PromptField("1:image", "1", "image", "Optional reference", FieldKind.IMAGE, "")),
+            emptyMap(),
+            emptyList(),
+        )
+        assertTrue(optional.compatible)
+    }
+
+    @Test
     fun converterUnknownNodeWarningBlocksGeneration() {
         val insight = WorkflowInsights.analyze(
             JSONObject().put("1", JSONObject().put("class_type", "KSampler")),
