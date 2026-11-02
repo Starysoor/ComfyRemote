@@ -53,7 +53,7 @@ object WorkflowInsights {
         if (lowerTypes.any { it.contains("inpaint") || it.contains("mask") }) {
             capabilities += WorkflowCapability.INPAINT
         }
-        if (lowerTypes.any { it.contains("controlnet") || it.contains("control_net") || it.contains("controlnet") }) {
+        if (lowerTypes.any { it.contains("controlnet") || it.contains("control_net") }) {
             capabilities += WorkflowCapability.CONTROL
         }
         if (lowerTypes.any { it.contains("lora") }) capabilities += WorkflowCapability.LORA
@@ -84,7 +84,11 @@ object WorkflowInsights {
         imageFields.forEach { field ->
             val current = values[field.key] ?: field.value
             if (current.isBlank()) {
-                issues += WorkflowCompatibilityIssue("${field.label}: reference image is empty", blocking = true)
+                // PromptField currently does not preserve required-vs-optional schema metadata.
+                // Treat an empty image slot as a warning so optional reference inputs do not
+                // make an otherwise valid workflow impossible to run; ComfyUI remains the
+                // authority for required-input validation at /prompt.
+                issues += WorkflowCompatibilityIssue("${field.label}: reference image is empty", blocking = false)
             }
         }
 
