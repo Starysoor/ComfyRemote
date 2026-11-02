@@ -19,8 +19,8 @@ android {
         applicationId = "com.comfyremote.app"
         minSdk = 29
         targetSdk = 34
-        versionCode = 16
-        versionName = "1.10"
+        versionCode = 17
+        versionName = "1.11"
     }
 
     signingConfigs {
@@ -65,7 +65,3 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }
-
-
-
-
