@@ -13,7 +13,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.comfyremote.app.MainActivity
-import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.R
 
 /** Builds all generation-related notifications and task deep links. */
 class GenerationNotificationController(private val context: Context) {
@@ -27,8 +27,8 @@ class GenerationNotificationController(private val context: Context) {
 
     fun ensureChannels() {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.createNotificationChannel(NotificationChannel(CHANNEL_RUNNING, L10n.t("生成状态", "Generation status"), NotificationManager.IMPORTANCE_LOW))
-        nm.createNotificationChannel(NotificationChannel(CHANNEL_DONE, L10n.t("生成完成", "Generation finished"), NotificationManager.IMPORTANCE_DEFAULT))
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_RUNNING, context.getString(R.string.notif_channel_running), NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel(CHANNEL_DONE, context.getString(R.string.notif_channel_done), NotificationManager.IMPORTANCE_DEFAULT))
     }
 
     private fun contentIntent(task: GenerationTask): PendingIntent = PendingIntent.getActivity(
@@ -42,18 +42,18 @@ class GenerationNotificationController(private val context: Context) {
 
     fun runningNotification(task: GenerationTask): Notification {
         val text = when (task.phase) {
-            GenerationPhase.QUEUEING, GenerationPhase.QUEUED -> L10n.t("排队中…", "Queued…")
-            GenerationPhase.CANCELLING -> L10n.t("正在取消…", "Cancelling…")
+            GenerationPhase.QUEUEING, GenerationPhase.QUEUED -> context.getString(R.string.notif_queued)
+            GenerationPhase.CANCELLING -> context.getString(R.string.notif_cancelling)
             else -> buildString {
-                append(L10n.t("节点 ", "Node "))
-                append("#${task.nodeId ?: "?"} ")
+                append(context.getString(R.string.notif_node, "#${task.nodeId ?: "?"}"))
+                append(" ")
                 append(task.nodeTitle.orEmpty())
                 task.progress?.let { append("  ${(it * 100).toInt()}%") }
             }
         }
         return NotificationCompat.Builder(context, CHANNEL_RUNNING)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle(L10n.t("灵瞳生成中", "Iris generating"))
+            .setContentTitle(context.getString(R.string.notif_generating))
             .setContentText(task.request.workflowName + " · " + text.trim())
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -76,17 +76,17 @@ class GenerationNotificationController(private val context: Context) {
 
         val (title, text, icon) = when (task.phase) {
             GenerationPhase.SUCCEEDED -> Triple(
-                L10n.t("生成完成", "Generation finished"),
-                "${task.request.workflowName} · ${task.results.size} " + L10n.t("张图", "image(s)"),
+                context.getString(R.string.notif_done_title),
+                context.getString(R.string.notif_done_text, task.request.workflowName, task.results.size),
                 android.R.drawable.ic_menu_gallery,
             )
             GenerationPhase.CANCELLED -> Triple(
-                L10n.t("已取消", "Cancelled"),
+                context.getString(R.string.notif_cancelled),
                 task.request.workflowName,
                 android.R.drawable.ic_menu_close_clear_cancel,
             )
             else -> Triple(
-                L10n.t("生成失败", "Generation failed"),
+                context.getString(R.string.notif_failed),
                 task.error?.message ?: task.request.workflowName,
                 android.R.drawable.ic_dialog_alert,
             )

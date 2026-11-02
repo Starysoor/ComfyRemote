@@ -1,7 +1,8 @@
 package com.comfyremote.app.data.cloud
 
 import com.comfyremote.app.WorkflowEntry
-import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.R
+import com.comfyremote.app.ui.AppStrings
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -33,18 +34,17 @@ data class CloudPricing(
     val label: String
         get() = when {
             mode == "per_second" -> buildString {
-                append(price ?: 0)
-                append(L10n.t(" / 秒", " / sec"))
-                minimumPrice?.let { append(L10n.t("，最低 ", ", min ")).append(it) }
+                append(AppStrings.get(R.string.price_per_second, (price ?: 0).toString()))
+                minimumPrice?.let { append(AppStrings.get(R.string.price_minimum, it.toString())) }
             }
             tiers.isNotEmpty() -> {
                 val min = tiers.minOf { it.price }
                 val max = tiers.maxOf { it.price }
-                if (min == max) L10n.t("$min / 次", "$min / run")
-                else L10n.t("$min–$max / 次", "$min–$max / run")
+                if (min == max) AppStrings.get(R.string.price_per_run, min.toString())
+                else AppStrings.get(R.string.price_range_per_run, min.toString(), max.toString())
             }
-            price != null -> L10n.t("$price / 次", "$price / run")
-            else -> L10n.t("按平台计费", "Platform billing")
+            price != null -> AppStrings.get(R.string.price_per_run, price.toString())
+            else -> AppStrings.get(R.string.price_platform)
         }
 
     fun tierFor(resolution: String?): CloudPriceTier? {
