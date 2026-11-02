@@ -16,10 +16,12 @@ import com.comfyremote.app.data.repository.NavigationRequestRepository
 import com.comfyremote.app.data.repository.ObjectInfoCache
 import com.comfyremote.app.data.repository.PromptPresetRepository
 import com.comfyremote.app.data.repository.ServerDiscoveryRepository
+import com.comfyremote.app.data.repository.ServerHealthRepository
 import com.comfyremote.app.data.repository.ServerRepository
 import com.comfyremote.app.data.repository.ServerSessionRepository
 import com.comfyremote.app.data.repository.UpdateRepository
 import com.comfyremote.app.data.repository.UpdateSettingsStore
+import com.comfyremote.app.data.repository.WorkflowDraftStore
 import com.comfyremote.app.data.repository.WorkflowRepository
 import com.comfyremote.app.data.repository.WorkflowUsageRepository
 
@@ -34,6 +36,7 @@ class AppContainer(val app: Application) {
     val serverRepository = ServerRepository(prefs)
     val serverSession = ServerSessionRepository()
     val serverDiscoveryRepository = ServerDiscoveryRepository(LanServerDiscovery())
+    val serverHealthRepository = ServerHealthRepository()
 
     val updateSettingsStore = UpdateSettingsStore(prefs)
     val updateRepository = UpdateRepository(app)
@@ -41,6 +44,7 @@ class AppContainer(val app: Application) {
     val promptPresetRepository = PromptPresetRepository(prefs)
     val draftTransferRepository = DraftTransferRepository()
     val workflowUsageRepository = WorkflowUsageRepository(prefs)
+    val workflowDraftStore = WorkflowDraftStore(prefs)
 
     val historyRepository = HistoryRepository(HistoryStore(app))
     val objectInfoCache = ObjectInfoCache(app.cacheDir)
