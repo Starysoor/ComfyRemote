@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.HistoryItem
+import com.comfyremote.app.ServerEntry
 import com.comfyremote.app.WorkflowEntry
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.repository.PromptPreset
+import com.comfyremote.app.data.repository.ServerHealth
 import com.comfyremote.app.data.repository.ServerSession
 import com.comfyremote.app.ui.L10n
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +27,12 @@ data class WorkflowsUiState(
     val recentPresets: List<PromptPreset> = emptyList(),
     val recentResults: List<HistoryItem> = emptyList(),
     val session: ServerSession? = null,
+    val servers: List<ServerEntry> = emptyList(),
+    val serverHealth: Map<String, ServerHealth> = emptyMap(),
+    val appActiveByServer: Map<String, Int> = emptyMap(),
+    val probingServers: Boolean = false,
+    val switchingServer: String? = null,
+    val message: String? = null,
 ) {
     val visible: List<WorkflowEntry>
         get() {
@@ -49,6 +57,7 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
             recentPresets = recentSetups(container.promptPresetRepository.load()),
             recentResults = recentResults(container.historyRepository.load(), container.serverSession.session.value?.url),
             session = container.serverSession.session.value,
+            servers = container.serverRepository.load(),
         )
     )
     val state: StateFlow<WorkflowsUiState> = _state.asStateFlow()
@@ -65,9 +74,27 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                         workflows = if (session == null) emptyList() else it.workflows,
                         error = if (session == null) null else it.error,
                         recentResults = recentResults(container.historyRepository.load(), session?.url),
+                        switchingServer = null,
                     )
                 }
                 if (changed && session != null) loadInternal(force = true)
+            }
+        }
+        viewModelScope.launch {
+            container.serverRepository.servers.collect { servers ->
+                _state.update { it.copy(servers = servers) }
+                refreshServerHealth()
+            }
+        }
+        viewModelScope.launch {
+            container.generationManager.tasks.collect { tasks ->
+                _state.update { state ->
+                    state.copy(
+                        appActiveByServer = tasks.filter { it.isActive }
+                            .groupingBy { it.request.serverUrl }
+                            .eachCount()
+                    )
+                }
             }
         }
         viewModelScope.launch {
@@ -81,10 +108,55 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
             }
         }
         load()
+        refreshServerHealth()
     }
 
     fun setQuery(value: String) = _state.update { it.copy(query = value) }
+    fun clearMessage() = _state.update { it.copy(message = null) }
     fun load() = loadInternal(force = false)
+
+    fun refreshServerHealth() {
+        val servers = container.serverRepository.load()
+        if (servers.isEmpty() || _state.value.probingServers) return
+        _state.update { it.copy(probingServers = true) }
+        viewModelScope.launch {
+            val health = container.serverHealthRepository.probeAll(servers)
+            _state.update { it.copy(serverHealth = health, probingServers = false) }
+        }
+    }
+
+    fun switchServer(url: String) {
+        if (_state.value.switchingServer != null) return
+        if (_state.value.session?.url == url) return
+        _state.update { it.copy(switchingServer = url, message = null) }
+        viewModelScope.launch {
+            runCatching { container.serverSession.connect(url) }
+                .onSuccess {
+                    container.serverRepository.remember(url)
+                    container.serverRepository.saveLastUrl(url)
+                    _state.update { state -> state.copy(message = L10n.t("已切换服务器", "Server switched")) }
+                    refreshServerHealth()
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            switchingServer = null,
+                            message = L10n.t("切换服务器失败：", "Failed to switch server: ") + (error.message ?: "error"),
+                        )
+                    }
+                }
+        }
+    }
+
+    fun switchToLeastBusy() {
+        val candidate = _state.value.servers
+            .mapNotNull { server -> _state.value.serverHealth[server.url]?.takeIf { it.online } }
+            .minWithOrNull(compareBy<ServerHealth> { it.loadScore + (_state.value.appActiveByServer[it.url] ?: 0) * 100 }
+                .thenBy { it.latencyMs ?: Long.MAX_VALUE })
+        if (candidate == null) {
+            _state.update { it.copy(message = L10n.t("没有检测到在线服务器", "No online server detected")) }
+        } else switchServer(candidate.url)
+    }
 
     private fun loadInternal(force: Boolean) {
         if (!container.serverSession.connected || (_state.value.loading && !force)) return
@@ -165,6 +237,8 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
 
 fun workflowType(entry: WorkflowEntry): String = when {
     entry.name.contains("video", true) || entry.name.contains("wan", true) -> "VIDEO"
+    entry.name.contains("upscale", true) -> "UPSCALE"
+    entry.name.contains("inpaint", true) -> "INPAINT"
     entry.name.contains("edit", true) -> "EDIT"
     entry.name.contains("i2i", true) || entry.name.contains("img2img", true) -> "IMG2IMG"
     entry.name.contains("t2i", true) || entry.name.contains("txt2img", true) -> "TXT2IMG"
