@@ -71,8 +71,8 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                 _state.update {
                     it.copy(
                         session = session,
-                        workflows = if (session == null) emptyList() else it.workflows,
-                        error = if (session == null) null else it.error,
+                        workflows = if (session == null || changed) emptyList() else it.workflows,
+                        error = if (session == null || changed) null else it.error,
                         recentResults = recentResults(container.historyRepository.load(), session?.url),
                         switchingServer = null,
                     )
