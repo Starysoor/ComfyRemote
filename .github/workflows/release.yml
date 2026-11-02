@@ -28,9 +28,12 @@ jobs:
         shell: bash
         run: |
           APP_VERSION=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n1)
+          APP_VERSION_CODE=$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' app/build.gradle.kts | head -n1)
           test -n "$APP_VERSION"
+          test -n "$APP_VERSION_CODE"
           RELEASE_TAG="v$APP_VERSION"
           echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          echo "APP_VERSION_CODE=$APP_VERSION_CODE" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
 
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
@@ -39,7 +42,7 @@ jobs:
             REQUESTED_TAG=$(printf '%s\n' "${{ github.event.head_commit.message }}" | head -n1 | sed -n 's/^release: \(v[^ ]*\).*/\1/p')
           fi
 
-          echo "requested=$REQUESTED_TAG app=$RELEASE_TAG"
+          echo "requested=$REQUESTED_TAG app=$RELEASE_TAG code=$APP_VERSION_CODE"
           if [ "$REQUESTED_TAG" != "$RELEASE_TAG" ]; then
             echo "Release request $REQUESTED_TAG does not match Gradle versionName $APP_VERSION" >&2
             exit 1
@@ -57,6 +60,23 @@ jobs:
 
       - name: Build release APK
         run: gradle :app:assembleRelease --no-daemon
+
+      - name: Smoke-test release APK
+        shell: bash
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          test -s "$APK"
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n1)
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n1)
+          test -x "$AAPT"
+          test -x "$APKSIGNER"
+          BADGING=$("$AAPT" dump badging "$APK" | head -n1)
+          echo "$BADGING"
+          echo "$BADGING" | grep -F "name='com.comfyremote.app'"
+          echo "$BADGING" | grep -F "versionName='$APP_VERSION'"
+          echo "$BADGING" | grep -F "versionCode='$APP_VERSION_CODE'"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          sha256sum "$APK"
 
       - name: Name release APK
         run: cp app/build/outputs/apk/release/app-release.apk "app/build/outputs/apk/release/ComfyRemote-${RELEASE_TAG}.apk"
