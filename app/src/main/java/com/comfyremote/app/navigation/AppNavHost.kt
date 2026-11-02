@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -30,6 +31,7 @@ import androidx.navigation.navArgument
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.AppViewModel
 import com.comfyremote.app.AppViewModelFactory
+import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.feature.ai.AiSettingsScreen
 import com.comfyremote.app.feature.ai.AiSettingsViewModel
 import com.comfyremote.app.feature.connect.ConnectScreen
@@ -48,6 +50,7 @@ import com.comfyremote.app.feature.update.UpdateViewModel
 import com.comfyremote.app.feature.workflows.WorkflowsScreen
 import com.comfyremote.app.feature.workflows.WorkflowsViewModel
 import com.comfyremote.app.ui.L10n
+import kotlinx.coroutines.launch
 
 @Composable
 fun ComfyRemoteRoot(container: AppContainer) {
@@ -72,9 +75,31 @@ private fun AppNavHost(
     startDestination: String,
 ) {
     val navController = rememberNavController()
+    val scope = rememberCoroutineScope()
     val backStack by navController.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
     val showBottom = route in setOf(Routes.CREATE, Routes.TASKS, Routes.HISTORY)
+
+    fun openTransfer(transfer: DraftTransfer) {
+        scope.launch {
+            val source = transfer.serverUrl?.trim()?.removeSuffix("/").orEmpty()
+            val ready = if (source.isBlank() || source == container.serverSession.url) {
+                true
+            } else {
+                runCatching {
+                    container.serverSession.connect(source)
+                    container.serverRepository.remember(source)
+                    container.serverRepository.saveLastUrl(source)
+                }.isSuccess
+            }
+            if (ready) {
+                navController.navigate(Routes.generate(transfer.workflowPath, transfer.workflowName))
+            } else {
+                container.draftTransferRepository.clear()
+                navController.navigate(Routes.SERVERS)
+            }
+        }
+    }
 
     LaunchedEffect(navController) {
         container.navigationRequests.route.collect { requested ->
@@ -114,7 +139,7 @@ private fun AppNavHost(
             }
             composable(Routes.HISTORY) {
                 val vm: HistoryViewModel = viewModel(factory = factory)
-                HistoryScreen(vm) { transfer -> navController.navigate(Routes.generate(transfer.workflowPath, transfer.workflowName)) }
+                HistoryScreen(vm, onReuse = ::openTransfer)
             }
             composable(
                 Routes.GENERATE_PATTERN,
@@ -142,7 +167,7 @@ private fun AppNavHost(
                     taskId = entry.arguments?.getString("taskId").orEmpty(),
                     onBack = { navController.popBackStack() },
                     onRetry = { newTaskId -> navController.navigate(Routes.task(newTaskId)) { launchSingleTop = true } },
-                    onReuse = { transfer -> navController.navigate(Routes.generate(transfer.workflowPath, transfer.workflowName)) },
+                    onReuse = ::openTransfer,
                 )
             }
             composable(Routes.SETTINGS) {
