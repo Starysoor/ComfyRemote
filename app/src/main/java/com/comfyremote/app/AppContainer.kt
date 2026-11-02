@@ -9,6 +9,7 @@ import com.comfyremote.app.data.media.GalleryExporter
 import com.comfyremote.app.data.media.IncomingMediaRepository
 import com.comfyremote.app.data.repository.AiRepository
 import com.comfyremote.app.data.repository.AiSettingsStore
+import com.comfyremote.app.data.repository.AiSkillBindingStore
 import com.comfyremote.app.data.repository.AiSkillStore
 import com.comfyremote.app.data.repository.DraftTransferRepository
 import com.comfyremote.app.data.repository.HistoryRepository
@@ -31,6 +32,7 @@ class AppContainer(val app: Application) {
 
     val aiSettingsStore = AiSettingsStore(prefs)
     val aiSkillStore = AiSkillStore(prefs)
+    val aiSkillBindingStore = AiSkillBindingStore(prefs)
     val aiRepository = AiRepository(aiSettingsStore)
 
     val serverRepository = ServerRepository(prefs)
