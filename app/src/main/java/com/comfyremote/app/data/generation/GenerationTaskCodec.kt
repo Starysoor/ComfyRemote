@@ -38,6 +38,10 @@ object GenerationTaskCodec {
         .put("seedValues", JSONObject(task.seedValues))
         .put("recovered", task.recovered)
         .put("recoveryNote", task.recoveryNote ?: JSONObject.NULL)
+        .put("localPending", task.localPending)
+        .put("batchId", task.batchId ?: JSONObject.NULL)
+        .put("batchIndex", task.batchIndex ?: JSONObject.NULL)
+        .put("batchSize", task.batchSize ?: JSONObject.NULL)
 
     private fun taskFromJson(o: JSONObject): GenerationTask? {
         val request = o.optJSONObject("request")?.let(::requestFromJson) ?: return null
@@ -64,6 +68,10 @@ object GenerationTaskCodec {
             seedValues = stringMap(o.optJSONObject("seedValues")),
             recovered = o.optBoolean("recovered", false),
             recoveryNote = nullableString(o, "recoveryNote"),
+            localPending = o.optBoolean("localPending", false),
+            batchId = nullableString(o, "batchId"),
+            batchIndex = nullableInt(o, "batchIndex"),
+            batchSize = nullableInt(o, "batchSize"),
         )
     }
 
