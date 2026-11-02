@@ -36,11 +36,7 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
                     item.tags.any { it.contains(q, true) }
                 )
         }.sortedWith(compareByDescending<HistoryItem> { it.favorite }.thenByDescending { it.time })
-    }.stateIn(
-        viewModelScope,
-        SharingStarted.Eagerly,
-        container.historyRepository.load(),
-    )
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, container.historyRepository.load())
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
@@ -48,11 +44,7 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
     fun setQuery(value: String) { _query.value = value }
     fun toggleFavoritesOnly() { _favoritesOnly.value = !_favoritesOnly.value }
     fun toggleFavorite(id: String) = container.historyRepository.toggleFavorite(id)
-    fun setTags(id: String, raw: String) = container.historyRepository.setTags(
-        id,
-        raw.split(',', '，', '#').map(String::trim).filter(String::isNotBlank),
-    )
-
+    fun setTags(id: String, raw: String) = container.historyRepository.setTags(id, raw.split(',', '，', '#').map(String::trim).filter(String::isNotBlank))
     fun delete(id: String) = container.historyRepository.delete(id)
     fun deleteMany(ids: Collection<String>) = container.historyRepository.deleteMany(ids)
 
@@ -72,17 +64,16 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
         _message.value = com.comfyremote.app.ui.L10n.t("已加入预设库", "Saved to preset library")
     }
 
-    fun prepareReuse(item: HistoryItem): DraftTransfer? = prepareTransfer(item, null)
+    fun prepareReuse(item: HistoryItem): DraftTransfer? = prepareTransfer(item, null, reproduceSeed = true)
+    fun prepareReference(item: HistoryItem, localPath: String): DraftTransfer? = prepareTransfer(item, localPath, reproduceSeed = false)
 
-    fun prepareReference(item: HistoryItem, localPath: String): DraftTransfer? = prepareTransfer(item, localPath)
-
-    private fun prepareTransfer(item: HistoryItem, referenceLocalPath: String?): DraftTransfer? {
+    private fun prepareTransfer(item: HistoryItem, referenceLocalPath: String?, reproduceSeed: Boolean): DraftTransfer? {
         if (item.wfPath.isBlank()) return null
         val transfer = DraftTransfer(
             workflowPath = item.wfPath,
             workflowName = item.wfName,
             values = item.values,
-            randomSeed = item.randomSeed,
+            randomSeed = if (reproduceSeed && item.seeds.isNotBlank()) false else item.randomSeed,
             serverUrl = item.serverUrl.takeIf(String::isNotBlank),
             referenceLocalPath = referenceLocalPath,
         )
