@@ -19,8 +19,12 @@ import com.comfyremote.app.data.generation.GenerationRequest
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.media.ImagePreprocessor
 import com.comfyremote.app.data.repository.PromptPreset
+import com.comfyremote.app.data.repository.WorkflowInsight
+import com.comfyremote.app.data.repository.WorkflowInsights
 import com.comfyremote.app.ui.L10n
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +32,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.File
+import java.util.UUID
 
 data class WorkflowDraft(
     val workflowPath: String,
@@ -47,10 +53,13 @@ data class ImageUploadStatus(
     val message: String? = null,
 )
 
+enum class PresetApplyMode { ALL, PROMPTS, PARAMETERS }
+
 data class GenerateUiState(
     val loading: Boolean = false,
     val error: String? = null,
     val draft: WorkflowDraft? = null,
+    val insight: WorkflowInsight? = null,
     val activeTaskId: String? = null,
     val skills: List<AiSkillDef> = AiSkillDef.defaults(),
     val aiBusy: String? = null,
@@ -58,6 +67,8 @@ data class GenerateUiState(
     val presets: List<PromptPreset> = emptyList(),
     val presetQuery: String = "",
     val uploads: Map<String, ImageUploadStatus> = emptyMap(),
+    val batchCount: Int = 1,
+    val batchLocalQueue: Boolean = true,
     val message: String? = null,
 ) {
     val filteredPresets: List<PromptPreset>
@@ -66,7 +77,7 @@ data class GenerateUiState(
             val path = draft?.workflowPath
             return presets.asSequence()
                 .filter { p ->
-                    q.isBlank() || p.title.contains(q, true) ||
+                    q.isBlank() || p.title.contains(q, true) || p.folder.contains(q, true) ||
                         p.prompts.any { it.value.contains(q, true) || it.label.contains(q, true) } ||
                         p.tags.any { it.contains(q, true) } ||
                         p.values.values.any { it.contains(q, true) }
@@ -74,6 +85,7 @@ data class GenerateUiState(
                 .sortedWith(
                     compareByDescending<PromptPreset> { it.favorite }
                         .thenByDescending { it.workflowPath != null && it.workflowPath == path }
+                        .thenBy { it.folder.lowercase() }
                         .thenByDescending { it.lastUsedAt ?: 0L }
                         .thenByDescending { it.createdAt }
                 )
@@ -114,6 +126,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     private var converted: ConvertedWorkflow? = null
     private var loadedPath: String? = null
     private val appliedSeedTasks = mutableSetOf<String>()
+    private var draftSaveJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -147,7 +160,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         if (path.isBlank()) return
         if (loadedPath == path && (_state.value.loading || _state.value.draft != null)) return
         loadedPath = path
-        _state.update { it.copy(loading = true, error = null, draft = null) }
+        _state.update { it.copy(loading = true, error = null, draft = null, insight = null) }
         viewModelScope.launch {
             runCatching { container.workflowRepository.convert(WorkflowEntry(path, name, "")) }
                 .onSuccess { conv ->
@@ -156,22 +169,28 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                         conv.prompt.optJSONObject(nodeId)?.optJSONObject("_meta")?.optString("title").orEmpty()
                     }
                     val transfer = container.draftTransferRepository.consume(path)
+                    val remembered = if (transfer == null) {
+                        container.workflowDraftStore.load(path, container.serverSession.url)
+                    } else null
+                    val draft = WorkflowDraft(
+                        workflowPath = path,
+                        workflowName = name,
+                        fields = conv.fields,
+                        values = transfer?.values ?: remembered?.values.orEmpty(),
+                        randomSeed = transfer?.randomSeed ?: remembered?.randomSeed ?: true,
+                        warnings = conv.warnings,
+                        notes = conv.notes,
+                        nodeTitles = titles,
+                    )
                     _state.update {
                         it.copy(
                             loading = false,
-                            draft = WorkflowDraft(
-                                workflowPath = path,
-                                workflowName = name,
-                                fields = conv.fields,
-                                values = transfer?.values.orEmpty(),
-                                randomSeed = transfer?.randomSeed ?: true,
-                                warnings = conv.warnings,
-                                notes = conv.notes,
-                                nodeTitles = titles,
-                            ),
+                            draft = draft,
+                            insight = insightFor(draft, conv),
                             activeTaskId = null,
                         )
                     }
+                    transfer?.referenceLocalPath?.takeIf(String::isNotBlank)?.let(::useLocalResultAsReference)
                     consumeIncomingMedia()
                 }
                 .onFailure { e ->
@@ -183,8 +202,17 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     fun updateValue(key: String, value: String) = updateDraft { it.copy(values = it.values + (key to value)) }
     fun toggleRandomSeed() = updateDraft { it.copy(randomSeed = !it.randomSeed) }
     fun setPresetQuery(value: String) = _state.update { it.copy(presetQuery = value) }
+    fun setBatchCount(value: Int) = _state.update { it.copy(batchCount = value.coerceIn(1, MAX_BATCH)) }
+    fun toggleBatchLocalQueue() = _state.update { it.copy(batchLocalQueue = !it.batchLocalQueue) }
     fun clearMessage() = _state.update { it.copy(message = null) }
     fun dismissAiResult() = _state.update { it.copy(aiResult = null) }
+
+    fun resetRememberedDraft() {
+        val draft = _state.value.draft ?: return
+        container.workflowDraftStore.clear(draft.workflowPath, container.serverSession.url)
+        updateDraft { it.copy(values = emptyMap(), randomSeed = true) }
+        _state.update { it.copy(message = L10n.t("已恢复工作流默认值", "Workflow defaults restored")) }
+    }
 
     fun generate() {
         val draft = _state.value.draft ?: return
@@ -193,20 +221,51 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             _state.update { it.copy(message = L10n.t("服务器已断开", "Server disconnected")) }
             return
         }
+        val blocking = _state.value.insight?.blockingIssues.orEmpty()
+        if (blocking.isNotEmpty()) {
+            _state.update { it.copy(message = L10n.t("请先修复兼容性问题：", "Fix compatibility issue first: ") + blocking.first().message) }
+            return
+        }
         val currentId = _state.value.activeTaskId
         if (currentId != null && tasks.value.firstOrNull { it.taskId == currentId }?.isActive == true) return
-        val request = GenerationRequest(
+
+        persistDraftNow(draft)
+        val count = _state.value.batchCount.coerceIn(1, MAX_BATCH)
+        val requests = (0 until count).map { index -> buildRequest(draft, cv, index) }
+        val ids = if (requests.size == 1) {
+            listOf(container.generationManager.submit(requests.single()))
+        } else {
+            container.generationManager.submitBatch(requests, localQueue = _state.value.batchLocalQueue)
+        }
+        _state.update {
+            it.copy(
+                activeTaskId = ids.firstOrNull(),
+                message = if (ids.size > 1) L10n.t("已创建 ${ids.size} 个批量任务", "Created ${ids.size} batch tasks") else null,
+            )
+        }
+    }
+
+    private fun buildRequest(draft: WorkflowDraft, cv: ConvertedWorkflow, batchOffset: Int): GenerationRequest {
+        var values = draft.values
+        if (!draft.randomSeed && batchOffset > 0) {
+            draft.fields.filter { it.kind == FieldKind.SEED }.forEach { field ->
+                val raw = values[field.key] ?: field.value
+                val seed = raw.toLongOrNull()
+                if (seed != null) values = values + (field.key to (seed + batchOffset).toString())
+            }
+        }
+        return GenerationRequest(
+            id = UUID.randomUUID().toString(),
             serverUrl = container.serverSession.url,
             workflowPath = draft.workflowPath,
             workflowName = draft.workflowName,
-            fieldValues = draft.values,
+            fieldValues = values,
             randomSeed = draft.randomSeed,
             nodeTitles = draft.nodeTitles,
             fields = draft.fields,
             convertedPrompt = JSONObject(cv.prompt.toString()),
+            createdAt = System.currentTimeMillis() + batchOffset,
         )
-        val taskId = container.generationManager.submit(request)
-        _state.update { it.copy(activeTaskId = taskId) }
     }
 
     fun cancelActiveTask() {
@@ -275,6 +334,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 workflowPath = draft.workflowPath,
                 createdAt = System.currentTimeMillis(),
                 tags = listOf("prompt"),
+                folder = draft.workflowName,
             )
         )
         _state.update { it.copy(message = L10n.t("已保存到提示词库", "Saved to prompt library")) }
@@ -295,6 +355,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 values = values,
                 randomSeed = draft.randomSeed,
                 tags = listOf("workflow"),
+                folder = draft.workflowName,
             )
         )
         _state.update { it.copy(message = L10n.t("已保存工作流预设", "Workflow preset saved")) }
@@ -302,27 +363,55 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
 
     fun deletePreset(id: String) { container.promptPresetRepository.delete(id) }
     fun togglePresetFavorite(id: String) { container.promptPresetRepository.toggleFavorite(id) }
+    fun updatePresetMeta(id: String, title: String, tags: String, folder: String) {
+        container.promptPresetRepository.updateMeta(
+            id,
+            title,
+            tags.split(',', '，', '#').map(String::trim).filter(String::isNotBlank),
+            folder,
+        )
+    }
 
-    fun applyPreset(preset: PromptPreset) {
+    fun exportPresets(): String = container.promptPresetRepository.exportJson()
+
+    fun importPresets(raw: String) {
+        val count = runCatching { container.promptPresetRepository.importJson(raw) }.getOrElse {
+            _state.update { state -> state.copy(message = L10n.t("导入失败：", "Import failed: ") + (it.message ?: "invalid JSON")) }
+            return
+        }
+        _state.update { it.copy(message = L10n.t("已导入 $count 个预设", "Imported $count presets")) }
+    }
+
+    fun applyPreset(preset: PromptPreset, mode: PresetApplyMode = PresetApplyMode.ALL) {
         container.promptPresetRepository.markUsed(preset.id)
         updateDraft { draft ->
+            val textFields = draft.fields.filter { it.kind == FieldKind.TEXT }
+            val textKeys = textFields.mapTo(hashSetOf()) { it.key }
+            val parameterKeys = draft.fields.filter { it.kind != FieldKind.TEXT }.mapTo(hashSetOf()) { it.key }
+            val knownKeys = draft.fields.mapTo(hashSetOf()) { it.key }
+            var values = draft.values
+
             if (preset.isWorkflowPreset && preset.workflowPath == draft.workflowPath) {
-                val knownKeys = draft.fields.mapTo(hashSetOf()) { it.key }
                 val accepted = preset.values.filterKeys { it in knownKeys }
-                draft.copy(
-                    values = draft.values + accepted,
-                    randomSeed = preset.randomSeed ?: draft.randomSeed,
-                )
-            } else {
-                val textFields = draft.fields.filter { it.kind == FieldKind.TEXT }
+                when (mode) {
+                    PresetApplyMode.ALL -> values = values + accepted
+                    PresetApplyMode.PROMPTS -> values = values + accepted.filterKeys { it in textKeys }
+                    PresetApplyMode.PARAMETERS -> values = values + accepted.filterKeys { it in parameterKeys }
+                }
+            }
+
+            if (!preset.isWorkflowPreset || mode != PresetApplyMode.PARAMETERS) {
                 val byLabel = preset.prompts.associateBy { it.label }
-                var values = draft.values
                 textFields.forEachIndexed { index, field ->
                     val prompt = byLabel[field.label] ?: preset.prompts.getOrNull(index)
                     if (prompt != null) values = values + (field.key to prompt.value)
                 }
-                draft.copy(values = values)
             }
+
+            draft.copy(
+                values = values,
+                randomSeed = if (mode != PresetApplyMode.PROMPTS) preset.randomSeed ?: draft.randomSeed else draft.randomSeed,
+            )
         }
     }
 
@@ -349,6 +438,31 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 runCatching { uploadOne(container.serverSession.require(), uri, index) }
                     .onSuccess { name -> updateValue(field.key, name); clearUpload(field.key) }
                     .onFailure { e -> setUpload(field.key, ImageUploadStatus(ImageUploadPhase.FAILED, e.message)) }
+            }
+        }
+    }
+
+    fun useLocalResultAsReference(localPath: String) {
+        val draft = _state.value.draft ?: return
+        val field = draft.fields.firstOrNull { it.kind == FieldKind.IMAGE }
+        if (field == null) {
+            _state.update { it.copy(message = L10n.t("当前工作流没有可接收参考图的输入", "This workflow has no reference-image input")) }
+            return
+        }
+        if (!container.serverSession.connected) return
+        viewModelScope.launch {
+            setUpload(field.key, ImageUploadStatus(ImageUploadPhase.UPLOADING))
+            runCatching {
+                val file = File(localPath)
+                val bytes = withContext(Dispatchers.IO) { file.readBytes() }
+                val ext = file.extension.ifBlank { "png" }
+                container.serverSession.require().uploadImage(bytes, "result_ref_${System.currentTimeMillis()}.$ext")
+            }.onSuccess { name ->
+                updateValue(field.key, name)
+                clearUpload(field.key)
+                _state.update { it.copy(message = L10n.t("结果图已设为参考图", "Result set as reference image")) }
+            }.onFailure { e ->
+                setUpload(field.key, ImageUploadStatus(ImageUploadPhase.FAILED, e.message))
             }
         }
     }
@@ -388,8 +502,29 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         return api.uploadImage(bytes, "mobile_${System.currentTimeMillis()}_$seq.$ext")
     }
 
+    private fun insightFor(draft: WorkflowDraft, cv: ConvertedWorkflow = converted ?: return WorkflowInsight(emptySet(), emptyList())): WorkflowInsight =
+        WorkflowInsights.analyze(cv.prompt, draft.fields, draft.values, draft.warnings)
+
     private fun updateDraft(block: (WorkflowDraft) -> WorkflowDraft) {
-        _state.update { state -> state.copy(draft = state.draft?.let(block)) }
+        val current = _state.value.draft ?: return
+        val next = block(current)
+        _state.update { state -> state.copy(draft = next, insight = insightFor(next)) }
+        scheduleDraftSave(next)
+    }
+
+    private fun scheduleDraftSave(draft: WorkflowDraft) {
+        draftSaveJob?.cancel()
+        draftSaveJob = viewModelScope.launch {
+            delay(450)
+            persistDraftNow(draft)
+        }
+    }
+
+    private fun persistDraftNow(draft: WorkflowDraft) {
+        val serverUrl = container.serverSession.url
+        if (serverUrl.isNotBlank()) {
+            container.workflowDraftStore.save(draft.workflowPath, serverUrl, draft.values, draft.randomSeed)
+        }
     }
 
     private fun setUpload(key: String, status: ImageUploadStatus) {
@@ -399,4 +534,6 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     private fun clearUpload(key: String) {
         _state.update { it.copy(uploads = it.uploads - key) }
     }
+
+    companion object { private const val MAX_BATCH = 16 }
 }
