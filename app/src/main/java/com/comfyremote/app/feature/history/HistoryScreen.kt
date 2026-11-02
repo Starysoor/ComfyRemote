@@ -169,6 +169,10 @@ fun HistoryScreen(
             onClose = { viewingId = null },
             onSave = viewModel::save,
             onShare = { shareImage(context, it) },
+            onContinue = { path ->
+                viewModel.prepareReference(item, path)?.let(onReuse)
+                viewingId = null
+            },
             onBookmark = { viewModel.bookmark(item) },
             onReuse = { viewModel.prepareReuse(item)?.let(onReuse); viewingId = null },
             onFavorite = { viewModel.toggleFavorite(item.id) },
@@ -240,6 +244,7 @@ fun HistoryDetailDialog(
     onClose: () -> Unit,
     onSave: (Bitmap) -> Unit,
     onShare: (String) -> Unit,
+    onContinue: (String) -> Unit,
     onBookmark: () -> Unit,
     onReuse: () -> Unit,
     onFavorite: () -> Unit,
@@ -274,6 +279,7 @@ fun HistoryDetailDialog(
                         Row(Modifier.fillMaxWidth()) {
                             TextButton(onClick = { onSave(it) }) { Text(L10n.t("保存", "Save")) }
                             TextButton(onClick = { onShare(path) }) { Text(L10n.t("分享", "Share")) }
+                            TextButton(onClick = { onContinue(path) }) { Text(L10n.t("作为参考继续", "Continue as reference")) }
                         }
                     }
                 }
@@ -290,7 +296,10 @@ fun HistoryDetailDialog(
                                 Text(prompt.value, color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.bodySmall)
                             }
                             item.seeds.takeIf(String::isNotBlank)?.let {
-                                Text("SEED · $it", fontFamily = Mono, fontSize = 10.sp, color = Color.White.copy(alpha = 0.75f))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("SEED · $it", fontFamily = Mono, fontSize = 10.sp, color = Color.White.copy(alpha = 0.75f), modifier = Modifier.weight(1f))
+                                    TextButton(onClick = { copy(it) }) { Text(L10n.t("复制 Seed", "Copy seed")) }
+                                }
                             }
                             OutlinedTextField(
                                 value = tagsText,
