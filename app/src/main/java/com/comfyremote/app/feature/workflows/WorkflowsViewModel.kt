@@ -160,10 +160,12 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
 
     private fun loadInternal(force: Boolean) {
         if (!container.serverSession.connected || (_state.value.loading && !force)) return
+        val requestedUrl = container.serverSession.url
         _state.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
             runCatching { container.workflowRepository.list() }
                 .onSuccess { list ->
+                    if (container.serverSession.url != requestedUrl) return@onSuccess
                     _state.update {
                         it.copy(
                             loading = false,
@@ -174,6 +176,7 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                     }
                 }
                 .onFailure { e ->
+                    if (container.serverSession.url != requestedUrl) return@onFailure
                     _state.update {
                         it.copy(
                             loading = false,
