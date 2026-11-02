@@ -266,6 +266,7 @@ class GenerationRunner(
         if (historyCancelled(entry)) {
             return task.copy(
                 phase = GenerationPhase.CANCELLED,
+                progress = null,
                 completedAt = System.currentTimeMillis(),
                 preview = null,
                 queuePosition = null,
@@ -275,6 +276,7 @@ class GenerationRunner(
         extractError(entry, task.request.nodeTitles)?.let { error ->
             return task.copy(
                 phase = GenerationPhase.FAILED,
+                progress = null,
                 error = error,
                 completedAt = System.currentTimeMillis(),
                 preview = null,
@@ -297,6 +299,7 @@ class GenerationRunner(
         if (outputImages.isNotEmpty() && results.isEmpty()) {
             return task.copy(
                 phase = GenerationPhase.FAILED,
+                progress = null,
                 error = GenerationError(ErrorKind.DOWNLOAD, "All result image downloads failed"),
                 completedAt = System.currentTimeMillis(),
                 preview = null,
@@ -329,6 +332,7 @@ class GenerationRunner(
 
         return task.copy(
             phase = GenerationPhase.SUCCEEDED,
+            progress = 1f,
             results = results,
             completedAt = System.currentTimeMillis(),
             preview = null,

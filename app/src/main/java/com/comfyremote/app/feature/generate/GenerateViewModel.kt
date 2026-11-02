@@ -200,10 +200,23 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun aiExpand(fieldKey: String, currentText: String, skill: AiSkillDef) {
-        if (currentText.isBlank()) {
+        // Negative-prompt skill auto-reads the first positive prompt field
+        var source = currentText
+        if (skill.id == AiSkillDef.DEFAULT_NEG_ID) {
+            val positive = _state.value.draft?.fields
+                ?.firstOrNull { it.kind == FieldKind.TEXT && it.multiline && it.key != fieldKey }
+            val posText = positive?.let { _state.value.draft?.values?.get(it.key) ?: it.value }
+            if (!posText.isNullOrBlank()) source = posText
+            else if (currentText.isBlank()) {
+                _state.update { it.copy(message = L10n.t("先在正向提示词框输入内容，AI 才能生成对应的负面提示词", "Type a positive prompt first")) }
+                return
+            }
+        }
+        if (source.isBlank() && skill.id != AiSkillDef.DEFAULT_NEG_ID) {
             _state.update { it.copy(message = L10n.t("先输入一些提示词", "Type a prompt first")) }
             return
         }
+        // continue with source as the text for expansion
         val settings = container.aiSettingsStore.load()
         if (!settings.configured) {
             _state.update { it.copy(message = L10n.t("请先配置 AI 设置", "Configure AI settings first")) }
@@ -212,7 +225,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         val busy = "$fieldKey|${skill.id}"
         _state.update { it.copy(aiBusy = busy) }
         viewModelScope.launch {
-            runCatching { container.aiRepository.chat(skill.systemPrompt, currentText) }
+            runCatching { container.aiRepository.chat(skill.systemPrompt, source) }
                 .onSuccess { out -> _state.update { it.copy(aiBusy = null, aiResult = AiResult(fieldKey, out)) } }
                 .onFailure { e -> _state.update { it.copy(aiBusy = null, message = e.message ?: "AI error") } }
         }

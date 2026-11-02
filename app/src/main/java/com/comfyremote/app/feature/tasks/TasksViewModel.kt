@@ -20,6 +20,14 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
 
     fun task(id: String): GenerationTask? = tasks.value.firstOrNull { it.taskId == id }
 
+    fun delete(id: String) {
+        container.generationManager.deleteTask(id)
+    }
+
+    fun deleteFinished() {
+        container.generationManager.deleteFinished()
+    }
+
     fun cancel(id: String) {
         viewModelScope.launch { container.generationManager.cancel(id) }
     }
