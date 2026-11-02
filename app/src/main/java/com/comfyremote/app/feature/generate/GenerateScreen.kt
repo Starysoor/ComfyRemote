@@ -105,6 +105,7 @@ fun GenerateScreen(
     val task = tasks.firstOrNull { it.taskId == state.activeTaskId }
     val running = task?.isActive == true
     val results = task?.results.orEmpty()
+    val visibleResults = results.takeLast(2)
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
 
@@ -142,6 +143,11 @@ fun GenerateScreen(
     var compareOpen by remember { mutableStateOf(false) }
     var viewingResult by remember { mutableStateOf<Int?>(null) }
     var selectedResult by rememberSaveable { mutableStateOf(0) }
+
+    LaunchedEffect(task?.taskId) {
+        selectedResult = 0
+        viewingResult = null
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -242,7 +248,7 @@ fun GenerateScreen(
                                 minLines = if (field.multiline) 4 else 1,
                                 maxLines = if (field.multiline) 14 else 2,
                                 modifier = Modifier.fillMaxWidth().onFocusChanged { st ->
-                                    if (st.isFocused && draft.values[field.key] == null && field.value.isNotBlank()) {
+                                    if (field.multiline && st.isFocused && draft.values[field.key] == null && field.value.isNotBlank()) {
                                         viewModel.updateValue(field.key, "")
                                     }
                                 },
@@ -356,40 +362,40 @@ fun GenerateScreen(
                         }
                     }
 
-                    if (results.isNotEmpty()) {
+                    if (visibleResults.isNotEmpty()) {
                         item("result-header") {
                             SectionHeader(L10n.t("生成结果", "Results")) {
                                 if (results.size > 1) TextButton(onClick = { compareOpen = true }) { Text(L10n.t("对比", "Compare")) }
                             }
                         }
                         item("result-limit-note") {
-                            if (results.size > 2) Text(
-                                L10n.t("仅显示最近 2 张，全部见历史页", "Showing latest 2 of " + "${results.size}" + " - see History"),
+                            if (results.size > visibleResults.size) Text(
+                                L10n.t("仅显示最近 2 张，全部见历史页", "Showing latest 2 of ${results.size} - see History"),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         item("result-main") {
-                            val recent = results.takeLast(2)
-                            val index = selectedResult.coerceIn(recent.indices)
-                            val result = recent[index]
+                            val index = selectedResult.coerceIn(visibleResults.indices)
+                            val result = visibleResults[index]
+                            val globalIndex = results.size - visibleResults.size + index
                             val bitmap by produceState<Bitmap?>(null, result.localPath) {
                                 value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1600) }
                             }
                             bitmap?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxWidth().clickable { viewingResult = index }, contentScale = ContentScale.FillWidth) }
-                            Text("${index + 1} / ${results.size}", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${globalIndex + 1} / ${results.size}", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        if (results.size > 1) item("result-thumbs") {
-                            val recentThumbs = results.takeLast(2)
+                        if (visibleResults.size > 1) item("result-thumbs") {
+                            val selectedIndex = selectedResult.coerceIn(visibleResults.indices)
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                itemsIndexed(recentThumbs, key = { i, r -> "$i:${r.localPath}" }) { index, result ->
+                                itemsIndexed(visibleResults, key = { i, r -> "$i:${r.localPath}" }) { index, result ->
                                     val bitmap by produceState<Bitmap?>(null, result.localPath) {
                                         value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 180) }
                                     }
                                     bitmap?.let {
                                         Image(
                                             it.asImageBitmap(), null,
-                                            Modifier.size(72.dp).then(if (index == selectedResult) Modifier.border(2.dp, MaterialTheme.colorScheme.primary) else Modifier).clickable { selectedResult = index },
+                                            Modifier.size(72.dp).then(if (index == selectedIndex) Modifier.border(2.dp, MaterialTheme.colorScheme.primary) else Modifier).clickable { selectedResult = index },
                                             contentScale = ContentScale.Crop,
                                         )
                                     }
@@ -400,8 +406,8 @@ fun GenerateScreen(
                             task?.seedInfo?.takeIf(String::isNotBlank)?.let { Text("seed: $it", fontFamily = Mono, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         }
                         item("result-actions") {
-                            val index = selectedResult.coerceIn(results.indices)
-                            val result = results[index]
+                            val index = selectedResult.coerceIn(visibleResults.indices)
+                            val result = visibleResults[index]
                             val bitmap by produceState<Bitmap?>(null, result.localPath) { value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1600) } }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 TextButton(onClick = { shareImage(context, result.localPath) }) { Icon(Icons.Default.Share, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(L10n.t("分享", "Share")) }
@@ -437,7 +443,7 @@ fun GenerateScreen(
     }
     if (compareOpen) CompareDialog(results) { compareOpen = false }
     viewingResult?.let { index ->
-        results.getOrNull(index)?.let { result ->
+        visibleResults.getOrNull(index)?.let { result ->
             val bitmap by produceState<Bitmap?>(null, result.localPath) { value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1800) } }
             bitmap?.let {
                 ImageViewerDialog(

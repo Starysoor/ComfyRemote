@@ -22,6 +22,18 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      - name: Verify tag matches app version
+        shell: bash
+        run: |
+          APP_VERSION=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n1)
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "tag=$TAG_VERSION app=$APP_VERSION"
+          test -n "$APP_VERSION"
+          if [ "$TAG_VERSION" != "$APP_VERSION" ]; then
+            echo "Release tag v$TAG_VERSION does not match Gradle versionName $APP_VERSION" >&2
+            exit 1
+          fi
+
       - name: Restore signing keystore
         run: |
           mkdir -p keystore
