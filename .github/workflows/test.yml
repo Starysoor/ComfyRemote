@@ -29,10 +29,17 @@ jobs:
       - name: Run Android lint
         run: gradle :app:lintDebug --no-daemon
 
+      - name: Read app version
+        id: app_version
+        run: |
+          VERSION=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n 1)
+          test -n "$VERSION"
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Upload debug APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: comfyremote-v1.9.3-debug
+          name: comfyremote-v${{ steps.app_version.outputs.value }}-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
