@@ -502,8 +502,10 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         return api.uploadImage(bytes, "mobile_${System.currentTimeMillis()}_$seq.$ext")
     }
 
-    private fun insightFor(draft: WorkflowDraft, cv: ConvertedWorkflow = converted ?: return WorkflowInsight(emptySet(), emptyList())): WorkflowInsight =
-        WorkflowInsights.analyze(cv.prompt, draft.fields, draft.values, draft.warnings)
+    private fun insightFor(draft: WorkflowDraft, cv: ConvertedWorkflow? = converted): WorkflowInsight {
+        val actual = cv ?: return WorkflowInsight(emptySet(), emptyList())
+        return WorkflowInsights.analyze(actual.prompt, draft.fields, draft.values, draft.warnings)
+    }
 
     private fun updateDraft(block: (WorkflowDraft) -> WorkflowDraft) {
         val current = _state.value.draft ?: return
