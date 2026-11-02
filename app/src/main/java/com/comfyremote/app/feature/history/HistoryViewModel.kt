@@ -66,14 +66,25 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
                 workflowPath = item.wfPath.ifBlank { null },
                 createdAt = System.currentTimeMillis(),
                 tags = (listOf("result") + item.tags).distinct(),
+                folder = item.wfName,
             )
         )
         _message.value = com.comfyremote.app.ui.L10n.t("已加入预设库", "Saved to preset library")
     }
 
-    fun prepareReuse(item: HistoryItem): DraftTransfer? {
+    fun prepareReuse(item: HistoryItem): DraftTransfer? = prepareTransfer(item, null)
+
+    fun prepareReference(item: HistoryItem, localPath: String): DraftTransfer? = prepareTransfer(item, localPath)
+
+    private fun prepareTransfer(item: HistoryItem, referenceLocalPath: String?): DraftTransfer? {
         if (item.wfPath.isBlank()) return null
-        val transfer = DraftTransfer(item.wfPath, item.wfName, item.values, item.randomSeed)
+        val transfer = DraftTransfer(
+            workflowPath = item.wfPath,
+            workflowName = item.wfName,
+            values = item.values,
+            randomSeed = item.randomSeed,
+            referenceLocalPath = referenceLocalPath,
+        )
         container.draftTransferRepository.put(transfer)
         return transfer
     }
