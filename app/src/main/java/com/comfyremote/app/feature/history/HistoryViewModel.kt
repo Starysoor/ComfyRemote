@@ -83,6 +83,7 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
             workflowName = item.wfName,
             values = item.values,
             randomSeed = item.randomSeed,
+            serverUrl = item.serverUrl.takeIf(String::isNotBlank),
             referenceLocalPath = referenceLocalPath,
         )
         container.draftTransferRepository.put(transfer)
