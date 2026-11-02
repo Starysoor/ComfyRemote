@@ -65,6 +65,13 @@ data class GenerationTask(
     /** True when this runtime task was restored from disk after process recreation. */
     val recovered: Boolean = false,
     val recoveryNote: String? = null,
+    /** True while the request is intentionally waiting in the app-side queue and has not reached ComfyUI yet. */
+    val localPending: Boolean = false,
+    /** Optional batch identity shared by variation jobs created together. */
+    val batchId: String? = null,
+    /** 1-based position within a batch. */
+    val batchIndex: Int? = null,
+    val batchSize: Int? = null,
 ) {
     val isActive: Boolean
         get() = phase == GenerationPhase.PREPARING || phase == GenerationPhase.QUEUEING ||
@@ -72,16 +79,28 @@ data class GenerationTask(
 
     val isTerminal: Boolean
         get() = phase == GenerationPhase.CANCELLED || phase == GenerationPhase.SUCCEEDED || phase == GenerationPhase.FAILED
+
+    val isRemoteQueued: Boolean
+        get() = !localPending && (phase == GenerationPhase.QUEUEING || phase == GenerationPhase.QUEUED)
+
+    fun elapsedMs(now: Long = System.currentTimeMillis()): Long {
+        val start = startedAt ?: createdAt
+        val end = completedAt ?: now
+        return (end - start).coerceAtLeast(0L)
+    }
 }
 
-fun GenerationTask.label(): String = when (phase) {
-    GenerationPhase.PREPARING -> com.comfyremote.app.ui.L10n.t("准备中", "Preparing")
-    GenerationPhase.QUEUEING, GenerationPhase.QUEUED -> com.comfyremote.app.ui.L10n.t("排队中", "Queued")
-    GenerationPhase.RUNNING -> com.comfyremote.app.ui.L10n.t("生成中", "Running")
-    GenerationPhase.CANCELLING -> com.comfyremote.app.ui.L10n.t("取消中", "Cancelling")
-    GenerationPhase.CANCELLED -> com.comfyremote.app.ui.L10n.t("已取消", "Cancelled")
-    GenerationPhase.SUCCEEDED -> com.comfyremote.app.ui.L10n.t("完成", "Done")
-    GenerationPhase.FAILED -> com.comfyremote.app.ui.L10n.t("失败", "Failed")
+fun GenerationTask.label(): String {
+    if (localPending) return com.comfyremote.app.ui.L10n.t("本地等待", "Local queue")
+    return when (phase) {
+        GenerationPhase.PREPARING -> com.comfyremote.app.ui.L10n.t("准备中", "Preparing")
+        GenerationPhase.QUEUEING, GenerationPhase.QUEUED -> com.comfyremote.app.ui.L10n.t("排队中", "Queued")
+        GenerationPhase.RUNNING -> com.comfyremote.app.ui.L10n.t("生成中", "Running")
+        GenerationPhase.CANCELLING -> com.comfyremote.app.ui.L10n.t("取消中", "Cancelling")
+        GenerationPhase.CANCELLED -> com.comfyremote.app.ui.L10n.t("已取消", "Cancelled")
+        GenerationPhase.SUCCEEDED -> com.comfyremote.app.ui.L10n.t("完成", "Done")
+        GenerationPhase.FAILED -> com.comfyremote.app.ui.L10n.t("失败", "Failed")
+    }
 }
 
 fun GenerationError.uiLabel(): String = when (kind) {
