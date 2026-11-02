@@ -16,6 +16,7 @@ import org.json.JSONObject
 data class AiSettingsUiState(
     val settings: AiSettings = AiSettings(),
     val skills: List<AiSkillDef> = AiSkillDef.defaults(),
+    val skillBindings: Map<String, List<String>> = emptyMap(),
     val testing: Boolean = false,
     val testResult: String? = null,
     val message: String? = null,
@@ -26,6 +27,7 @@ class AiSettingsViewModel(private val container: AppContainer) : ViewModel() {
         AiSettingsUiState(
             settings = container.aiSettingsStore.load(),
             skills = container.aiSkillStore.load(),
+            skillBindings = container.aiSkillBindingStore.bindings(),
         )
     )
     val state: StateFlow<AiSettingsUiState> = _state.asStateFlow()
@@ -79,22 +81,33 @@ class AiSettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun saveSkill(def: AiSkillDef) {
+    fun patterns(skillId: String): List<String> = _state.value.skillBindings[skillId].orEmpty()
+
+    fun saveSkill(def: AiSkillDef, patterns: List<String> = patterns(def.id)) {
         val list = _state.value.skills.toMutableList()
         val index = list.indexOfFirst { it.id == def.id }
         if (index >= 0) list[index] = def else list += def
         persistSkills(list)
+        container.aiSkillBindingStore.setPatterns(def.id, patterns)
+        refreshBindings()
     }
 
-    fun addSkill(label: String, prompt: String) {
-        persistSkills(_state.value.skills + AiSkillDef("custom_${System.currentTimeMillis()}", label.trim(), prompt, false))
+    fun addSkill(label: String, prompt: String, patterns: List<String>) {
+        val id = "custom_${System.currentTimeMillis()}"
+        persistSkills(_state.value.skills + AiSkillDef(id, label.trim(), prompt, false))
+        container.aiSkillBindingStore.setPatterns(id, patterns)
+        refreshBindings()
     }
 
-    fun deleteSkill(id: String) = persistSkills(_state.value.skills.filter { it.id != id })
+    fun deleteSkill(id: String) {
+        persistSkills(_state.value.skills.filter { it.id != id })
+        container.aiSkillBindingStore.delete(id)
+        refreshBindings()
+    }
 
     fun resetSkill(id: String) {
         val def = AiSkillDef.defaults().firstOrNull { it.id == id } ?: return
-        saveSkill(def)
+        saveSkill(def, patterns(id))
     }
 
     fun clearMessage() = _state.update { it.copy(message = null) }
@@ -106,5 +119,9 @@ class AiSettingsViewModel(private val container: AppContainer) : ViewModel() {
     private fun persistSkills(skills: List<AiSkillDef>) {
         container.aiSkillStore.save(skills)
         _state.update { it.copy(skills = skills) }
+    }
+
+    private fun refreshBindings() {
+        _state.update { it.copy(skillBindings = container.aiSkillBindingStore.bindings()) }
     }
 }
