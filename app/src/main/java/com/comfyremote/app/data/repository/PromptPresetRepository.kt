@@ -17,7 +17,7 @@ class PromptPresetRepository(private val prefs: SharedPreferences) {
     fun load(): List<PromptPreset> = _presets.value
 
     fun save(list: List<PromptPreset>) = synchronized(lock) {
-        val sorted = sort(list)
+        val sorted = sort(list.distinctBy { it.id })
         write(sorted)
         _presets.value = sorted
     }
@@ -66,7 +66,7 @@ class PromptPresetRepository(private val prefs: SharedPreferences) {
 
     /** Returns the number of imported presets. Existing ids are replaced by imported copies. */
     fun importJson(raw: String): Int = synchronized(lock) {
-        val imported = parse(JSONArray(raw)).take(MAX_ITEMS)
+        val imported = parse(JSONArray(raw)).distinctBy { it.id }.take(MAX_ITEMS)
         if (imported.isEmpty()) return@synchronized 0
         val ids = imported.mapTo(hashSetOf()) { it.id }
         val merged = sort((imported + _presets.value.filterNot { it.id in ids }).take(MAX_ITEMS))
@@ -95,7 +95,7 @@ class PromptPresetRepository(private val prefs: SharedPreferences) {
     private fun read(): List<PromptPreset> = runCatching {
         val raw = prefs.getString(KEY, null) ?: prefs.getString(LEGACY_KEY, null)
             ?: return@runCatching emptyList()
-        parse(JSONArray(raw))
+        parse(JSONArray(raw)).distinctBy { it.id }
     }.getOrDefault(emptyList())
 
     private fun parse(arr: JSONArray): List<PromptPreset> = (0 until arr.length()).mapNotNull { i ->
