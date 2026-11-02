@@ -44,6 +44,9 @@ class GenerationTaskCodecTest {
             seedValues = mapOf("2:seed" to "42"),
             recovered = true,
             recoveryNote = "Recovered queued task",
+            batchId = "batch-a",
+            batchIndex = 2,
+            batchSize = 4,
         )
 
         val restored = GenerationTaskCodec.decode(GenerationTaskCodec.encode(listOf(task))).single()
@@ -58,7 +61,43 @@ class GenerationTaskCodecTest {
         assertEquals(FieldKind.TEXT, restored.request.fields.first().kind)
         assertEquals("CLIPTextEncode", restored.request.convertedPrompt.getJSONObject("1").getString("class_type"))
         assertTrue(restored.recovered)
+        assertEquals("batch-a", restored.batchId)
+        assertEquals(2, restored.batchIndex)
+        assertEquals(4, restored.batchSize)
         assertNull(restored.preview)
         assertFalse(restored.isTerminal)
+    }
+
+    @Test
+    fun localPendingBatchTaskRoundTripsWithoutInventingPromptId() {
+        val request = GenerationRequest(
+            id = "local-1",
+            serverUrl = "http://server:8188",
+            workflowPath = "w.json",
+            workflowName = "W",
+            fieldValues = emptyMap(),
+            randomSeed = true,
+            nodeTitles = emptyMap(),
+            fields = emptyList(),
+            convertedPrompt = JSONObject(),
+            createdAt = 10L,
+        )
+        val task = GenerationTask(
+            taskId = "local-1",
+            request = request,
+            localPending = true,
+            batchId = "batch-1",
+            batchIndex = 1,
+            batchSize = 3,
+        )
+
+        val restored = GenerationTaskCodec.decode(GenerationTaskCodec.encode(listOf(task))).single()
+
+        assertTrue(restored.localPending)
+        assertNull(restored.promptId)
+        assertEquals("batch-1", restored.batchId)
+        assertEquals(1, restored.batchIndex)
+        assertEquals(3, restored.batchSize)
+        assertTrue(restored.isActive)
     }
 }
