@@ -187,6 +187,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                             loading = false,
                             draft = draft,
                             insight = insightFor(draft, conv),
+                            skills = container.aiSkillBindingStore.filter(container.aiSkillStore.load(), name, path),
                             activeTaskId = null,
                         )
                     }
@@ -318,7 +319,6 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         dismissAiResult()
     }
 
-    /** Saves only text prompts; compatible with legacy Prompt Library behavior. */
     fun saveCurrentPreset() {
         val draft = _state.value.draft ?: return
         val prompts = currentPrompts(draft)
@@ -340,7 +340,6 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         _state.update { it.copy(message = L10n.t("已保存到提示词库", "Saved to prompt library")) }
     }
 
-    /** Saves the entire editable workflow snapshot, including image/advanced params and seed mode. */
     fun saveCurrentWorkflowPreset() {
         val draft = _state.value.draft ?: return
         val values = draft.fields.associate { field -> field.key to (draft.values[field.key] ?: field.value) }
