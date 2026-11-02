@@ -71,17 +71,9 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
     fun setServerFilter(url: String?) { _serverUrl.value = url }
     fun toggleLocalQueuePaused() = container.generationManager.toggleLocalQueuePaused()
 
-    fun delete(id: String) {
-        container.generationManager.deleteTask(id)
-    }
-
-    fun deleteFinished() {
-        container.generationManager.deleteFinished()
-    }
-
-    fun cancel(id: String) {
-        viewModelScope.launch { container.generationManager.cancel(id) }
-    }
+    fun delete(id: String) { container.generationManager.deleteTask(id) }
+    fun deleteFinished() { container.generationManager.deleteFinished() }
+    fun cancel(id: String) { viewModelScope.launch { container.generationManager.cancel(id) } }
 
     fun cancelQueued() {
         viewModelScope.launch {
@@ -114,11 +106,12 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
 
     fun prepareReuse(id: String): DraftTransfer? {
         val task = task(id) ?: return null
+        val hasActualSeed = task.seedValues.isNotEmpty()
         val transfer = DraftTransfer(
             workflowPath = task.request.workflowPath,
             workflowName = task.request.workflowName,
-            values = if (task.seedValues.isEmpty()) task.request.fieldValues else task.request.fieldValues + task.seedValues,
-            randomSeed = task.request.randomSeed,
+            values = if (hasActualSeed) task.request.fieldValues + task.seedValues else task.request.fieldValues,
+            randomSeed = if (hasActualSeed) false else task.request.randomSeed,
             serverUrl = task.request.serverUrl,
         )
         container.draftTransferRepository.put(transfer)
