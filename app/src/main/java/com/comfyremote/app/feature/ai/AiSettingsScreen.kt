@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.AiSkillDef
 import com.comfyremote.app.ui.L10n
@@ -138,19 +139,35 @@ fun AiSettingsScreen(
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { addingSkill = true }) { Text(L10n.t("＋新增", "+ New")) }
             }
+            Text(
+                L10n.t("每个技能可绑定工作流名称/路径关键词；留空则所有工作流可用。", "Skills can be bound to workflow name/path keywords; blank means available everywhere."),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             state.skills.forEach { skill ->
+                val bindings = state.skillBindings[skill.id].orEmpty()
                 Surface(
                     shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier.fillMaxWidth().clickable { editingSkill = skill },
                 ) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(skill.label, fontWeight = FontWeight.SemiBold)
-                        if (skill.builtin) {
-                            Spacer(Modifier.width(8.dp))
-                            Text(L10n.t("内置", "BUILT-IN"), fontFamily = Mono, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
+                        Column(Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(skill.label, fontWeight = FontWeight.SemiBold)
+                                if (skill.builtin) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(L10n.t("内置", "BUILT-IN"), fontFamily = Mono, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                            Text(
+                                if (bindings.isEmpty()) L10n.t("所有工作流", "All workflows") else bindings.joinToString(" · "),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
-                        Spacer(Modifier.weight(1f))
                         Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -172,8 +189,9 @@ fun AiSettingsScreen(
     editingSkill?.let { skill ->
         SkillEditDialog(
             skill = skill,
+            initialPatterns = state.skillBindings[skill.id].orEmpty(),
             onDismiss = { editingSkill = null },
-            onSave = { viewModel.saveSkill(it); editingSkill = null },
+            onSave = { def, patterns -> viewModel.saveSkill(def, patterns); editingSkill = null },
             onDelete = if (!skill.builtin) ({ viewModel.deleteSkill(skill.id); editingSkill = null }) else null,
             onReset = if (skill.builtin) ({ viewModel.resetSkill(skill.id); editingSkill = null }) else null,
         )
@@ -181,8 +199,9 @@ fun AiSettingsScreen(
     if (addingSkill) {
         SkillEditDialog(
             skill = null,
+            initialPatterns = emptyList(),
             onDismiss = { addingSkill = false },
-            onSave = { viewModel.addSkill(it.label, it.systemPrompt); addingSkill = false },
+            onSave = { def, patterns -> viewModel.addSkill(def.label, def.systemPrompt, patterns); addingSkill = false },
             onDelete = null,
             onReset = null,
         )
@@ -192,25 +211,37 @@ fun AiSettingsScreen(
 @Composable
 private fun SkillEditDialog(
     skill: AiSkillDef?,
+    initialPatterns: List<String>,
     onDismiss: () -> Unit,
-    onSave: (AiSkillDef) -> Unit,
+    onSave: (AiSkillDef, List<String>) -> Unit,
     onDelete: (() -> Unit)?,
     onReset: (() -> Unit)?,
 ) {
     var label by remember(skill) { mutableStateOf(skill?.label.orEmpty()) }
     var prompt by remember(skill) { mutableStateOf(skill?.systemPrompt.orEmpty()) }
+    var patterns by remember(skill, initialPatterns) { mutableStateOf(initialPatterns.joinToString(", ")) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (skill == null) L10n.t("新增技能", "New skill") else L10n.t("编辑技能", "Edit skill")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(label, { label = it }, label = { Text(L10n.t("名称", "Label")) }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    patterns,
+                    { patterns = it },
+                    label = { Text(L10n.t("绑定工作流关键词（逗号分隔）", "Workflow keywords (comma separated)")) },
+                    supportingText = { Text(L10n.t("留空 = 所有工作流", "Blank = all workflows")) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 OutlinedTextField(prompt, { prompt = it }, label = { Text(L10n.t("系统提示词", "System prompt")) }, minLines = 6, maxLines = 14, modifier = Modifier.fillMaxWidth())
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(AiSkillDef(skill?.id ?: "custom_${System.currentTimeMillis()}", label.trim(), prompt, skill?.builtin ?: false)) },
+                onClick = {
+                    val parsed = patterns.split(',', '，', '\n').map(String::trim).filter(String::isNotBlank)
+                    onSave(AiSkillDef(skill?.id ?: "custom_${System.currentTimeMillis()}", label.trim(), prompt, skill?.builtin ?: false), parsed)
+                },
                 enabled = label.isNotBlank() && prompt.isNotBlank(),
             ) { Text(L10n.t("保存", "Save")) }
         },
