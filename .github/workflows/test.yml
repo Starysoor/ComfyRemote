@@ -26,6 +26,9 @@ jobs:
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
 
+      - name: Build release candidate
+        run: gradle :app:assembleRelease --no-daemon
+
       - name: Run Android lint
         run: gradle :app:lintDebug --no-daemon
 
