@@ -119,6 +119,7 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
             workflowName = task.request.workflowName,
             values = if (task.seedValues.isEmpty()) task.request.fieldValues else task.request.fieldValues + task.seedValues,
             randomSeed = task.request.randomSeed,
+            serverUrl = task.request.serverUrl,
         )
         container.draftTransferRepository.put(transfer)
         return transfer
