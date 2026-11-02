@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -22,15 +23,20 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -38,8 +44,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.comfyremote.app.HistoryItem
+import com.comfyremote.app.ServerEntry
 import com.comfyremote.app.WorkflowEntry
 import com.comfyremote.app.data.repository.PromptPreset
+import com.comfyremote.app.data.repository.ServerHealth
 import com.comfyremote.app.ui.L10n
 import com.comfyremote.app.ui.Mono
 import com.comfyremote.app.ui.components.EmptyState
@@ -55,7 +63,14 @@ fun WorkflowsScreen(
     onSettings: () -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
+    val snackbar = remember { SnackbarHostState() }
+
+    LaunchedEffect(state.message) {
+        state.message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = {
@@ -78,7 +93,10 @@ fun WorkflowsScreen(
                         Text("● ", color = MaterialTheme.colorScheme.primary)
                         Text(L10n.t("服务器", "Server"), style = MaterialTheme.typography.labelMedium)
                     }
-                    IconButton(onClick = viewModel::load) { Icon(Icons.Default.Refresh, L10n.t("刷新", "Refresh")) }
+                    IconButton(onClick = {
+                        viewModel.load()
+                        viewModel.refreshServerHealth()
+                    }) { Icon(Icons.Default.Refresh, L10n.t("刷新", "Refresh")) }
                     IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, L10n.t("设置", "Settings")) }
                 }
             )
@@ -92,6 +110,35 @@ fun WorkflowsScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             )
+
+            if (state.query.isBlank() && state.servers.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SectionHeader(L10n.t("服务器工作台", "Server workspace"), modifier = Modifier.weight(1f))
+                    if (state.probingServers) CircularProgressIndicator(Modifier.width(18.dp), strokeWidth = 2.dp)
+                    TextButton(onClick = viewModel::switchToLeastBusy, enabled = !state.probingServers && state.switchingServer == null) {
+                        Text(L10n.t("最空闲", "Least busy"))
+                    }
+                }
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(state.servers, key = { it.url }) { server ->
+                        ServerWorkspaceCard(
+                            server = server,
+                            health = state.serverHealth[server.url],
+                            selected = state.session?.url == server.url,
+                            appActive = state.appActiveByServer[server.url] ?: 0,
+                            switching = state.switchingServer == server.url,
+                            onClick = { viewModel.switchServer(server.url) },
+                        )
+                    }
+                }
+            }
+
             when {
                 state.loading && state.workflows.isEmpty() -> {
                     Spacer(Modifier.weight(1f))
@@ -108,7 +155,7 @@ fun WorkflowsScreen(
                     EmptyState(L10n.t("没有匹配结果", "No matches"))
                 }
                 else -> LazyColumn(
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (state.query.isBlank() && state.recentPresets.isNotEmpty()) {
@@ -147,6 +194,45 @@ fun WorkflowsScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ServerWorkspaceCard(
+    server: ServerEntry,
+    health: ServerHealth?,
+    selected: Boolean,
+    appActive: Int,
+    switching: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
+        modifier = Modifier.width(230.dp).clickable(enabled = !switching, onClick = onClick),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(server.name.ifBlank { server.url }, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (switching) CircularProgressIndicator(Modifier.width(16.dp), strokeWidth = 2.dp)
+                else StatusChip(if (health?.online == true) L10n.t("在线", "ONLINE") else L10n.t("离线", "OFFLINE"))
+            }
+            Text(server.url, fontFamily = Mono, fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (health?.online == true) {
+                Text(listOf(health.device, health.vramGb).filter(String::isNotBlank).joinToString(" · "), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "Comfy ${health.version} · run ${health.running} · queue ${health.pending} · app $appActive · ${health.latencyMs ?: 0}ms",
+                    fontFamily = Mono,
+                    fontSize = 9.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else {
+                Text(health?.error?.take(70) ?: L10n.t("尚未检测", "Not checked"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }
