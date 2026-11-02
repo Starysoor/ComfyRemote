@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings hub -->
+    <string name="settings_app">App &amp; interface</string>
+    <string name="settings_app_detail">Theme, compact layout, recent counts, creation defaults</string>
+    <string name="settings_servers">Servers</string>
+    <string name="settings_servers_detail">Connection, saved addresses, LAN discovery</string>
+    <string name="settings_ai">AI prompts</string>
+    <string name="settings_ai_detail">Model, vision rewrite, API key and skills</string>
+    <string name="settings_cloud">Cloud services</string>
+    <string name="settings_cloud_detail">AutoDL token and default video workflow</string>
+    <string name="settings_update">Software update</string>
+    <string name="settings_update_detail">Check and install GitHub Releases</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_version_value">Iris · v%1$s</string>
+
+    <!-- App & interface -->
+    <string name="settings_group_appearance">Appearance</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_detail">Light, dark or system</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_compact">Compact layout</string>
+    <string name="settings_compact_detail">Less card padding, more content on screen</string>
+    <string name="settings_recent_results">Recent results</string>
+    <string name="settings_recent_results_detail">How many recent results appear on Create (0-4)</string>
+    <string name="settings_recent_presets">Recent setups</string>
+    <string name="settings_recent_presets_detail">How many recent setups appear on Create (0-4)</string>
+    <string name="settings_server_workspace">Show server workspace</string>
+    <string name="settings_server_workspace_detail">Show server switcher on the Create screen</string>
+    <string name="settings_group_detail_sections">Detail sections</string>
+    <string name="settings_notes_expanded">Workflow notes open by default</string>
+    <string name="settings_notes_expanded_detail">Whether MarkdownNote notes start expanded</string>
+    <string name="settings_advanced_expanded">Advanced params open by default</string>
+    <string name="settings_advanced_expanded_detail">Whether steps/CFG/sampler params start expanded</string>
+    <string name="settings_group_creation">Creation defaults</string>
+    <string name="settings_batch_count">Default batch count</string>
+    <string name="settings_batch_count_detail">Default variations for a new workflow (1-16)</string>
+    <string name="settings_local_queue">Use local queue by default</string>
+    <string name="settings_local_queue_detail">Submit batch jobs one at a time</string>
+    <string name="settings_random_seed">Random seed by default</string>
+    <string name="settings_random_seed_detail">Off keeps the workflow\'s seed</string>
+    <string name="settings_auto_save">Auto-save drafts</string>
+    <string name="settings_auto_save_detail">Remember last values per workflow and server</string>
+    <string name="settings_max_upload">Max upload dimension</string>
+    <string name="settings_max_upload_detail">Larger reference images are downscaled</string>
+    <string name="settings_px">%1$s px</string>
+    <string name="settings_group_cloud_submit">Cloud submissions</string>
+    <string name="settings_confirm_cloud">Confirm price before submit</string>
+    <string name="settings_confirm_cloud_detail">Show the estimated platform price and ask for confirmation</string>
+    <string name="settings_group_tasks">Tasks &amp; notifications</string>
+    <string name="settings_notify">Notify when finished</string>
+    <string name="settings_notify_detail">System notification on finish/fail/cancel</string>
+    <string name="settings_group_storage">Storage</string>
+    <string name="settings_cloud_input_cache">Cloud input cache</string>
+    <string name="settings_cloud_input_cache_detail">Remove reference-image copies used by cloud workflows</string>
+    <string name="settings_apply_immediately">IRIS · Settings apply immediately</string>
+
+    <!-- Cloud services -->
+    <string name="settings_cloud_autodl">AutoDL.Art</string>
+    <string name="settings_cloud_hosted">Hosted ComfyUI workflows</string>
+    <string name="settings_cloud_ready">READY</string>
+    <string name="settings_cloud_no_token">TOKEN</string>
+    <string name="settings_cloud_token_hint">Create a token at autodl.art/large-model/tokens with the ComfyUI group. Calls are billed per run.</string>
+    <string name="settings_cloud_token_label">AutoDL Token</string>
+    <string name="settings_cloud_save_token">Save token</string>
+    <string name="settings_cloud_refresh">Refresh catalogue</string>
+    <string name="settings_cloud_found">%1$d video workflows found</string>
+    <string name="settings_cloud_audio_note">The cloud catalogue also includes audio/TTS workflows</string>
+    <string name="settings_cloud_default_video">Default video workflow</string>
+    <string name="settings_cloud_default_video_detail">Used by the result page\'s “Make video” action. The image is passed as the first frame/reference.</string>
+    <string name="settings_cloud_choose_workflow">Choose a workflow</string>
+    <string name="settings_cloud_spend">Local spend estimate</string>
+    <string name="settings_cloud_spend_units">Platform units</string>
+    <string name="settings_cloud_spend_count">Submissions</string>
+    <string name="settings_cloud_spend_note">Local estimate only, not a bill; AutoDL is authoritative.</string>
+    <string name="settings_cloud_spend_clear">Clear estimate</string>
+    <string name="settings_cloud_cache">Cache</string>
+    <string name="settings_cloud_clear_refs">Clear cloud reference copies</string>
+    <string name="settings_cloud_token_saved">AutoDL token saved</string>
+    <string name="settings_cloud_catalog_failed">Could not load cloud catalogue: %1$s</string>
+    <string name="settings_cloud_inputs_cleared">Cloud input cache cleared</string>
+    <string name="settings_cloud_spend_cleared">Local spend estimate cleared</string>
+</resources>

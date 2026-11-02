@@ -4,7 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.data.cloud.CloudWorkflowSummary
-import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.R
+import com.comfyremote.app.ui.AppStrings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,7 +56,7 @@ class CloudSettingsViewModel(private val container: AppContainer) : ViewModel() 
         _state.update {
             it.copy(
                 configured = container.autoDlRepository.configured(),
-                message = L10n.t("AutoDL Token 已保存", "AutoDL token saved"),
+                message = AppStrings.get(R.string.settings_cloud_token_saved),
             )
         }
     }
@@ -84,7 +85,7 @@ class CloudSettingsViewModel(private val container: AppContainer) : ViewModel() 
                     _state.update {
                         it.copy(
                             loading = false,
-                            error = L10n.t("读取云端目录失败：", "Could not load cloud catalogue: ") + (e.message ?: "error"),
+                            error = AppStrings.get(R.string.settings_cloud_catalog_failed, e.message ?: "error"),
                         )
                     }
                 }
@@ -93,12 +94,12 @@ class CloudSettingsViewModel(private val container: AppContainer) : ViewModel() 
 
     fun clearCloudInputs() {
         container.cloudInputStore.clearAll()
-        _state.update { it.copy(message = L10n.t("云端输入缓存已清除", "Cloud input cache cleared")) }
+        _state.update { it.copy(message = AppStrings.get(R.string.settings_cloud_inputs_cleared)) }
     }
 
     fun clearSpend() {
         container.cloudSpendStore.clear()
-        _state.update { it.copy(message = L10n.t("本地预估消耗已清除", "Local spend estimate cleared")) }
+        _state.update { it.copy(message = AppStrings.get(R.string.settings_cloud_spend_cleared)) }
     }
 
     fun clearMessage() = _state.update { it.copy(message = null) }

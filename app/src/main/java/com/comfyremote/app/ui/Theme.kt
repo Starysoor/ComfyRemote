@@ -75,7 +75,9 @@ private val DarkScheme = darkColorScheme(
     onBackground = IrisPalette.TextHi,
     surface = IrisPalette.Ink,
     onSurface = IrisPalette.TextHi,
-    surfaceVariant = IrisPalette.Ink2,
+    // Must not equal any surfaceContainer* value: contentColorFor() matches by
+    // colour value and checks surfaceVariant first, which would mute all card text.
+    surfaceVariant = Color(0xFF1C1C25),
     onSurfaceVariant = IrisPalette.TextLo,
     surfaceTint = Color.Transparent,
     surfaceContainerLowest = Color(0xFF07070B),
@@ -114,7 +116,8 @@ private val LightScheme = lightColorScheme(
     onBackground = IrisPalette.TextHiLight,
     surface = IrisPalette.Paper,
     onSurface = IrisPalette.TextHiLight,
-    surfaceVariant = IrisPalette.Paper2,
+    // See DarkScheme: must stay distinct from every surfaceContainer* value.
+    surfaceVariant = Color(0xFFECECF2),
     onSurfaceVariant = IrisPalette.TextLoLight,
     surfaceTint = Color.Transparent,
     surfaceContainerLowest = Color.White,

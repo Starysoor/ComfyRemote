@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 创作页（工作流列表） -->
+    <string name="wf_subtitle_cloud_ready">AutoDL · READY</string>
+    <string name="wf_subtitle_cloud_token">AutoDL · TOKEN NEEDED</string>
+    <string name="wf_no_local_server">未连接本地服务器</string>
+    <string name="wf_server">服务器</string>
+    <string name="wf_search">搜索工作流</string>
+    <string name="wf_source_local">本地 ComfyUI</string>
+    <string name="wf_source_cloud">云端模型</string>
+    <string name="wf_server_workspace">服务器工作台</string>
+    <string name="wf_least_busy">最空闲</string>
+    <string name="wf_not_checked">未检测</string>
+    <string name="wf_server_stats">run %1$d · q %2$d · app %3$d</string>
+    <string name="wf_cloud_token_hint">可浏览云端工作流；提交前需配置 AutoDL Token</string>
+    <string name="wf_go_settings">去设置</string>
+    <string name="wf_recent_setups">最近预设</string>
+    <string name="wf_recent_results">最近结果</string>
+    <string name="wf_setup">整套</string>
+    <string name="wf_recent">最近</string>
+    <string name="wf_cloud_workflows">云端工作流</string>
+    <string name="wf_workflows">工作流</string>
+    <string name="wf_empty_cloud">云端没有可用工作流</string>
+    <string name="wf_empty">没有工作流</string>
+    <string name="wf_empty_detail">可在电脑端保存 workflow 后刷新</string>
+    <string name="wf_favorite">收藏</string>
+    <string name="wf_unfavorite">取消收藏</string>
+
+    <!-- 消息 -->
+    <string name="wf_err_cloud_load">获取云端工作流失败：%1$s</string>
+    <string name="wf_err_list">获取工作流失败：%1$s</string>
+    <string name="wf_server_switched">已切换服务器</string>
+    <string name="wf_switch_failed">切换服务器失败：%1$s</string>
+    <string name="wf_no_online_server">没有检测到在线服务器</string>
+</resources>

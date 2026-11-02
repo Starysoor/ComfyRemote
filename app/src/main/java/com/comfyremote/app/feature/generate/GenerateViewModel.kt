@@ -28,7 +28,8 @@ import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.repository.PromptPreset
 import com.comfyremote.app.data.repository.WorkflowInsight
 import com.comfyremote.app.data.repository.WorkflowInsights
-import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.R
+import com.comfyremote.app.ui.AppStrings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -249,7 +250,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             val notes = listOf(
                 spec.name,
                 spec.description,
-                L10n.t("云端工作流 · 由 AutoDL.Art 执行", "Cloud workflow · executed by AutoDL.Art"),
+                AppStrings.get(R.string.gen_vm_cloud_note),
             ).filter(String::isNotBlank)
             val prompt = spec.toJson()
             return WorkflowDraft(
@@ -296,28 +297,28 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 randomSeed = container.appSettingsStore.settings.value.defaultRandomSeed,
             )
         }
-        _state.update { it.copy(message = L10n.t("已恢复工作流默认值", "Workflow defaults restored")) }
+        _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_defaults_restored)) }
     }
 
     fun generate(confirmed: Boolean = false) {
         val draft = _state.value.draft ?: return
         val cv = converted ?: return
         if (!draft.isCloud && !container.serverSession.connected) {
-            _state.update { it.copy(message = L10n.t("服务器已断开", "Server disconnected")) }
+            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_server_disconnected)) }
             return
         }
         if (draft.isCloud) {
             val provider = container.cloudProviders.forPath(draft.workflowPath)
             if (provider == null || !provider.configured()) {
                 _state.update {
-                    it.copy(message = L10n.t("请先在设置 → 云端服务中配置 Token", "Configure a cloud token in Settings → Cloud"))
+                    it.copy(message = AppStrings.get(R.string.gen_vm_cloud_token_missing))
                 }
                 return
             }
         }
         val blocking = _state.value.insight?.blockingIssues.orEmpty()
         if (blocking.isNotEmpty()) {
-            _state.update { it.copy(message = L10n.t("请先修复兼容性问题：", "Fix compatibility issue first: ") + blocking.first().message) }
+            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_fix_compat, blocking.first().message)) }
             return
         }
         val current = _state.value.activeTaskId?.let { id -> tasks.value.firstOrNull { it.taskId == id } }
@@ -346,7 +347,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         _state.update {
             it.copy(
                 activeTaskId = ids.firstOrNull(),
-                message = if (ids.size > 1) L10n.t("已创建 ${ids.size} 个批量任务", "Created ${ids.size} batch tasks") else null,
+                message = if (ids.size > 1) AppStrings.get(R.string.gen_vm_batch_created, ids.size) else null,
             )
         }
     }
@@ -367,7 +368,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         }
         return CloudConfirmation(
             workflowName = spec?.name ?: draft.workflowName,
-            priceLabel = spec?.pricing?.label ?: L10n.t("按平台计费", "Platform billing"),
+            priceLabel = spec?.pricing?.label ?: AppStrings.get(R.string.price_platform),
             estimatedCost = estimate,
             duration = duration,
             resolution = resolution,
@@ -447,18 +448,18 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             val draft = _state.value.draft
             val resolved = draft?.let { resolveNegativePromptSource(it, fieldKey, currentText) }
             if (resolved.isNullOrBlank()) {
-                _state.update { it.copy(message = L10n.t("先在正向提示词框输入内容，AI 才能生成对应的负面提示词", "Type a positive prompt first")) }
+                _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_need_positive)) }
                 return
             }
             source = resolved
         }
         if (source.isBlank() && skill.id != AiSkillDef.DEFAULT_NEG_ID) {
-            _state.update { it.copy(message = L10n.t("先输入一些提示词", "Type a prompt first")) }
+            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_need_prompt)) }
             return
         }
         val settings = container.aiSettingsStore.load()
         if (!settings.configured) {
-            _state.update { it.copy(message = L10n.t("请先配置 AI 设置", "Configure AI settings first")) }
+            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_ai_not_configured)) }
             return
         }
         val busy = "$fieldKey|${skill.id}"
@@ -485,7 +486,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         val draft = _state.value.draft ?: return
         val prompts = currentPrompts(draft)
         if (prompts.isEmpty()) {
-            _state.update { it.copy(message = L10n.t("当前没有可保存的提示词", "Nothing to save")) }
+            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_nothing_to_save)) }
             return
         }
         container.promptPresetRepository.add(
@@ -499,7 +500,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 folder = draft.workflowName,
             )
         )
-        _state.update { it.copy(message = L10n.t("已保存到提示词库", "Saved to prompt library")) }
+        _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_saved_to_library)) }
     }
 
     fun saveCurrentWorkflowPreset() {
@@ -519,7 +520,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 folder = draft.workflowName,
             )
         )
-        _state.update { it.copy(message = L10n.t("已保存工作流预设", "Workflow preset saved")) }
+        _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_workflow_preset_saved)) }
     }
 
     fun deletePreset(id: String) { container.promptPresetRepository.delete(id) }
@@ -537,10 +538,10 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
 
     fun importPresets(raw: String) {
         val count = runCatching { container.promptPresetRepository.importJson(raw) }.getOrElse {
-            _state.update { state -> state.copy(message = L10n.t("导入失败：", "Import failed: ") + (it.message ?: "invalid JSON")) }
+            _state.update { state -> state.copy(message = AppStrings.get(R.string.gen_vm_import_failed, it.message ?: "invalid JSON")) }
             return
         }
-        _state.update { it.copy(message = L10n.t("已导入 $count 个预设", "Imported $count presets")) }
+        _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_imported, count)) }
     }
 
     fun applyPreset(preset: PromptPreset, mode: PresetApplyMode = PresetApplyMode.ALL) {
@@ -597,7 +598,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     fun uploadAudio(fieldKey: String, uri: Uri) {
         val draft = _state.value.draft ?: return
         if (!draft.isCloud) {
-            _state.update { it.copy(message = L10n.t("本地 ComfyUI 工作流暂不支持音频输入", "Local ComfyUI audio inputs are not supported yet")) }
+            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_local_audio_unsupported)) }
             return
         }
         viewModelScope.launch {
@@ -635,7 +636,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         val draft = _state.value.draft ?: return
         val field = draft.fields.firstOrNull { it.kind == FieldKind.IMAGE }
         if (field == null) {
-            _state.update { it.copy(message = L10n.t("当前工作流没有可接收参考图的输入", "This workflow has no reference-image input")) }
+            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_no_reference_input)) }
             return
         }
         if (!draft.isCloud && !container.serverSession.connected) return
@@ -653,7 +654,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             }.onSuccess { name ->
                 updateValue(field.key, name)
                 clearUpload(field.key)
-                _state.update { it.copy(message = L10n.t("结果图已设为参考图", "Result set as reference image")) }
+                _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_result_as_reference)) }
             }.onFailure { e ->
                 setUpload(field.key, ImageUploadStatus(ImageUploadPhase.FAILED, e.message))
             }
@@ -665,12 +666,12 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         val workflowId = container.appSettingsStore.settings.value.defaultVideoWorkflowId.trim()
         if (workflowId.isBlank()) {
             _state.update {
-                it.copy(message = L10n.t("请先在设置中配置默认云端视频工作流", "Set a default cloud video workflow in Settings"))
+                it.copy(message = AppStrings.get(R.string.gen_vm_no_video_workflow))
             }
             return null
         }
         val path = AutoDlConfig.PATH_PREFIX + workflowId
-        val name = L10n.t("云端视频", "Cloud video")
+        val name = AppStrings.get(R.string.gen_vm_cloud_video)
         container.draftTransferRepository.put(
             DraftTransfer(
                 workflowPath = path,
@@ -692,7 +693,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         if (_state.value.aiBusy != null) return
         val draft = _state.value.draft ?: return
         if (imageValue.isBlank()) {
-            _state.update { it.copy(message = L10n.t("请先选择一张图片", "Pick an image first")) }
+            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_pick_image)) }
             return
         }
         val target = draft.fields.firstOrNull { it.key == targetFieldKey && it.kind == FieldKind.TEXT }
@@ -701,12 +702,12 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             }
             ?: draft.fields.firstOrNull { it.kind == FieldKind.TEXT }
         if (target == null) {
-            _state.update { it.copy(message = L10n.t("当前工作流没有可改写的提示词框", "This workflow has no prompt field")) }
+            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_no_prompt_field)) }
             return
         }
         val settings = container.aiSettingsStore.load()
         if (!settings.configured) {
-            _state.update { it.copy(message = L10n.t("请先配置 AI 设置", "Configure AI settings first")) }
+            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_ai_not_configured)) }
             return
         }
         val skill = container.aiSkillStore.load().firstOrNull { it.id == AiSkillDef.DEFAULT_VISION_ID }
@@ -716,21 +717,24 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             runCatching {
                 val bytes = loadVisionImageBytes(imageValue)
-                    ?: throw ComfyException(L10n.t("无法读取图片", "Could not read the image"))
+                    ?: throw ComfyException(AppStrings.get(R.string.gen_vm_cannot_read_image))
                 val (prepared, ext) = withContext(Dispatchers.IO) {
                     ImagePreprocessor.prepare(bytes, null, 1024, 84)
                 }
                 val current = draft.values[target.key] ?: target.value
                 val userText = buildString {
-                    append(L10n.t("用户的修改要求：", "User's requested change: "))
-                    append(instruction.trim().ifBlank { L10n.t("在保留画面主体与风格的前提下优化提示词", "Refine the prompt while preserving the subject and style") })
+                    append(
+                        AppStrings.get(
+                            R.string.gen_vm_vision_change,
+                            instruction.trim().ifBlank { AppStrings.get(R.string.gen_vm_vision_default_instruction) },
+                        )
+                    )
                     if (current.isNotBlank()) {
                         append("\n")
-                        append(L10n.t("当前提示词：", "Current prompt: "))
-                        append(current)
+                        append(AppStrings.get(R.string.gen_vm_vision_current, current))
                     }
                     append("\n")
-                    append(L10n.t("请直接观察这张图片，再输出改写后的提示词。", "Look at this image and output the rewritten prompt."))
+                    append(AppStrings.get(R.string.gen_vm_vision_look))
                 }
                 container.aiRepository.visionChat(
                     systemPrompt = skill.systemPrompt,
@@ -802,7 +806,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         val ctx = container.app
         val raw = withContext(Dispatchers.IO) {
             ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-        } ?: throw ComfyException(L10n.t("读取图片失败", "Failed to read image"))
+        } ?: throw ComfyException(AppStrings.get(R.string.gen_vm_read_image_failed))
         val (bytes, ext) = withContext(Dispatchers.IO) {
             ImagePreprocessor.prepare(
                 raw,

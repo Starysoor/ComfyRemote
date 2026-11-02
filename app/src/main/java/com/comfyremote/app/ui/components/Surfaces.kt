@@ -181,9 +181,14 @@ fun CollapsibleCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f, fill = false))
-                badge?.let { StatusChip(it) }
-                Box(Modifier.weight(1f))
+                Row(
+                    Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f, fill = false))
+                    badge?.let { StatusChip(it) }
+                }
                 Icon(
                     Icons.Default.KeyboardArrowDown,
                     contentDescription = null,

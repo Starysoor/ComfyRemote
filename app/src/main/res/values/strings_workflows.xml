@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Create tab (workflow list) -->
+    <string name="wf_subtitle_cloud_ready">AutoDL · READY</string>
+    <string name="wf_subtitle_cloud_token">AutoDL · TOKEN NEEDED</string>
+    <string name="wf_no_local_server">No local server</string>
+    <string name="wf_server">Server</string>
+    <string name="wf_search">Search workflows</string>
+    <string name="wf_source_local">Local ComfyUI</string>
+    <string name="wf_source_cloud">Cloud models</string>
+    <string name="wf_server_workspace">Server workspace</string>
+    <string name="wf_least_busy">Least busy</string>
+    <string name="wf_not_checked">Not checked</string>
+    <string name="wf_server_stats">run %1$d · q %2$d · app %3$d</string>
+    <string name="wf_cloud_token_hint">Browse cloud workflows now; add an AutoDL token before running</string>
+    <string name="wf_go_settings">Settings</string>
+    <string name="wf_recent_setups">Recent setups</string>
+    <string name="wf_recent_results">Recent results</string>
+    <string name="wf_setup">SETUP</string>
+    <string name="wf_recent">RECENT</string>
+    <string name="wf_cloud_workflows">Cloud workflows</string>
+    <string name="wf_workflows">Workflows</string>
+    <string name="wf_empty_cloud">No cloud workflows available</string>
+    <string name="wf_empty">No workflows</string>
+    <string name="wf_empty_detail">Save workflows on the server and refresh</string>
+    <string name="wf_favorite">Favorite</string>
+    <string name="wf_unfavorite">Unfavorite</string>
+
+    <!-- Messages -->
+    <string name="wf_err_cloud_load">Failed to load cloud workflows: %1$s</string>
+    <string name="wf_err_list">Failed to list workflows: %1$s</string>
+    <string name="wf_server_switched">Server switched</string>
+    <string name="wf_switch_failed">Failed to switch server: %1$s</string>
+    <string name="wf_no_online_server">No online server detected</string>
+</resources>

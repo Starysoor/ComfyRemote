@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Generate screen: top / bottom bars -->
+    <string name="gen_cloud_subtitle">AUTODL · CLOUD</string>
+    <string name="gen_defaults">Defaults</string>
+    <string name="gen_task">Task</string>
+    <string name="gen_generate">Generate</string>
+    <string name="gen_generate_batch">Generate ×%1$d</string>
+    <string name="gen_cancel_generation">Cancel generation</string>
+    <string name="gen_load_failed">Failed to load workflow</string>
+
+    <!-- Status / insight -->
+    <string name="gen_recovered">RECOVERED</string>
+    <string name="gen_queue_remaining">Queue %1$d</string>
+    <string name="gen_local_pending_note">Waiting locally; not submitted to ComfyUI yet</string>
+    <string name="gen_insight_title">Workflow</string>
+    <string name="gen_insight_ok">No obvious compatibility issues</string>
+
+    <!-- Sections -->
+    <string name="gen_notes">Workflow notes</string>
+    <string name="gen_live_preview">Live preview</string>
+    <string name="gen_prompt">Prompt</string>
+    <string name="gen_presets">Presets</string>
+    <string name="gen_reference_images">Reference images</string>
+    <string name="gen_multi_pick">Multi-pick</string>
+    <string name="gen_add">Add</string>
+    <string name="gen_camera">Camera</string>
+    <string name="gen_upload_failed">Upload failed</string>
+    <string name="gen_vision_rewrite">AI vision rewrite</string>
+    <string name="gen_vision_busy">Looking…</string>
+    <string name="gen_audio_references">Audio references</string>
+    <string name="gen_no_audio">No audio selected</string>
+    <string name="gen_pick_audio">Pick audio</string>
+    <string name="gen_audio_failed">Could not read audio</string>
+    <string name="gen_random_seed">Random seed</string>
+    <string name="gen_batch">Batch</string>
+    <string name="gen_local_queue">Local queue</string>
+    <string name="gen_batch_seed_hint">Fixed seed increments +0, +1, +2…</string>
+    <string name="gen_advanced">Advanced</string>
+    <string name="gen_choose">Choose…</string>
+
+    <!-- Results -->
+    <string name="gen_results">Results</string>
+    <string name="gen_compare">Compare</string>
+    <string name="gen_results_limit">Showing latest 2 of %1$d - see History</string>
+    <string name="gen_result_index">%1$d / %2$d</string>
+    <string name="gen_seed_line">seed: %1$s</string>
+    <string name="gen_result_label">Result</string>
+    <string name="gen_vision_rewrite_short">Vision rewrite</string>
+    <string name="gen_make_video">Make video</string>
+    <string name="gen_use_as_reference">Use as reference</string>
+    <string name="gen_rerun">Re-run</string>
+
+    <!-- Cancel cloud task -->
+    <string name="gen_cancel_cloud_title">Cancel cloud task?</string>
+    <string name="gen_cancel_cloud_body">This only stops local tracking. The AutoDL job may keep running and billing.</string>
+    <string name="gen_cancel_anyway">Cancel anyway</string>
+    <string name="gen_keep_waiting">Keep waiting</string>
+
+    <!-- Dialogs -->
+    <string name="gen_vision_default_instruction">Refine the current prompt based on the image; keep the subject and style, add camera, light, motion and mood</string>
+    <string name="gen_vision_instruction_label">Requested change</string>
+    <string name="gen_vision_hint">The model will actually view this image before rewriting the prompt.</string>
+    <string name="gen_rewrite">Rewrite</string>
+    <string name="gen_cloud_confirm_title">Confirm cloud submission</string>
+    <string name="gen_cloud_price">Platform price: %1$s</string>
+    <string name="gen_cloud_estimate">Estimated this run: %1$d (platform units)</string>
+    <string name="gen_cloud_duration">duration %1$ss</string>
+    <string name="gen_cloud_billing_note">Actual billing is determined by AutoDL. Cancelling locally may not stop the remote job, which can still be billed.</string>
+    <string name="gen_submit">Submit</string>
+    <string name="gen_ai_result_title">AI result</string>
+    <string name="gen_ai_result_hint">Edit before replacing or appending</string>
+    <string name="gen_replace">Replace</string>
+    <string name="gen_append">Append</string>
+
+    <!-- Preset library -->
+    <string name="gen_preset_library">Preset Library</string>
+    <string name="gen_save_prompt">Save prompt</string>
+    <string name="gen_save_setup">Save setup</string>
+    <string name="gen_mode_all">All</string>
+    <string name="gen_mode_prompts">Prompts</string>
+    <string name="gen_mode_params">Params</string>
+    <string name="gen_export_json">Copy export JSON</string>
+    <string name="gen_import_json">Import JSON</string>
+    <string name="gen_preset_search">Search title, folder, tags, values</string>
+    <string name="gen_presets_empty">No matching presets</string>
+    <string name="gen_tag_setup">SETUP</string>
+    <string name="gen_tag_prompt">PROMPT</string>
+    <string name="gen_recent">RECENT</string>
+    <string name="gen_favorite">Favorite</string>
+    <string name="gen_edit_preset">Edit preset</string>
+    <string name="gen_preset_title">Title</string>
+    <string name="gen_preset_folder">Folder / category</string>
+    <string name="gen_preset_tags">Tags, comma separated</string>
+    <string name="gen_import_title">Import preset JSON</string>
+    <string name="gen_import">Import</string>
+
+    <!-- Compare / viewer -->
+    <string name="gen_compare_title">A/B Compare</string>
+    <string name="gen_viewer_hint">Double-tap to reset · pinch to zoom</string>
+    <string name="gen_audio">Audio</string>
+
+    <!-- ViewModel messages -->
+    <string name="gen_vm_cloud_note">Cloud workflow · executed by AutoDL.Art</string>
+    <string name="gen_vm_defaults_restored">Workflow defaults restored</string>
+    <string name="gen_vm_server_disconnected">Server disconnected</string>
+    <string name="gen_vm_cloud_token_missing">Configure a cloud token in Settings → Cloud</string>
+    <string name="gen_vm_fix_compat">Fix compatibility issue first: %1$s</string>
+    <string name="gen_vm_batch_created">Created %1$d batch tasks</string>
+    <string name="gen_vm_need_positive">Type a positive prompt first</string>
+    <string name="gen_vm_need_prompt">Type a prompt first</string>
+    <string name="gen_vm_ai_not_configured">Configure AI settings first</string>
+    <string name="gen_vm_nothing_to_save">Nothing to save</string>
+    <string name="gen_vm_saved_to_library">Saved to prompt library</string>
+    <string name="gen_vm_workflow_preset_saved">Workflow preset saved</string>
+    <string name="gen_vm_import_failed">Import failed: %1$s</string>
+    <string name="gen_vm_imported">Imported %1$d presets</string>
+    <string name="gen_vm_local_audio_unsupported">Local ComfyUI audio inputs are not supported yet</string>
+    <string name="gen_vm_no_reference_input">This workflow has no reference-image input</string>
+    <string name="gen_vm_result_as_reference">Result set as reference image</string>
+    <string name="gen_vm_no_video_workflow">Set a default cloud video workflow in Settings</string>
+    <string name="gen_vm_cloud_video">Cloud video</string>
+    <string name="gen_vm_pick_image">Pick an image first</string>
+    <string name="gen_vm_no_prompt_field">This workflow has no prompt field</string>
+    <string name="gen_vm_cannot_read_image">Could not read the image</string>
+    <string name="gen_vm_vision_change">User\'s requested change: %1$s</string>
+    <string name="gen_vm_vision_default_instruction">Refine the prompt while preserving the subject and style</string>
+    <string name="gen_vm_vision_current">Current prompt: %1$s</string>
+    <string name="gen_vm_vision_look">Look at this image and output the rewritten prompt.</string>
+    <string name="gen_vm_read_image_failed">Failed to read image</string>
+</resources>

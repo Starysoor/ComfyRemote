@@ -18,26 +18,35 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.ui.IrisType
 
+/**
+ * [filled] paints the container. Only use it for fields without a floating label:
+ * OutlinedTextField cuts a notch for the label out of the container too, which
+ * shows as a hard-edged rectangle against a filled background.
+ */
 @Composable
-fun irisTextFieldColors(): TextFieldColors {
+fun irisTextFieldColors(filled: Boolean = false): TextFieldColors {
     val scheme = MaterialTheme.colorScheme
+    val container = if (filled) scheme.surfaceContainer else Color.Transparent
     return OutlinedTextFieldDefaults.colors(
-        focusedContainerColor = scheme.surfaceContainer,
-        unfocusedContainerColor = scheme.surfaceContainer,
-        disabledContainerColor = scheme.surfaceContainer.copy(alpha = 0.6f),
+        focusedContainerColor = container,
+        unfocusedContainerColor = container,
+        disabledContainerColor = if (filled) container.copy(alpha = 0.6f) else Color.Transparent,
         focusedBorderColor = scheme.primary,
-        unfocusedBorderColor = scheme.outlineVariant,
+        unfocusedBorderColor = if (filled) scheme.outlineVariant else scheme.outline,
         focusedLabelColor = scheme.primary,
         unfocusedLabelColor = scheme.onSurfaceVariant,
         cursorColor = scheme.primary,
@@ -85,8 +94,40 @@ fun IrisTextField(
         leadingIcon = leadingIcon,
         trailingIcon = trailingIcon,
         shape = MaterialTheme.shapes.medium,
-        colors = irisTextFieldColors(),
+        colors = irisTextFieldColors(filled = label == null),
         textStyle = MaterialTheme.typography.bodyLarge,
+    )
+}
+
+/**
+ * Material Switch with a visible off state. The default off thumb uses `outline`,
+ * which sits too close to the track colour in the Iris palette to be seen.
+ */
+@Composable
+fun IrisSwitch(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        modifier = modifier,
+        enabled = enabled,
+        colors = SwitchDefaults.colors(
+            checkedTrackColor = scheme.primary,
+            checkedThumbColor = scheme.onPrimary,
+            uncheckedTrackColor = scheme.surfaceContainerHighest,
+            uncheckedThumbColor = scheme.onSurfaceVariant,
+            uncheckedBorderColor = scheme.onSurfaceVariant,
+            disabledUncheckedTrackColor = scheme.surfaceContainerHigh,
+            disabledUncheckedThumbColor = scheme.onSurfaceVariant.copy(alpha = 0.38f),
+            disabledUncheckedBorderColor = scheme.onSurfaceVariant.copy(alpha = 0.24f),
+            disabledCheckedTrackColor = scheme.primary.copy(alpha = 0.38f),
+            disabledCheckedThumbColor = scheme.onPrimary.copy(alpha = 0.6f),
+        ),
     )
 }
 

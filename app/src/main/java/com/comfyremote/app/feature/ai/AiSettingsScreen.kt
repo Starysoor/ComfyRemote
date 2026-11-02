@@ -1,39 +1,33 @@
 package com.comfyremote.app.feature.ai
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ArrowDropDown
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.NetworkCheck
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -43,17 +37,32 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.comfyremote.app.AiSkillDef
-import com.comfyremote.app.ui.L10n
-import com.comfyremote.app.ui.Mono
+import com.comfyremote.app.R
+import com.comfyremote.app.ui.Spacing
+import com.comfyremote.app.ui.components.BannerTone
+import com.comfyremote.app.ui.components.BottomActionBar
+import com.comfyremote.app.ui.components.ChipTone
+import com.comfyremote.app.ui.components.CollapsibleCard
+import com.comfyremote.app.ui.components.DetailTopBar
+import com.comfyremote.app.ui.components.InfoBanner
+import com.comfyremote.app.ui.components.IrisChip
+import com.comfyremote.app.ui.components.IrisPrimaryButton
+import com.comfyremote.app.ui.components.IrisScaffold
+import com.comfyremote.app.ui.components.IrisTextField
+import com.comfyremote.app.ui.components.IrisTonalButton
+import com.comfyremote.app.ui.components.ListRow
+import com.comfyremote.app.ui.components.ScreenContentPadding
+import com.comfyremote.app.ui.components.SectionHeader
+import com.comfyremote.app.ui.components.SettingsGroup
+import com.comfyremote.app.ui.components.StatusChip
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AiSettingsScreen(
     viewModel: AiSettingsViewModel,
@@ -62,145 +71,156 @@ fun AiSettingsScreen(
     val state by viewModel.state.collectAsState()
     val settings = state.settings
     var advanced by rememberSaveable { mutableStateOf(false) }
-    var thinkingMenu by remember { mutableStateOf(false) }
     var editingSkill by remember { mutableStateOf<AiSkillDef?>(null) }
     var addingSkill by remember { mutableStateOf(false) }
+    val okPrefix = stringResource(R.string.ai_test_ok, "")
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(L10n.t("AI 设置", "AI settings"), fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) } },
-            )
-        }
+    IrisScaffold(
+        topBar = { DetailTopBar(title = stringResource(R.string.ai_title), onBack = onBack) },
+        bottomBar = {
+            BottomActionBar {
+                IrisPrimaryButton(text = stringResource(R.string.action_save), onClick = viewModel::save)
+            }
+        },
     ) { pad ->
         Column(
-            Modifier.padding(pad).fillMaxSize().imePadding().padding(horizontal = 20.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            Modifier
+                .padding(pad)
+                .fillMaxSize()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(ScreenContentPadding),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xl),
         ) {
-            Text(
-                L10n.t("兼容 OpenAI 风格 /chat/completions 接口", "Works with OpenAI-compatible /chat/completions endpoints"),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(L10n.t("快捷服务商", "Quick providers"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                AI_PRESETS.forEach { preset ->
-                    OutlinedButton(onClick = { viewModel.applyPreset(preset.baseUrl, preset.model, preset.visionModel) }) {
-                        Text(preset.label, fontSize = 11.sp)
-                    }
-                }
-            }
-            OutlinedTextField(settings.baseUrl, viewModel::updateBase, label = { Text("Base URL") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(settings.apiKey, viewModel::updateKey, label = { Text("API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(settings.model, viewModel::updateModel, label = { Text(L10n.t("模型", "Model")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(
-                settings.visionModel,
-                viewModel::updateVisionModel,
-                label = { Text(L10n.t("视觉模型（看图改写）", "Vision model (image rewrite)")) },
-                supportingText = { Text(L10n.t("留空则复用上方模型；需支持 image_url 输入", "Blank reuses the model above; must accept image_url input")) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Card {
-                Column {
-                    Row(Modifier.fillMaxWidth().clickable { advanced = !advanced }.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(L10n.t("高级参数", "Advanced"), fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.weight(1f))
-                        Text(if (advanced) L10n.t("收起", "Hide") else L10n.t("展开", "Show"), color = MaterialTheme.colorScheme.primary)
-                    }
-                    if (advanced) Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedTextField(
-                                settings.temperatureText,
-                                viewModel::updateTemp,
-                                label = { Text(L10n.t("温度", "Temperature")) },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                singleLine = true,
-                                modifier = Modifier.weight(1f),
-                            )
-                            OutlinedTextField(
-                                settings.maxTokensText,
-                                viewModel::updateMaxTokens,
-                                label = { Text("Max tokens") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        Box {
-                            OutlinedButton(onClick = { thinkingMenu = true }, modifier = Modifier.fillMaxWidth()) {
-                                Text(thinkingLabel(settings.thinkingMode), modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
-                                Text("▾")
-                            }
-                            DropdownMenu(thinkingMenu, { thinkingMenu = false }) {
-                                listOf("default", "glm_off", "glm_on", "low", "medium", "high").forEach { mode ->
-                                    DropdownMenuItem(text = { Text(thinkingLabel(mode)) }, onClick = { viewModel.applyThinkingMode(mode); thinkingMenu = false })
-                                }
-                            }
-                        }
-                        OutlinedTextField(
-                            settings.extraJson,
-                            viewModel::updateExtra,
-                            label = { Text(L10n.t("附加 JSON", "Extra JSON")) },
-                            minLines = 2,
-                            maxLines = 5,
-                            modifier = Modifier.fillMaxWidth(),
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                Text(
+                    stringResource(R.string.ai_intro),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SectionHeader(stringResource(R.string.ai_quick_providers))
+                FlowRow(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    AI_PRESETS.forEach { preset ->
+                        IrisChip(
+                            label = preset.label,
+                            selected = settings.baseUrl == preset.baseUrl && settings.model == preset.model,
+                            onClick = { viewModel.applyPreset(preset.baseUrl, preset.model, preset.visionModel) },
                         )
                     }
                 }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(L10n.t("提示词技能（", "Prompt skills (") + state.skills.size + L10n.t("）", ")"), fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = { addingSkill = true }) { Text(L10n.t("＋新增", "+ New")) }
-            }
-            Text(
-                L10n.t("每个技能可绑定工作流名称/路径关键词；留空则所有工作流可用。", "Skills can be bound to workflow name/path keywords; blank means available everywhere."),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            state.skills.forEach { skill ->
-                val bindings = state.skillBindings[skill.id].orEmpty()
-                Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.fillMaxWidth().clickable { editingSkill = skill },
+            SettingsGroup(stringResource(R.string.ai_group_endpoint)) {
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.md),
                 ) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(skill.label, fontWeight = FontWeight.SemiBold)
-                                if (skill.builtin) {
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(L10n.t("内置", "BUILT-IN"), fontFamily = Mono, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                            Text(
-                                if (bindings.isEmpty()) L10n.t("所有工作流", "All workflows") else bindings.joinToString(" · "),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    IrisTextField(settings.baseUrl, viewModel::updateBase, label = stringResource(R.string.ai_base_url), singleLine = true, modifier = Modifier.fillMaxWidth())
+                    IrisTextField(settings.apiKey, viewModel::updateKey, label = stringResource(R.string.ai_api_key), singleLine = true, modifier = Modifier.fillMaxWidth())
+                    IrisTextField(settings.model, viewModel::updateModel, label = stringResource(R.string.ai_model), singleLine = true, modifier = Modifier.fillMaxWidth())
+                    IrisTextField(
+                        settings.visionModel,
+                        viewModel::updateVisionModel,
+                        label = stringResource(R.string.ai_vision_model),
+                        supportingText = stringResource(R.string.ai_vision_model_hint),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(onClick = viewModel::test, enabled = !state.testing, modifier = Modifier.weight(1f).height(50.dp)) {
-                    Text(if (state.testing) L10n.t("测试中…", "Testing…") else L10n.t("测试连接", "Test"))
+            CollapsibleCard(
+                title = stringResource(R.string.ai_advanced),
+                expanded = advanced,
+                onToggle = { advanced = !advanced },
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                    IrisTextField(
+                        settings.temperatureText,
+                        viewModel::updateTemp,
+                        label = stringResource(R.string.ai_temperature),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IrisTextField(
+                        settings.maxTokensText,
+                        viewModel::updateMaxTokens,
+                        label = stringResource(R.string.ai_max_tokens),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
-                Button(onClick = viewModel::save, modifier = Modifier.weight(1f).height(50.dp)) { Text(L10n.t("保存", "Save")) }
+                DropdownField(
+                    label = stringResource(R.string.ai_thinking),
+                    value = thinkingLabel(settings.thinkingMode),
+                    options = THINKING_MODES.map { it to thinkingLabel(it) },
+                    onSelect = viewModel::applyThinkingMode,
+                )
+                IrisTextField(
+                    settings.extraJson,
+                    viewModel::updateExtra,
+                    label = stringResource(R.string.ai_extra_json),
+                    minLines = 2,
+                    maxLines = 5,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
-            state.testResult?.let {
-                Text(it, color = if (it.startsWith(L10n.t("成功", "OK"))) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                SectionHeader(stringResource(R.string.ai_skills_title, state.skills.size)) {
+                    TextButton(onClick = { addingSkill = true }) {
+                        Icon(Icons.Outlined.Add, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                        Text(
+                            stringResource(R.string.ai_skill_new),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = Spacing.xs),
+                        )
+                    }
+                }
+                Text(
+                    stringResource(R.string.ai_skills_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                state.skills.forEach { skill ->
+                    val bindings = state.skillBindings[skill.id].orEmpty()
+                    ListRow(
+                        title = skill.label,
+                        subtitle = if (bindings.isEmpty()) stringResource(R.string.ai_all_workflows) else bindings.joinToString(" · "),
+                        onClick = { editingSkill = skill },
+                        trailing = {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                if (skill.builtin) StatusChip(stringResource(R.string.ai_builtin), tone = ChipTone.Accent)
+                                Icon(
+                                    Icons.Outlined.Edit,
+                                    contentDescription = stringResource(R.string.action_edit),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(end = Spacing.xs).size(18.dp),
+                                )
+                            }
+                        },
+                    )
+                }
             }
-            Spacer(Modifier.height(28.dp))
+
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                IrisTonalButton(
+                    text = if (state.testing) stringResource(R.string.ai_testing) else stringResource(R.string.ai_test),
+                    onClick = viewModel::test,
+                    enabled = !state.testing,
+                    icon = Icons.Outlined.NetworkCheck,
+                )
+                state.testResult?.let {
+                    InfoBanner(text = it, tone = if (it.startsWith(okPrefix)) BannerTone.Success else BannerTone.Error)
+                }
+            }
         }
     }
 
@@ -226,51 +246,49 @@ fun AiSettingsScreen(
     }
 }
 
+/** Read-only field that opens a menu of [options] (value to label). */
 @Composable
-private fun SkillEditDialog(
-    skill: AiSkillDef?,
-    initialPatterns: List<String>,
-    onDismiss: () -> Unit,
-    onSave: (AiSkillDef, List<String>) -> Unit,
-    onDelete: (() -> Unit)?,
-    onReset: (() -> Unit)?,
+private fun DropdownField(
+    label: String,
+    value: String,
+    options: List<Pair<String, String>>,
+    onSelect: (String) -> Unit,
 ) {
-    var label by remember(skill) { mutableStateOf(skill?.label.orEmpty()) }
-    var prompt by remember(skill) { mutableStateOf(skill?.systemPrompt.orEmpty()) }
-    var patterns by remember(skill, initialPatterns) { mutableStateOf(initialPatterns.joinToString(", ")) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (skill == null) L10n.t("新增技能", "New skill") else L10n.t("编辑技能", "Edit skill")) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(label, { label = it }, label = { Text(L10n.t("名称", "Label")) }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(
-                    patterns,
-                    { patterns = it },
-                    label = { Text(L10n.t("绑定工作流关键词（逗号分隔）", "Workflow keywords (comma separated)")) },
-                    supportingText = { Text(L10n.t("留空 = 所有工作流", "Blank = all workflows")) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(prompt, { prompt = it }, label = { Text(L10n.t("系统提示词", "System prompt")) }, minLines = 6, maxLines = 14, modifier = Modifier.fillMaxWidth())
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable { open = true },
+        ) {
+            Row(
+                Modifier.padding(start = Spacing.lg, end = Spacing.md, top = 10.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(value, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Icon(Icons.Outlined.ArrowDropDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val parsed = patterns.split(',', '，', '\n').map(String::trim).filter(String::isNotBlank)
-                    onSave(AiSkillDef(skill?.id ?: "custom_${System.currentTimeMillis()}", label.trim(), prompt, skill?.builtin ?: false), parsed)
-                },
-                enabled = label.isNotBlank() && prompt.isNotBlank(),
-            ) { Text(L10n.t("保存", "Save")) }
-        },
-        dismissButton = {
-            Row {
-                onReset?.let { TextButton(onClick = it) { Text(L10n.t("恢复默认", "Reset")) } }
-                onDelete?.let { TextButton(onClick = it) { Text(L10n.t("删除", "Delete"), color = MaterialTheme.colorScheme.error) } }
-                TextButton(onClick = onDismiss) { Text(L10n.t("取消", "Cancel")) }
+        }
+        DropdownMenu(open, { open = false }) {
+            options.forEach { (key, text) ->
+                DropdownMenuItem(text = { Text(text) }, onClick = { onSelect(key); open = false })
             }
-        },
-    )
+        }
+    }
+}
+
+private val THINKING_MODES = listOf("default", "glm_off", "glm_on", "low", "medium", "high")
+
+@Composable
+private fun thinkingLabel(mode: String): String = when (mode) {
+    "glm_off" -> stringResource(R.string.ai_thinking_glm_off)
+    "glm_on" -> stringResource(R.string.ai_thinking_glm_on)
+    "low", "medium", "high" -> stringResource(R.string.ai_thinking_reasoning, mode)
+    else -> stringResource(R.string.ai_thinking_default)
 }
 
 private data class AiProviderPreset(
@@ -288,12 +306,3 @@ private val AI_PRESETS = listOf(
     AiProviderPreset("Moonshot", "https://api.moonshot.cn/v1", "moonshot-v1-8k"),
     AiProviderPreset("Ollama", "http://10.0.2.2:11434/v1", "qwen2.5", "llava"),
 )
-
-private fun thinkingLabel(mode: String): String = when (mode) {
-    "glm_off" -> L10n.t("GLM · 关闭思考", "GLM · thinking off")
-    "glm_on" -> L10n.t("GLM · 开启思考", "GLM · thinking on")
-    "low" -> "reasoning: low"
-    "medium" -> "reasoning: medium"
-    "high" -> "reasoning: high"
-    else -> L10n.t("跟随模型默认", "Model default")
-}

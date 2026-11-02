@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Connect / server manager -->
+    <string name="connect_tagline">ONE LENS · EVERY MODEL</string>
+    <string name="connect_tagline_detail">Local ComfyUI · cloud models · image &amp; video</string>
+    <string name="connect_servers">Servers</string>
+    <string name="connect_server_address">Server address</string>
+    <string name="connect_server_address_hint">LAN / Tailscale address; ComfyUI must listen remotely</string>
+    <string name="connect_connect">Connect</string>
+    <string name="connect_connecting">Connecting…</string>
+    <string name="connect_saved">Saved</string>
+    <string name="connect_cloud_only">Skip local server, use cloud models only</string>
+    <string name="connect_find_nearby">Find nearby ComfyUI</string>
+    <string name="connect_scanning">Scanning LAN…</string>
+    <string name="connect_found">ComfyUI found</string>
+    <string name="connect_manage_server">Manage server</string>
+    <string name="connect_alias">Alias</string>
+
+    <!-- Messages -->
+    <string name="connect_failed">Connection failed: %1$s</string>
+    <string name="connect_scan_none">No ComfyUI found - check that both devices are on the same Wi-Fi</string>
+    <string name="connect_not_on_wifi">Unknown subnet - not on Wi-Fi</string>
+</resources>

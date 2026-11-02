@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Task list -->
+    <string name="tasks_active_count">%1$d active</string>
+    <string name="tasks_filter_all">All</string>
+    <string name="tasks_filter_active">Active</string>
+    <string name="tasks_filter_queued">Queued</string>
+    <string name="tasks_filter_failed">Failed</string>
+    <string name="tasks_filter_done">Done</string>
+    <string name="tasks_all_servers">All servers</string>
+    <string name="tasks_local_count">LOCAL %1$d</string>
+    <string name="tasks_group_meta">%1$d active · %2$d</string>
+    <string name="tasks_resume_local">Resume local queue</string>
+    <string name="tasks_pause_local">Pause local queue</string>
+    <string name="tasks_cancel_queued">Cancel queued</string>
+    <string name="tasks_retry_failed">Retry failed</string>
+    <string name="tasks_clear_finished">Clear finished</string>
+    <string name="tasks_empty">No tasks yet</string>
+    <string name="tasks_empty_filter">No tasks match this filter</string>
+    <string name="tasks_empty_detail">Jobs continue outside Create and recover after app restart</string>
+    <string name="tasks_clear_title">Clear finished tasks?</string>
+    <string name="tasks_clear_text">This only removes task-list records. Result Library images and history are kept.</string>
+    <string name="tasks_clear_confirm">Clear</string>
+
+    <!-- Task row / detail -->
+    <string name="tasks_recovered">RECOVERED</string>
+    <string name="tasks_recovered_detail">RECOVERED</string>
+    <string name="tasks_queue_position">Queue position #%1$d</string>
+    <string name="tasks_waiting_local">Waiting in app-side queue</string>
+    <string name="tasks_node_running">Current node running</string>
+    <string name="tasks_node_progress">Current node progress</string>
+    <string name="tasks_detail_title">Task detail</string>
+    <string name="tasks_gone">Task is no longer in runtime list</string>
+    <string name="tasks_gone_detail">Completed results remain in Result Library</string>
+    <string name="tasks_run_again">Run again</string>
+    <string name="tasks_retry">Retry</string>
+    <string name="tasks_reuse">Reuse</string>
+    <string name="tasks_recover">Recover original</string>
+    <string name="tasks_copy_diag">Copy diagnostics</string>
+    <string name="tasks_diag_copied">Diagnostics copied</string>
+    <string name="tasks_delete_task">Delete task</string>
+    <string name="tasks_cloud_cancel_title">Cancel cloud task?</string>
+    <string name="tasks_cloud_cancel_text">This only stops local tracking. The AutoDL job may keep running and billing.</string>
+    <string name="tasks_cancel_anyway">Cancel anyway</string>
+    <string name="tasks_keep_waiting">Keep waiting</string>
+    <string name="tasks_delete_title">Delete this task?</string>
+    <string name="tasks_delete_text">This removes it from Tasks only. Result Library entries and generated images are kept.</string>
+
+    <!-- Messages -->
+    <string name="tasks_msg_queued_cancelled">Queued tasks cancelled</string>
+    <string name="tasks_msg_no_failed">No failed tasks to retry</string>
+    <string name="tasks_msg_retries_queued">Queued %1$d retries</string>
+    <string name="tasks_msg_reconnecting">Reconnecting to original task</string>
+    <string name="tasks_msg_cannot_recover">This task cannot be recovered</string>
+</resources>

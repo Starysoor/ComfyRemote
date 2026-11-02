@@ -1,15 +1,21 @@
 package com.comfyremote.app.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,9 +72,18 @@ fun IrisScaffold(
         snackbarHost = { snackbarHostState?.let { SnackbarHost(it) } },
         floatingActionButton = floatingActionButton,
         containerColor = MaterialTheme.colorScheme.background,
-        contentWindowInsets = if (shellOwnsBottom || bottomBar != null) WindowInsets(0) else WindowInsets.navigationBars,
-        content = content,
-    )
+        // Bottom belongs to the shell nav or the bottomBar, but side insets (landscape
+        // 3-button navigation) always belong to the content.
+        contentWindowInsets = if (shellOwnsBottom || bottomBar != null) {
+            WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)
+        } else {
+            WindowInsets.navigationBars
+        },
+    ) { padding ->
+        // Mark the scaffold padding as consumed so a screen's own imePadding() only adds
+        // what the bottom bar has not already covered, instead of counting the keyboard twice.
+        Box(Modifier.fillMaxSize().consumeWindowInsets(padding)) { content(padding) }
+    }
 }
 
 /**
@@ -87,7 +102,7 @@ fun LargeTopBar(
     Row(
         modifier
             .fillMaxWidth()
-            .statusBarsPadding()
+            .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
             .padding(start = Spacing.gutter, end = 4.dp, top = Spacing.md, bottom = Spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {

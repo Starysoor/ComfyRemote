@@ -14,8 +14,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -126,17 +124,7 @@ fun SwitchRow(
         divider = divider,
         onClick = if (enabled) ({ onCheckedChange(!checked) }) else null,
         trailing = {
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-                enabled = enabled,
-                colors = SwitchDefaults.colors(
-                    checkedTrackColor = MaterialTheme.colorScheme.primary,
-                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    uncheckedBorderColor = MaterialTheme.colorScheme.outline,
-                ),
-            )
+            IrisSwitch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
         },
     )
 }

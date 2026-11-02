@@ -18,10 +18,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.SaveAlt
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,20 +36,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
+import com.comfyremote.app.R
 import com.comfyremote.app.data.media.decodeSampled
-import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.ui.AppStrings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -60,6 +65,36 @@ fun stripMarkdown(markdown: String): String = markdown
     .replace(Regex("\\[(.*?)]\\(.*?\\)"), "$1")
     .trim()
 
+/*
+ * Full-screen viewers sit on pure black regardless of theme: imagery reads
+ * truest there, and controls are white glyphs on a translucent disc.
+ */
+private val ViewerBackdrop = Color.Black
+private val ViewerForeground = Color.White
+
+@Composable
+private fun ViewerButton(icon: ImageVector, description: String, onClick: () -> Unit) {
+    IconButton(onClick = onClick) {
+        Surface(shape = CircleShape, color = ViewerBackdrop.copy(alpha = 0.45f)) {
+            Icon(icon, description, tint = ViewerForeground, modifier = Modifier.padding(8.dp).size(20.dp))
+        }
+    }
+}
+
+@Composable
+private fun ViewerActions(
+    onClose: () -> Unit,
+    onSave: (() -> Unit)?,
+    onShare: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        onShare?.let { ViewerButton(Icons.Outlined.Share, stringResource(R.string.action_share), it) }
+        onSave?.let { ViewerButton(Icons.Outlined.SaveAlt, stringResource(R.string.action_save), it) }
+        ViewerButton(Icons.Outlined.Close, stringResource(R.string.action_close), onClose)
+    }
+}
+
 @Composable
 fun ImageViewerDialog(
     bitmap: Bitmap,
@@ -68,7 +103,7 @@ fun ImageViewerDialog(
     onShare: (() -> Unit)? = null,
 ) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.92f))) {
+        Box(Modifier.fillMaxSize().background(ViewerBackdrop)) {
             var scale by remember { mutableStateOf(1f) }
             var offset by remember { mutableStateOf(Offset.Zero) }
             Image(
@@ -87,14 +122,10 @@ fun ImageViewerDialog(
                     },
                 contentScale = ContentScale.Fit,
             )
-            Row(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                onShare?.let { action -> IconButton(onClick = action) { Icon(Icons.Default.Share, L10n.t("分享", "Share"), tint = Color.White) } }
-                onSave?.let { action -> IconButton(onClick = action) { Icon(Icons.Default.Add, L10n.t("保存", "Save"), tint = Color.White) } }
-                IconButton(onClick = onClose) { Icon(Icons.Default.Close, L10n.t("关闭", "Close"), tint = Color.White) }
-            }
+            ViewerActions(onClose, onSave, onShare, Modifier.align(Alignment.TopEnd))
             Text(
-                L10n.t("双击复位 · 双指缩放", "Double-tap to reset · pinch to zoom"),
-                color = Color.White.copy(alpha = 0.6f),
+                stringResource(R.string.gen_viewer_hint),
+                color = ViewerForeground.copy(alpha = 0.6f),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
             )
@@ -116,7 +147,7 @@ fun shareMedia(context: Context, path: String) {
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, L10n.t("分享", "Share")))
+        context.startActivity(Intent.createChooser(intent, AppStrings.get(R.string.action_share)))
     }
 }
 
@@ -140,43 +171,48 @@ fun mediaMimeType(path: String): String = when (path.substringAfterLast('.', "")
     else -> if (isAudioPath(path)) "audio/*" else "image/png"
 }
 
+/**
+ * Square media thumbnail for images, videos (first frame + play badge) and
+ * audio (waveform glyph). Rounded to `shapes.small`; callers may clip further.
+ */
 @Composable
 fun MediaThumbnail(
     path: String,
     size: Dp,
     modifier: Modifier = Modifier,
 ) {
+    val shape = MaterialTheme.shapes.small
+    val placeholder = MaterialTheme.colorScheme.surfaceContainerHigh
     if (isAudioPath(path)) {
-        Box(modifier.size(size).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                Icon(
-                    Icons.Default.PlayArrow,
-                    L10n.t("音频", "Audio"),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(size / 2),
-                )
-            }
+        Box(modifier.size(size).clip(shape).background(placeholder), contentAlignment = Alignment.Center) {
+            Icon(
+                Icons.Outlined.GraphicEq,
+                stringResource(R.string.gen_audio),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(minOf(size / 2, 48.dp)),
+            )
         }
     } else if (isVideoPath(path)) {
         val frame by produceState<Bitmap?>(null, path) {
             value = withContext(Dispatchers.IO) { videoFrame(path) }
         }
-        Box(modifier.size(size).background(Color.Black), contentAlignment = Alignment.Center) {
+        Box(modifier.size(size).clip(shape).background(placeholder), contentAlignment = Alignment.Center) {
             frame?.let {
                 Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             }
-            Surface(shape = CircleShape, color = Color.Black.copy(alpha = 0.45f)) {
-                Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(26.dp))
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.scrim) {
+                Icon(Icons.Filled.PlayArrow, null, tint = ViewerForeground, modifier = Modifier.padding(4.dp).size(22.dp))
             }
         }
     } else {
         val bitmap by produceState<Bitmap?>(null, path) {
             value = withContext(Dispatchers.IO) { decodeSampled(path, (size.value * 3).toInt().coerceAtLeast(96)) }
         }
-        if (bitmap != null) {
-            Image(bitmap!!.asImageBitmap(), null, modifier.size(size), contentScale = ContentScale.Crop)
+        val loaded = bitmap
+        if (loaded != null) {
+            Image(loaded.asImageBitmap(), null, modifier.size(size).clip(shape), contentScale = ContentScale.Crop)
         } else {
-            Box(modifier.size(size).background(MaterialTheme.colorScheme.surfaceVariant))
+            Box(modifier.size(size).clip(shape).background(placeholder))
         }
     }
 }
@@ -199,7 +235,7 @@ fun MediaViewerDialog(
         return
     }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
+        Box(Modifier.fillMaxSize().background(ViewerBackdrop)) {
             AndroidView(
                 factory = { context ->
                     VideoView(context).apply {
@@ -215,11 +251,7 @@ fun MediaViewerDialog(
                 },
                 modifier = Modifier.fillMaxSize(),
             )
-            Row(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                onShare?.let { action -> IconButton(onClick = action) { Icon(Icons.Default.Share, L10n.t("分享", "Share"), tint = Color.White) } }
-                onSave?.let { action -> IconButton(onClick = action) { Icon(Icons.Default.Add, L10n.t("保存", "Save"), tint = Color.White) } }
-                IconButton(onClick = onClose) { Icon(Icons.Default.Close, L10n.t("关闭", "Close"), tint = Color.White) }
-            }
+            ViewerActions(onClose, onSave, onShare, Modifier.align(Alignment.TopEnd))
         }
     }
 }
