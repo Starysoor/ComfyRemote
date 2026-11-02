@@ -2,6 +2,7 @@ name: Release
 
 on:
   push:
+    branches: [main]
     tags: ['v*']
 
 permissions:
@@ -9,6 +10,7 @@ permissions:
 
 jobs:
   build:
+    if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release: v'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,15 +24,24 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Verify tag matches app version
+      - name: Read and verify release version
         shell: bash
         run: |
           APP_VERSION=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n1)
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          echo "tag=$TAG_VERSION app=$APP_VERSION"
           test -n "$APP_VERSION"
-          if [ "$TAG_VERSION" != "$APP_VERSION" ]; then
-            echo "Release tag v$TAG_VERSION does not match Gradle versionName $APP_VERSION" >&2
+          RELEASE_TAG="v$APP_VERSION"
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            REQUESTED_TAG="$GITHUB_REF_NAME"
+          else
+            REQUESTED_TAG=$(printf '%s\n' "${{ github.event.head_commit.message }}" | head -n1 | sed -n 's/^release: \(v[^ ]*\).*/\1/p')
+          fi
+
+          echo "requested=$REQUESTED_TAG app=$RELEASE_TAG"
+          if [ "$REQUESTED_TAG" != "$RELEASE_TAG" ]; then
+            echo "Release request $REQUESTED_TAG does not match Gradle versionName $APP_VERSION" >&2
             exit 1
           fi
 
@@ -47,8 +58,14 @@ jobs:
       - name: Build release APK
         run: gradle :app:assembleRelease --no-daemon
 
+      - name: Name release APK
+        run: cp app/build/outputs/apk/release/app-release.apk "app/build/outputs/apk/release/ComfyRemote-${RELEASE_TAG}.apk"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ env.RELEASE_TAG }}
           generate_release_notes: true
-          files: app/build/outputs/apk/release/app-release.apk
+          files: app/build/outputs/apk/release/ComfyRemote-${{ env.RELEASE_TAG }}.apk
