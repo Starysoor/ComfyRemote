@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /** App-scoped runtime owner for all generation jobs, including process-death recovery. */
@@ -35,31 +36,90 @@ class GenerationManager(
         .map { list -> list.filter { it.isActive } }
         .stateIn(scope, SharingStarted.Eagerly, _tasks.value.filter { it.isActive })
 
+    private val _localQueuePaused = MutableStateFlow(false)
+    val localQueuePaused: StateFlow<Boolean> = _localQueuePaused.asStateFlow()
+
     private val jobs = ConcurrentHashMap<String, Job>()
 
     init {
-        // Persist normalization (notably CANCELLING -> CANCELLED) before any recovery work starts.
+        // Persist normalization before any recovery/local-queue work starts.
         taskStore.save(_tasks.value)
         val persistedActive = _tasks.value.filter { it.isActive }
         if (persistedActive.isNotEmpty()) startService()
-        persistedActive.forEach(::launchRecovery)
+        persistedActive
+            .filter { !it.localPending && !it.promptId.isNullOrBlank() }
+            .forEach(::launchRecovery)
+        pumpLocalQueue()
     }
 
+    /** Submits one request immediately to its bound server. */
     fun submit(request: GenerationRequest): String {
-        val task = GenerationTask(
-            taskId = request.id,
-            request = request,
-            clientId = java.util.UUID.randomUUID().toString(),
-        )
+        val task = newTask(request)
         mutateTasks { prune(listOf(task) + it) }
         startService()
         launchTracked(task.taskId) { execute(task) }
         return task.taskId
     }
 
+    /**
+     * Adds a batch. When [localQueue] is true, each server receives at most one app-managed
+     * batch job at a time; the remaining requests stay durably queued on-device.
+     */
+    fun submitBatch(requests: List<GenerationRequest>, localQueue: Boolean = true): List<String> {
+        if (requests.isEmpty()) return emptyList()
+        val batchId = UUID.randomUUID().toString()
+        val tasks = requests.mapIndexed { index, request ->
+            newTask(request).copy(
+                localPending = localQueue,
+                batchId = batchId,
+                batchIndex = index + 1,
+                batchSize = requests.size,
+                recoveryNote = if (localQueue) "Waiting in local queue" else null,
+            )
+        }
+        mutateTasks { prune(tasks + it) }
+        startService()
+        if (localQueue) {
+            pumpLocalQueue()
+        } else {
+            tasks.forEach { task -> launchTracked(task.taskId) { execute(task) } }
+        }
+        return tasks.map { it.taskId }
+    }
+
+    fun pauseLocalQueue() {
+        _localQueuePaused.value = true
+    }
+
+    fun resumeLocalQueue() {
+        _localQueuePaused.value = false
+        pumpLocalQueue()
+    }
+
+    fun toggleLocalQueuePaused() {
+        if (_localQueuePaused.value) resumeLocalQueue() else pauseLocalQueue()
+    }
+
     suspend fun cancel(taskId: String) {
         val task = _tasks.value.firstOrNull { it.taskId == taskId } ?: return
         if (!task.isActive || task.phase == GenerationPhase.CANCELLING) return
+
+        if (task.localPending) {
+            patch(taskId) {
+                it.copy(
+                    localPending = false,
+                    phase = GenerationPhase.CANCELLED,
+                    completedAt = System.currentTimeMillis(),
+                    recoveryNote = "Removed from local queue",
+                    queuePosition = null,
+                    progress = null,
+                    preview = null,
+                )
+            }
+            pumpLocalQueue()
+            return
+        }
+
         patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }
         when (task.phase) {
             GenerationPhase.PREPARING, GenerationPhase.QUEUEING -> jobs[taskId]?.cancel()
@@ -75,6 +135,22 @@ class GenerationManager(
             }
             else -> Unit
         }
+    }
+
+    suspend fun cancelMany(taskIds: Collection<String>) {
+        taskIds.distinct().forEach { cancel(it) }
+    }
+
+    suspend fun cancelQueued(serverUrl: String? = null) {
+        val ids = _tasks.value
+            .filter { task ->
+                task.isActive &&
+                    (serverUrl == null || task.request.serverUrl == serverUrl) &&
+                    (task.localPending || task.phase == GenerationPhase.PREPARING ||
+                        task.phase == GenerationPhase.QUEUEING || task.phase == GenerationPhase.QUEUED)
+            }
+            .map { it.taskId }
+        cancelMany(ids)
     }
 
     /** Removes a finished task from the list (user-visible delete). */
@@ -94,7 +170,19 @@ class GenerationManager(
 
     fun retry(taskId: String): String? {
         val old = _tasks.value.firstOrNull { it.taskId == taskId } ?: return null
-        return submit(old.request.copy(id = java.util.UUID.randomUUID().toString()))
+        return submit(old.request.copy(id = UUID.randomUUID().toString(), createdAt = System.currentTimeMillis()))
+    }
+
+    /** Retries all failed/cancelled tasks through the durable local queue to avoid flooding a server. */
+    fun retryFailed(serverUrl: String? = null): List<String> {
+        val requests = _tasks.value
+            .filter {
+                (it.phase == GenerationPhase.FAILED || it.phase == GenerationPhase.CANCELLED) &&
+                    (serverUrl == null || it.request.serverUrl == serverUrl)
+            }
+            .sortedBy { it.createdAt }
+            .map { it.request.copy(id = UUID.randomUUID().toString(), createdAt = System.currentTimeMillis()) }
+        return submitBatch(requests, localQueue = true)
     }
 
     /** Re-attach a previously failed recovery without submitting a duplicate prompt. */
@@ -109,6 +197,7 @@ class GenerationManager(
             recoveryNote = "Retrying recovery",
             preview = null,
             queuePosition = null,
+            localPending = false,
         )
         patch(taskId, allowTerminalExit = true) { recovering }
         startService()
@@ -120,11 +209,19 @@ class GenerationManager(
         .map { list -> list.firstOrNull { it.taskId == taskId } }
         .stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
 
+    private fun newTask(request: GenerationRequest) = GenerationTask(
+        taskId = request.id,
+        request = request,
+        clientId = UUID.randomUUID().toString(),
+    )
+
     private suspend fun execute(task: GenerationTask) {
         val runner = runnerFor(task)
         try {
-            val final = runner.run(task) { updated -> patch(updated.taskId) { updated } }
-            patch(final.taskId) { final }
+            val final = runner.run(task.copy(localPending = false, recoveryNote = null)) { updated ->
+                patch(updated.taskId) { updated.copy(localPending = false) }
+            }
+            patch(final.taskId) { final.copy(localPending = false) }
         } catch (e: kotlinx.coroutines.CancellationException) {
             patch(task.taskId) {
                 it.copy(
@@ -132,6 +229,7 @@ class GenerationManager(
                     completedAt = System.currentTimeMillis(),
                     preview = null,
                     queuePosition = null,
+                    localPending = false,
                 )
             }
             throw e
@@ -153,12 +251,13 @@ class GenerationManager(
             error = null,
             completedAt = null,
             recoveryNote = original.recoveryNote ?: "Recovering after restart",
+            localPending = false,
         )
         patch(task.taskId, allowTerminalExit = true) { task }
         val runner = runnerFor(task)
         try {
-            val final = runner.recover(task) { updated -> patch(updated.taskId, allowTerminalExit = true) { updated } }
-            patch(final.taskId, allowTerminalExit = true) { final }
+            val final = runner.recover(task) { updated -> patch(updated.taskId, allowTerminalExit = true) { updated.copy(localPending = false) } }
+            patch(final.taskId, allowTerminalExit = true) { final.copy(localPending = false) }
         } catch (e: kotlinx.coroutines.CancellationException) {
             patch(task.taskId, allowTerminalExit = true) {
                 it.copy(
@@ -166,6 +265,7 @@ class GenerationManager(
                     completedAt = System.currentTimeMillis(),
                     preview = null,
                     queuePosition = null,
+                    localPending = false,
                 )
             }
             throw e
@@ -178,6 +278,7 @@ class GenerationManager(
                     preview = null,
                     queuePosition = null,
                     recoveryNote = "Reconnect failed",
+                    localPending = false,
                 )
             }
         }
@@ -203,6 +304,7 @@ class GenerationManager(
                 completedAt = System.currentTimeMillis(),
                 preview = null,
                 queuePosition = null,
+                localPending = false,
             )
         }
     }
@@ -214,10 +316,46 @@ class GenerationManager(
                 block()
             } finally {
                 jobs.remove(taskId)
+                pumpLocalQueue()
             }
         }
         jobs[taskId] = job
         job.start()
+    }
+
+    /** Starts the oldest local-pending task for each idle server. */
+    private fun pumpLocalQueue() {
+        if (_localQueuePaused.value) return
+        scope.launch {
+            val snapshot = _tasks.value
+            val remoteBusy = snapshot
+                .filter { it.isActive && !it.localPending }
+                .mapTo(hashSetOf()) { it.request.serverUrl }
+            val candidates = snapshot
+                .filter { it.localPending && it.isActive }
+                .sortedBy { it.createdAt }
+                .groupBy { it.request.serverUrl }
+                .mapNotNull { (server, list) -> if (server in remoteBusy) null else list.firstOrNull() }
+
+            candidates.forEach { candidate ->
+                var launch: GenerationTask? = null
+                synchronized(taskLock) {
+                    val current = _tasks.value.firstOrNull { it.taskId == candidate.taskId }
+                    val serverBusyNow = _tasks.value.any {
+                        it.taskId != candidate.taskId && it.request.serverUrl == candidate.request.serverUrl &&
+                            it.isActive && !it.localPending
+                    }
+                    if (current?.localPending == true && current.isActive && !serverBusyNow && !_localQueuePaused.value) {
+                        val updated = current.copy(localPending = false, recoveryNote = null)
+                        val next = prune(_tasks.value.map { if (it.taskId == current.taskId) updated else it })
+                        _tasks.value = next
+                        taskStore.save(next)
+                        launch = updated
+                    }
+                }
+                launch?.let { task -> launchTracked(task.taskId) { execute(task) } }
+            }
+        }
     }
 
     private fun startService() {
@@ -263,14 +401,32 @@ class GenerationManager(
     }
 
     private fun normalizeLoaded(list: List<GenerationTask>): List<GenerationTask> = list.map { task ->
-        if (task.phase == GenerationPhase.CANCELLING) {
-            task.copy(
+        when {
+            task.localPending -> task.copy(
+                phase = GenerationPhase.PREPARING,
+                promptId = null,
+                preview = null,
+                queuePosition = null,
+                progress = null,
+                error = null,
+                completedAt = null,
+                recoveryNote = "Waiting in local queue",
+            )
+            task.phase == GenerationPhase.CANCELLING -> task.copy(
                 phase = GenerationPhase.CANCELLED,
                 completedAt = task.completedAt ?: System.currentTimeMillis(),
                 preview = null,
                 recoveryNote = "Cancellation persisted across restart",
             )
-        } else task.copy(preview = null)
+            task.isActive && task.promptId.isNullOrBlank() -> task.copy(
+                phase = GenerationPhase.FAILED,
+                error = GenerationError(ErrorKind.CONNECTION, "App restarted before the server returned a prompt id"),
+                completedAt = System.currentTimeMillis(),
+                preview = null,
+                recoveryNote = "Submission interrupted before recovery became possible",
+            )
+            else -> task.copy(preview = null)
+        }
     }
 
     private fun prune(list: List<GenerationTask>): List<GenerationTask> {
@@ -281,5 +437,5 @@ class GenerationManager(
         return (active + terminal).distinctBy { it.taskId }.sortedByDescending { it.createdAt }
     }
 
-    companion object { private const val MAX_TERMINAL_TASKS = 50 }
+    companion object { private const val MAX_TERMINAL_TASKS = 80 }
 }
