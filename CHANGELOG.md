@@ -22,8 +22,8 @@
 - Project aspect-ratio/default-value model fields; per-shot workflow and portable parameter memory for Regenerate.
 - Shot multi-reference: select several project assets and fill consecutive image inputs in one Generate session.
 - History results can be added to a storyboard project with a chosen semantic role.
-- Official provider adapters: OpenAI Images, Google Gemini image models, Replicate image/video models, and SiliconFlow image/video models.
-- OpenAI catalog updated to GPT Image 2.5 (flare/sunburst), Gemini to Gemini 3.1/3 Pro Image, SiliconFlow to Kolors/Qwen-Image/Wan2.2.
+- Official provider adapters: OpenAI Images, Google Gemini image models, Replicate image/video models, SiliconFlow image/video models, and the AutoDL.Art model API (separate from ComfyUI workflow tokens).
+- OpenAI catalog updated to GPT Image 2.5 (flare/sunburst), Gemini to Gemini 3.1/3 Pro Image, SiliconFlow to Kolors/Qwen-Image/Wan2.2, and AutoDL model API to GPT Image 2.5 / Qwen-Image / Z-Image / nano-banana.
 - Custom JSON-template provider with `{{field}}` placeholders, task/status/result path mapping, sample request/response inference and manual field definitions.
 - Replicate input parameters are discovered from each model's OpenAPI input schema.
 - Custom OpenAI-compatible provider with editable base URL, token and model list; image parameters are inferred automatically.

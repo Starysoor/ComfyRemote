@@ -5,20 +5,21 @@ import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-/** OpenAI Images API: official image models with built-in parameter catalogs. */
-class OpenAiImageRepository(
+/** OpenAI-compatible Images API (official OpenAI and AutoDL model gateways). */
+class OpenAiCompatibleImageRepository(
     private val settings: CloudProviderSettingsStore,
+    override val id: String = PROVIDER,
+    override val label: String = "OpenAI",
+    override val settingsSummary: String = "Official image models · API key",
+    override val pathPrefix: String = "openai:",
+    override val baseUrl: String = DEFAULT_BASE,
+    private val models: List<String> = MODELS,
 ) : CloudProvider {
-    override val id: String = PROVIDER
-    override val label: String = "OpenAI"
-    override val settingsSummary: String = "Official image models · API key"
-    override val defaultModels: List<String> get() = MODELS
-    override val pathPrefix: String = "openai:"
-    override val baseUrl: String = DEFAULT_BASE
+    override val defaultModels: List<String> get() = models
 
     private val results = ConcurrentHashMap<String, CloudTaskResult>()
 
-    private fun account() = settings.account(id, DEFAULT_BASE, MODELS)
+    private fun account() = settings.account(id, baseUrl, models)
 
     override fun configured(): Boolean = account().token.isNotBlank()
 
@@ -100,7 +101,18 @@ class OpenAiImageRepository(
     }
 
     private fun rulesFor(model: String): List<CloudInputRule> {
+        val gptImage = model.startsWith("gpt-image") || model.startsWith("chatgpt-image")
         val dallE = model.startsWith("dall-e")
+        if (!gptImage && !dallE) {
+            return listOf(
+                CloudInputRule("prompt", "prompt", required = true),
+                CloudInputRule(
+                    "size", "enum", required = false, defaultValue = "1024x1024",
+                    options = listOf("1024x1024", "768x1024", "1024x768", "auto"),
+                ),
+                CloudInputRule("n", "integer", required = false, defaultValue = "1", min = 1.0, max = 4.0),
+            )
+        }
         val sizes = if (dallE) {
             listOf("1024x1024", "1792x1024", "1024x1792")
         } else {

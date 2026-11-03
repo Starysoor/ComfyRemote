@@ -10,7 +10,7 @@ import com.comfyremote.app.data.cloud.CloudSpendStore
 import com.comfyremote.app.data.cloud.CustomOpenAiRepository
 import com.comfyremote.app.data.cloud.CustomTemplateRepository
 import com.comfyremote.app.data.cloud.GeminiImageRepository
-import com.comfyremote.app.data.cloud.OpenAiImageRepository
+import com.comfyremote.app.data.cloud.OpenAiCompatibleImageRepository
 import com.comfyremote.app.data.cloud.ReplicateRepository
 import com.comfyremote.app.data.cloud.SiliconFlowRepository
 import com.comfyremote.app.data.discovery.LanServerDiscovery
@@ -52,7 +52,23 @@ class AppContainer(val app: Application) {
     val autoDlSettingsStore = AutoDlSettingsStore(secretStore)
     val autoDlRepository = AutoDlRepository(autoDlSettingsStore)
     val cloudProviderSettingsStore = CloudProviderSettingsStore(prefs, secretStore)
-    val openAiImageRepository = OpenAiImageRepository(cloudProviderSettingsStore)
+    val openAiImageRepository = OpenAiCompatibleImageRepository(cloudProviderSettingsStore)
+    val autoDlModelRepository = OpenAiCompatibleImageRepository(
+        settings = cloudProviderSettingsStore,
+        id = "autodl_model",
+        label = "AutoDL Models",
+        settingsSummary = "AutoDL model API · GPT Image / Qwen-Image / Z-Image",
+        pathPrefix = "autodl-model:",
+        baseUrl = "https://www.autodl.art/api/v1",
+        models = listOf(
+            "gpt-image-2.5-flare",
+            "gpt-image-2.5-sunburst",
+            "gpt-image-2",
+            "Qwen-Image",
+            "Z-Image-Turbo",
+            "nano-banana-2",
+        ),
+    )
     val geminiImageRepository = GeminiImageRepository(cloudProviderSettingsStore)
     val replicateRepository = ReplicateRepository(cloudProviderSettingsStore)
     val siliconFlowRepository = SiliconFlowRepository(cloudProviderSettingsStore)
@@ -61,6 +77,7 @@ class AppContainer(val app: Application) {
     val cloudProviders = com.comfyremote.app.data.cloud.CloudProviderRegistry(
         listOf(
             autoDlRepository,
+            autoDlModelRepository,
             openAiImageRepository,
             geminiImageRepository,
             replicateRepository,
