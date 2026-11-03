@@ -39,6 +39,8 @@ class ReplicateHttpRecoveryIntegrationTest {
 
             val settings = settings()
             settings.save(ReplicateRepository.PROVIDER, base(original), "fake-token", ReplicateRepository.MODELS)
+            assertEquals("fake-token", settings.account(ReplicateRepository.PROVIDER, "", emptyList()).token)
+            assertEquals("fake-token", settings.account(ReplicateRepository.PROVIDER, "", emptyList()).token)
             val path = File(temp.root, "cloud_tasks")
             val taskId = runBlocking {
                 ReplicateRepository(settings, CloudProviderTaskStore(path)).submit(
@@ -60,14 +62,18 @@ class ReplicateHttpRecoveryIntegrationTest {
 
             val running = runBlocking { restoredRepository.result(taskId) }
             assertEquals("RUNNING", running.status)
-            assertEquals("/v1/predictions/pred-123", original.takeRequest(3, TimeUnit.SECONDS)!!.path)
+            val firstPoll = original.takeRequest(3, TimeUnit.SECONDS)!!
+            assertEquals("/v1/predictions/pred-123", firstPoll.path)
+            assertEquals("Bearer fake-token", firstPoll.getHeader("Authorization"))
             assertEquals(0, replacement.requestCount)
 
             val complete = runBlocking { restoredRepository.result(taskId) }
             assertEquals("SUCCESS", complete.status)
             assertEquals("video", complete.results.single().type)
             assertEquals("https://media.invalid/result.mp4", complete.results.single().url)
-            assertEquals("/v1/predictions/pred-123", original.takeRequest(3, TimeUnit.SECONDS)!!.path)
+            val lastPoll = original.takeRequest(3, TimeUnit.SECONDS)!!
+            assertEquals("/v1/predictions/pred-123", lastPoll.path)
+            assertEquals("Bearer fake-token", lastPoll.getHeader("Authorization"))
             assertEquals(0, replacement.requestCount)
 
             // The result is durable even if another process starts with no HTTP response available.
