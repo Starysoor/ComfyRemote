@@ -1,6 +1,7 @@
 package com.comfyremote.app
 
 import android.content.Context
+import com.comfyremote.app.data.reference.ReferenceRole
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -175,6 +176,7 @@ class HistoryStore(
         .put("min", min ?: JSONObject.NULL)
         .put("max", max ?: JSONObject.NULL)
         .put("required", required)
+        .put("referenceRole", referenceRole.name)
 
     private fun promptFields(a: JSONArray?): List<PromptField> {
         val out = mutableListOf<PromptField>()
@@ -194,6 +196,7 @@ class HistoryStore(
                 min = if (o.isNull("min")) null else o.optString("min"),
                 max = if (o.isNull("max")) null else o.optString("max"),
                 required = o.optBoolean("required", false),
+                referenceRole = ReferenceRole.fromStorage(o.optString("referenceRole")),
             )
         }
         return out

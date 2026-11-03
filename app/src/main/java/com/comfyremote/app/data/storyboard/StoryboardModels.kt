@@ -1,5 +1,7 @@
 package com.comfyremote.app.data.storyboard
 
+import com.comfyremote.app.data.reference.ProjectAsset
+import com.comfyremote.app.data.reference.ReferenceRole
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -12,6 +14,8 @@ data class StoryboardShot(
     val referencePath: String? = null,
     /** True when the user picked the reference manually; auto updates must not overwrite it. */
     val referenceManual: Boolean = false,
+    /** Semantic purpose of this shot's reference image. */
+    val referenceRole: ReferenceRole = ReferenceRole.AUTO,
     /** Last frame extracted from a successful result; feeds the next shot. */
     val lastFramePath: String? = null,
     val status: String = "draft", // draft | running | done | failed
@@ -27,6 +31,7 @@ data class StoryboardProject(
     val workflowId: String,
     val stylePrompt: String = "",
     val shots: List<StoryboardShot> = emptyList(),
+    val assets: List<ProjectAsset> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 )
@@ -52,6 +57,7 @@ object StoryboardCodec {
         .put("createdAt", project.createdAt)
         .put("updatedAt", project.updatedAt)
         .put("shots", JSONArray().apply { project.shots.forEach { put(shotToJson(it)) } })
+        .put("assets", JSONArray().apply { project.assets.forEach { put(assetToJson(it)) } })
 
     private fun projectFromJson(o: JSONObject): StoryboardProject? {
         val id = o.optString("id").takeIf { it.isNotBlank() } ?: return null
@@ -60,12 +66,19 @@ object StoryboardCodec {
         for (i in 0 until array.length()) {
             array.optJSONObject(i)?.let { shots += shotFromJson(it) }
         }
+        val assets = mutableListOf<ProjectAsset>()
+        o.optJSONArray("assets")?.let { array ->
+            for (i in 0 until array.length()) {
+                array.optJSONObject(i)?.let { assets += assetFromJson(it) }
+            }
+        }
         return StoryboardProject(
             id = id,
             title = o.optString("title", "Storyboard"),
             workflowId = o.optString("workflowId"),
             stylePrompt = o.optString("stylePrompt"),
             shots = shots,
+            assets = assets,
             createdAt = o.optLong("createdAt"),
             updatedAt = o.optLong("updatedAt"),
         )
@@ -76,6 +89,7 @@ object StoryboardCodec {
         .put("prompt", shot.prompt)
         .put("referencePath", shot.referencePath ?: JSONObject.NULL)
         .put("referenceManual", shot.referenceManual)
+        .put("referenceRole", shot.referenceRole.name)
         .put("lastFramePath", shot.lastFramePath ?: JSONObject.NULL)
         .put("status", shot.status)
         .put("taskId", shot.taskId ?: JSONObject.NULL)
@@ -87,11 +101,29 @@ object StoryboardCodec {
         prompt = o.optString("prompt"),
         referencePath = nullableString(o, "referencePath"),
         referenceManual = o.optBoolean("referenceManual", false),
+        referenceRole = ReferenceRole.fromStorage(o.optString("referenceRole")),
         lastFramePath = nullableString(o, "lastFramePath"),
         status = o.optString("status", "draft"),
         taskId = nullableString(o, "taskId"),
         resultPath = nullableString(o, "resultPath"),
         error = nullableString(o, "error"),
+    )
+
+    private fun assetToJson(asset: ProjectAsset): JSONObject = JSONObject()
+        .put("id", asset.id)
+        .put("role", asset.role.name)
+        .put("path", asset.path)
+        .put("label", asset.label)
+        .put("order", asset.order)
+        .put("createdAt", asset.createdAt)
+
+    private fun assetFromJson(o: JSONObject): ProjectAsset = ProjectAsset(
+        id = o.optString("id", UUID.randomUUID().toString()),
+        role = ReferenceRole.fromStorage(o.optString("role")),
+        path = o.optString("path"),
+        label = o.optString("label"),
+        order = o.optInt("order", 0),
+        createdAt = o.optLong("createdAt", System.currentTimeMillis()),
     )
 
     private fun nullableString(o: JSONObject, key: String): String? =

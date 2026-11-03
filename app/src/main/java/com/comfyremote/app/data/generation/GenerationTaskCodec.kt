@@ -2,6 +2,7 @@ package com.comfyremote.app.data.generation
 
 import com.comfyremote.app.FieldKind
 import com.comfyremote.app.PromptField
+import com.comfyremote.app.data.reference.ReferenceRole
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -121,6 +122,7 @@ object GenerationTaskCodec {
         .put("min", field.min ?: JSONObject.NULL)
         .put("max", field.max ?: JSONObject.NULL)
         .put("required", field.required)
+        .put("referenceRole", field.referenceRole.name)
 
     private fun fieldList(array: JSONArray?): List<PromptField> {
         if (array == null) return emptyList()
@@ -140,6 +142,7 @@ object GenerationTaskCodec {
                 min = nullableString(o, "min"),
                 max = nullableString(o, "max"),
                 required = o.optBoolean("required", false),
+                referenceRole = ReferenceRole.fromStorage(o.optString("referenceRole")),
             )
         }
     }

@@ -27,8 +27,20 @@ interface CloudProvider {
     }
 }
 
+data class CloudProviderInfo(
+    val id: String,
+    val label: String,
+    val pathPrefix: String,
+    val configured: Boolean,
+)
+
 class CloudProviderRegistry(private val providers: List<CloudProvider>) {
     val all: List<CloudProvider> get() = providers
+
+    /** Provider cards for the future multi-provider settings page. */
+    fun info(): List<CloudProviderInfo> = providers.map {
+        CloudProviderInfo(it.id, it.label, it.pathPrefix, it.configured())
+    }
 
     fun byId(id: String): CloudProvider? = providers.firstOrNull { it.id == id }
 

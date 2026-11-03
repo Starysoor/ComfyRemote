@@ -43,6 +43,8 @@
     <string name="settings_random_seed_detail">Off keeps the workflow\'s seed</string>
     <string name="settings_auto_save">Auto-save drafts</string>
     <string name="settings_auto_save_detail">Remember last values per workflow and server</string>
+    <string name="settings_auto_restore">Auto-restore drafts</string>
+    <string name="settings_auto_restore_detail">Open a workflow with its last saved values</string>
     <string name="settings_reuse_choose_workflow">Choose workflow when reusing</string>
     <string name="settings_reuse_choose_workflow_detail">Off returns to the original platform/workflow; on opens the workflow picker</string>
     <string name="settings_max_upload">Max upload dimension</string>

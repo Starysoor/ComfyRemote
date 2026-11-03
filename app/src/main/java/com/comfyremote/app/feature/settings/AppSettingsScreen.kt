@@ -126,6 +126,12 @@ fun AppSettingsScreen(
                     onCheckedChange = { value -> viewModel.update { it.copy(autoSaveDrafts = value) } },
                 )
                 SwitchRow(
+                    title = stringResource(R.string.settings_auto_restore),
+                    detail = stringResource(R.string.settings_auto_restore_detail),
+                    checked = settings.autoRestoreDrafts,
+                    onCheckedChange = { value -> viewModel.update { it.copy(autoRestoreDrafts = value) } },
+                )
+                SwitchRow(
                     title = stringResource(R.string.settings_reuse_choose_workflow),
                     detail = stringResource(R.string.settings_reuse_choose_workflow_detail),
                     checked = settings.reuseChooseWorkflow,

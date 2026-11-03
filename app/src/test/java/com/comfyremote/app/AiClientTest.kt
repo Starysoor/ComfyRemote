@@ -91,6 +91,34 @@ class AiClientTest {
     }
 
     @Test
+    fun multiImageVisionBodyCarriesRoleAndOrder() {
+        val body = AiClient.buildVisionChatBody(
+            model = "vision-model",
+            systemPrompt = "look",
+            userText = "animate",
+            images = listOf(
+                com.comfyremote.app.AiImageInput(
+                    dataUrl = "data:image/png;base64,AA==",
+                    role = com.comfyremote.app.data.reference.ReferenceRole.START_FRAME,
+                    order = 1,
+                    label = "start",
+                ),
+                com.comfyremote.app.AiImageInput(
+                    dataUrl = "data:image/png;base64,BB==",
+                    role = com.comfyremote.app.data.reference.ReferenceRole.END_FRAME,
+                    order = 2,
+                    label = "end",
+                ),
+            ),
+            t = AiTunables(),
+        )
+        val content = body.getJSONArray("messages").getJSONObject(1).getJSONArray("content")
+        assertTrue(content.toString().contains("start frame"))
+        assertTrue(content.toString().contains("end frame"))
+        assertEquals(2, (0 until content.length()).count { content.getJSONObject(it).getString("type") == "image_url" })
+    }
+
+    @Test
     fun applyThinkingModeWritesExpectedFields() {
         // mirrors MainViewModel.applyThinkingMode mapping via the same JSON contract
         val extra = JSONObject()

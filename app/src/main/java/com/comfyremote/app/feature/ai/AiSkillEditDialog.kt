@@ -72,7 +72,8 @@ internal fun SkillEditDialog(
                 onClick = {
                     val parsed = patterns.split(',', '，', '\n').map(String::trim).filter(String::isNotBlank)
                     onSave(
-                        AiSkillDef(skill?.id ?: "custom_${System.currentTimeMillis()}", label.trim(), prompt, skill?.builtin ?: false),
+                        skill?.copy(label = label.trim(), systemPrompt = prompt)
+                            ?: AiSkillDef("custom_${System.currentTimeMillis()}", label.trim(), prompt, false),
                         parsed,
                     )
                 },

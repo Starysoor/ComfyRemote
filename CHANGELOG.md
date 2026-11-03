@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.3.0 — 2026-11-03
+
+### Added
+
+- Phase A foundation: semantic `ReferenceRole` / `ProjectAsset` models, persisted through storyboards, history and task requests.
+- Reference-role defaults on local and cloud image fields, with provider rule metadata.
+- Skill Runtime metadata on `AiSkillDef`: scopes, input sources, execution and output policies.
+- Multi-image vision requests that send every reference with its role/order in one request.
+- Independent "auto-save drafts" and "auto-restore drafts" settings.
+- Cloud provider registry metadata for the upcoming multi-provider settings page.
+- Version `2.3.0` (versionCode 26).
+
 ## 2.2.4 — 2026-11-03
 
 ### Added

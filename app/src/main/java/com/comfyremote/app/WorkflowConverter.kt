@@ -1,5 +1,7 @@
 package com.comfyremote.app
 
+import com.comfyremote.app.data.reference.ReferenceRole
+import com.comfyremote.app.data.reference.inferReferenceRole
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.random.Random
@@ -26,6 +28,8 @@ data class PromptField(
     val max: String? = null,
     /** True when the workflow schema marks this input as required. */
     val required: Boolean = false,
+    /** Semantic role for reference images; AUTO lets the adapter/user decide. */
+    val referenceRole: ReferenceRole = ReferenceRole.AUTO,
 )
 
 class ConvertedWorkflow(
@@ -211,6 +215,7 @@ object WorkflowConverter {
                         PromptField(
                             "$id:$name", id, name, "$title · $name", FieldKind.IMAGE, v?.toString() ?: "",
                             required = name in requiredNames,
+                            referenceRole = inferReferenceRole(name, title),
                         )
                     )
                 } else {
@@ -311,14 +316,16 @@ object WorkflowConverter {
                 when {
                     cfg.has("control_after_generate") ->
                         fields.add(PromptField(key, id, name, label, FieldKind.SEED, v?.toString() ?: "0", required = required))
-                    cfg.optBoolean("image_upload", false) || cfg.optBoolean("audio_upload", false) ->
+                    cfg.optBoolean("image_upload", false) || cfg.optBoolean("audio_upload", false) -> {
+                        val kind = if (cfg.optBoolean("audio_upload", false)) FieldKind.AUDIO else FieldKind.IMAGE
                         fields.add(
                             PromptField(
-                                key, id, name, label,
-                                if (cfg.optBoolean("audio_upload", false)) FieldKind.AUDIO else FieldKind.IMAGE,
+                                key, id, name, label, kind,
                                 v?.toString() ?: "", required = required,
+                                referenceRole = if (kind == FieldKind.IMAGE) inferReferenceRole(name, title) else ReferenceRole.AUTO,
                             )
                         )
+                    }
                     type == "STRING" ->
                         fields.add(PromptField(key, id, name, label, FieldKind.TEXT, v?.toString() ?: "", cfg.optBoolean("multiline", false), required = required))
                     ptype.isNotEmpty() ->

@@ -1,6 +1,7 @@
 package com.comfyremote.app
 
 import android.content.SharedPreferences
+import com.comfyremote.app.data.reference.ReferenceRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -11,12 +12,28 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
+enum class SkillScope { TXT2IMG, IMG2IMG, TXT2VIDEO, IMG2VIDEO, START_END_VIDEO, MULTI_REFERENCE, AUDIO }
+
+enum class SkillInputSource {
+    CURRENT_TEXT, POSITIVE_PROMPT, NEGATIVE_PROMPT, CURRENT_IMAGE,
+    ALL_REFERENCES, START_END_FRAMES, PROJECT_CONTEXT,
+}
+
+enum class SkillExecution { TEXT_MODEL, VISION_MODEL, MULTI_STAGE }
+
+enum class SkillOutput { REPLACE_FIELD, APPEND, CANDIDATES, MULTI_FIELD }
+
 /** A user-editable prompt skill (two built-ins by default, any number custom). */
 data class AiSkillDef(
     val id: String,
     val label: String,
     val systemPrompt: String,
     val builtin: Boolean,
+    val description: String = "",
+    val scopes: Set<SkillScope> = emptySet(),
+    val inputSources: Set<SkillInputSource> = emptySet(),
+    val execution: SkillExecution = SkillExecution.TEXT_MODEL,
+    val output: SkillOutput = SkillOutput.REPLACE_FIELD,
 ) {
     companion object {
         const val DEFAULT_NATURAL_ID = "builtin_natural"
@@ -91,6 +108,17 @@ data class AiSkillDef(
                     "如果用途是视频，补充镜头运动、主体动作、时间感与氛围变化。不要编造图片中不存在的角色或元素；不要输出解释、前缀或引号。\n" +
                     "只输出重写后的提示词本身。",
             true,
+            description = "Reads reference images as hidden context and rewrites the target prompt.",
+            scopes = setOf(
+                SkillScope.IMG2VIDEO, SkillScope.START_END_VIDEO,
+                SkillScope.MULTI_REFERENCE, SkillScope.IMG2IMG,
+            ),
+            inputSources = setOf(
+                SkillInputSource.CURRENT_IMAGE, SkillInputSource.ALL_REFERENCES,
+                SkillInputSource.START_END_FRAMES, SkillInputSource.CURRENT_TEXT,
+            ),
+            execution = SkillExecution.VISION_MODEL,
+            output = SkillOutput.CANDIDATES,
         )
 
         val NSFW_TAGS_DEFAULT = AiSkillDef(
@@ -145,7 +173,21 @@ object AiSkills {
             val o = arr.optJSONObject(i) ?: continue
             val label = o.optString("label")
             if (label.isEmpty()) continue
-            out.add(AiSkillDef(o.optString("id"), label, o.optString("prompt"), o.optBoolean("builtin", false)))
+            out.add(
+                AiSkillDef(
+                    id = o.optString("id"),
+                    label = label,
+                    systemPrompt = o.optString("prompt"),
+                    builtin = o.optBoolean("builtin", false),
+                    description = o.optString("description"),
+                    scopes = enumSet(o.optJSONArray("scopes"), SkillScope.entries),
+                    inputSources = enumSet(o.optJSONArray("inputSources"), SkillInputSource.entries),
+                    execution = runCatching { SkillExecution.valueOf(o.optString("execution")) }
+                        .getOrDefault(SkillExecution.TEXT_MODEL),
+                    output = runCatching { SkillOutput.valueOf(o.optString("output")) }
+                        .getOrDefault(SkillOutput.REPLACE_FIELD),
+                )
+            )
         }
         AiSkillDef.mergeBuiltins(out)
     }.getOrDefault(AiSkillDef.defaults())
@@ -153,11 +195,45 @@ object AiSkills {
     fun save(prefs: SharedPreferences, skills: List<AiSkillDef>) {
         val arr = JSONArray()
         skills.forEach { s ->
-            arr.put(JSONObject().put("id", s.id).put("label", s.label).put("prompt", s.systemPrompt).put("builtin", s.builtin))
+            arr.put(
+                JSONObject()
+                    .put("id", s.id)
+                    .put("label", s.label)
+                    .put("prompt", s.systemPrompt)
+                    .put("builtin", s.builtin)
+                    .put("description", s.description)
+                    .put("scopes", JSONArray().apply { s.scopes.forEach { put(it.name) } })
+                    .put("inputSources", JSONArray().apply { s.inputSources.forEach { put(it.name) } })
+                    .put("execution", s.execution.name)
+                    .put("output", s.output.name)
+            )
         }
         prefs.edit().putString(KEY, arr.toString()).apply()
     }
+
+    private fun <T : Enum<T>> enumSet(array: JSONArray?, values: List<T>): Set<T> {
+        if (array == null) return emptySet()
+        val byName = values.associateBy { it.name }
+        return (0 until array.length()).mapNotNull { byName[array.optString(it)] }.toSet()
+    }
 }
+
+/** One encoded reference image plus the role/order the vision model should know. */
+data class AiImageInput(
+    val dataUrl: String,
+    val role: ReferenceRole = ReferenceRole.AUTO,
+    val order: Int = 0,
+    val label: String = "",
+)
+
+/** Raw image bytes supplied by the app; the repository encodes them for the provider. */
+data class AiImagePayload(
+    val bytes: ByteArray,
+    val mime: String = "image/jpeg",
+    val role: ReferenceRole = ReferenceRole.AUTO,
+    val order: Int = 0,
+    val label: String = "",
+)
 
 /** One AI result awaiting user confirmation (replace / append / dismiss). */
 data class AiResult(val fieldKey: String, val text: String)
@@ -207,6 +283,45 @@ object AiClient {
                 JSONObject().put("type", "image_url")
                     .put("image_url", JSONObject().put("url", imageDataUrl))
             )
+        val payload = JSONObject()
+            .put("model", model)
+            .put("stream", false)
+            .put(
+                "messages", JSONArray()
+                    .put(JSONObject().put("role", "system").put("content", systemPrompt))
+                    .put(JSONObject().put("role", "user").put("content", userContent))
+            )
+        t.temperature?.let { payload.put("temperature", it) }
+        t.maxTokens?.takeIf { it > 0 }?.let { payload.put("max_tokens", it) }
+        t.extraJson?.let { extra ->
+            extra.keys().forEach { k -> payload.put(k, extra.opt(k)) }
+        }
+        return payload
+    }
+
+    /** Multimodal body with every reference image and its semantic role/order. */
+    fun buildVisionChatBody(
+        model: String,
+        systemPrompt: String,
+        userText: String,
+        images: List<AiImageInput>,
+        t: AiTunables,
+    ): JSONObject {
+        val userContent = JSONArray().put(JSONObject().put("type", "text").put("text", userText))
+        images.sortedBy { it.order }.forEachIndexed { index, image ->
+            val roleLabel = image.role.name.replace('_', ' ').lowercase()
+            val prefix = buildString {
+                append("Image ").append(if (image.label.isNotBlank()) "\"${image.label}\"" else (index + 1))
+                if (image.role != ReferenceRole.AUTO) append(" — role: ").append(roleLabel)
+            }
+            if (image.role != ReferenceRole.AUTO || image.label.isNotBlank()) {
+                userContent.put(JSONObject().put("type", "text").put("text", prefix))
+            }
+            userContent.put(
+                JSONObject().put("type", "image_url")
+                    .put("image_url", JSONObject().put("url", image.dataUrl))
+            )
+        }
         val payload = JSONObject()
             .put("model", model)
             .put("stream", false)
@@ -275,6 +390,23 @@ object AiClient {
             baseUrl = baseUrl,
             apiKey = apiKey,
             payload = buildVisionChatBody(model, systemPrompt, userText, imageDataUrl, t),
+        )
+    }
+
+    /** Sends several images in one request, labelled with their semantic roles. */
+    suspend fun chatWithImages(
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        systemPrompt: String,
+        userText: String,
+        images: List<AiImageInput>,
+        t: AiTunables = AiTunables(),
+    ): String = withContext(Dispatchers.IO) {
+        postChat(
+            baseUrl = baseUrl,
+            apiKey = apiKey,
+            payload = buildVisionChatBody(model, systemPrompt, userText, images, t),
         )
     }
 

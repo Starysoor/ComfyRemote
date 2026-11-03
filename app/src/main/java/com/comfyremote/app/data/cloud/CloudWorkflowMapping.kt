@@ -3,6 +3,8 @@ package com.comfyremote.app.data.cloud
 import com.comfyremote.app.FieldKind
 import com.comfyremote.app.PromptField
 import com.comfyremote.app.PromptValidationException
+import com.comfyremote.app.data.reference.ReferenceRole
+import com.comfyremote.app.data.reference.inferReferenceRole
 import com.comfyremote.app.data.repository.WorkflowCapability
 import com.comfyremote.app.data.repository.WorkflowCompatibilityIssue
 import com.comfyremote.app.data.repository.WorkflowInsight
@@ -43,6 +45,11 @@ object CloudWorkflowMapping {
                 kind = FieldKind.IMAGE,
                 value = value,
                 required = rule.required,
+                referenceRole = if (rule.referenceRole != ReferenceRole.AUTO) {
+                    rule.referenceRole
+                } else {
+                    inferReferenceRole(rule.name, label)
+                },
             )
             rule.isAudio -> PromptField(
                 key = rule.name,

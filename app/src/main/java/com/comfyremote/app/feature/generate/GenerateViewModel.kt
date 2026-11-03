@@ -208,7 +208,9 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                     pendingStoryboardProjectId = transfer?.storyboardProjectId
                     pendingStoryboardShotId = transfer?.storyboardShotId
                     val storyboard = pendingStoryboardProjectId != null && pendingStoryboardShotId != null
-                    val remembered = if (transfer == null) {
+                    val remembered = if (transfer == null &&
+                        container.appSettingsStore.settings.value.autoRestoreDrafts
+                    ) {
                         container.workflowDraftStore.load(
                             path,
                             baseDraft.storageServerUrl.ifBlank { container.serverSession.url },

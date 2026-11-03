@@ -2,6 +2,7 @@ package com.comfyremote.app.data.cloud
 
 import com.comfyremote.app.WorkflowEntry
 import com.comfyremote.app.R
+import com.comfyremote.app.data.reference.ReferenceRole
 import com.comfyremote.app.ui.AppStrings
 import org.json.JSONArray
 import org.json.JSONObject
@@ -106,6 +107,7 @@ data class CloudInputRule(
     val options: List<String> = emptyList(),
     val minLength: Int? = null,
     val maxLength: Int? = null,
+    val referenceRole: ReferenceRole = ReferenceRole.AUTO,
 ) {
     val isImage: Boolean get() = type == "image"
     val isAudio: Boolean get() = type == "audio"
@@ -205,6 +207,7 @@ data class CloudWorkflowSpec(
             .put("options", JSONArray().apply { rule.options.forEach { put(it) } })
             .put("minLength", rule.minLength ?: JSONObject.NULL)
             .put("maxLength", rule.maxLength ?: JSONObject.NULL)
+            .put("referenceRole", rule.referenceRole.name)
 
         fun ruleFromJson(json: JSONObject): CloudInputRule = CloudInputRule(
             name = json.optString("name"),
@@ -217,6 +220,7 @@ data class CloudWorkflowSpec(
                 (0 until array.length()).map { array.optString(it) }
             }.orEmpty(),
             minLength = if (json.isNull("minLength")) null else json.optInt("minLength"),
+            referenceRole = ReferenceRole.fromStorage(json.optString("referenceRole")),
             maxLength = if (json.isNull("maxLength")) null else json.optInt("maxLength"),
         )
     }
@@ -292,6 +296,9 @@ object CloudWorkflowParser {
                     }.orEmpty(),
                     minLength = if (rule.has("min_length")) rule.optInt("min_length") else null,
                     maxLength = if (rule.has("max_length")) rule.optInt("max_length") else null,
+                    referenceRole = ReferenceRole.fromStorage(
+                        rule.optString("reference_role", rule.optString("referenceRole", ""))
+                    ),
                 )
             }
         }
