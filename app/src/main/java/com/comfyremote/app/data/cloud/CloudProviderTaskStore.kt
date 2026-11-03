@@ -4,6 +4,8 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.security.MessageDigest
 
 /**
@@ -35,20 +37,29 @@ class CloudProviderTaskStore internal constructor(private val dir: File) {
         file(providerId, taskId, RESULT).delete()
     }
 
-    private fun write(providerId: String, taskId: String, kind: String, payload: JSONObject) =
+    private fun write(providerId: String, taskId: String, kind: String, payload: JSONObject) {
         synchronized(lock) {
-            runCatching {
-                dir.mkdirs()
-                val target = file(providerId, taskId, kind)
-                val tmp = File(target.parentFile, target.name + ".tmp")
-                tmp.writeText(payload.toString())
-                if (!tmp.renameTo(target)) {
-                    target.writeText(tmp.readText())
-                    tmp.delete()
+            // A swallowed write error would make a paid remote task impossible to recover.
+            if (!dir.isDirectory && !dir.mkdirs()) {
+                throw IOException("Cannot create cloud task recovery directory: $dir")
+            }
+            val target = file(providerId, taskId, kind)
+            val tmp = File.createTempFile(target.name + ".", ".tmp", dir)
+            try {
+                FileOutputStream(tmp).use { stream ->
+                    stream.write(payload.toString().toByteArray(Charsets.UTF_8))
+                    stream.fd.sync()
                 }
-                pruneLocked()
+                // Do not fall back to writing the target directly: it must remain valid on failure.
+                if (!tmp.renameTo(target)) {
+                    throw IOException("Cannot atomically store cloud task recovery data: ${target.name}")
+                }
+                pruneTemporaryFilesLocked()
+            } finally {
+                tmp.delete()
             }
         }
+    }
 
     private fun read(providerId: String, taskId: String, kind: String): JSONObject? =
         synchronized(lock) {
@@ -69,14 +80,13 @@ class CloudProviderTaskStore internal constructor(private val dir: File) {
         }
     }
 
-    private fun pruneLocked() {
-        val files = dir.listFiles()?.filter { it.isFile && it.name.endsWith(".json") }.orEmpty()
+    private fun pruneTemporaryFilesLocked() {
+        // Only the owning task can decide when its pending/result state is no longer needed.
+        // Pruning .json by age/count silently orphaned long-running and recovered cloud jobs.
         val now = System.currentTimeMillis()
-        files.filter { now - it.lastModified() > MAX_AGE_MS }.forEach { it.delete() }
-        val remaining = dir.listFiles()?.filter { it.isFile }?.sortedBy { it.lastModified() }.orEmpty()
-        if (remaining.size > MAX_FILES) {
-            remaining.take(remaining.size - MAX_FILES).forEach { it.delete() }
-        }
+        dir.listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".tmp") && now - it.lastModified() > TEMP_MAX_AGE_MS }
+            ?.forEach { it.delete() }
     }
 
     private fun resultToJson(result: CloudTaskResult): JSONObject = JSONObject()
@@ -123,7 +133,6 @@ class CloudProviderTaskStore internal constructor(private val dir: File) {
     companion object {
         private const val PENDING = "pending"
         private const val RESULT = "result"
-        private const val MAX_AGE_MS = 7L * 24 * 60 * 60_000L
-        private const val MAX_FILES = 400
+        private const val TEMP_MAX_AGE_MS = 24L * 60 * 60_000L
     }
 }
