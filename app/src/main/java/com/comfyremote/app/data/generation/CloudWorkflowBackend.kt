@@ -22,6 +22,7 @@ import org.json.JSONObject
 class CloudWorkflowBackend(
     private val repository: CloudProvider,
     private val workflowId: String,
+    private val providerLabel: String = repository.label,
     /** Transient result-polling failures tolerated before the task fails. */
     private val retryCount: Int = 0,
     private val retryDelayMs: Long = 2_000L,
@@ -59,10 +60,11 @@ class CloudWorkflowBackend(
                 val result = repository.result(promptId)
                 taskId = promptId
                 lastStatus = result.status
-                return when (result.status) {
+                return when (result.status.uppercase()) {
                     "SUCCESS", "COMPLETED" -> successEntry(result)
-                    "FAILED", "FAILURE", "ERROR", "CANCELLED", "CANCELED" -> errorEntry(
-                        result.message.ifBlank { "Cloud 任务失败（${result.status}）" }
+                    "CANCELLED", "CANCELED" -> cancelledEntry()
+                    "FAILED", "FAILURE", "ERROR" -> errorEntry(
+                        result.message.ifBlank { "$providerLabel 任务失败（${result.status}）" }
                     )
                     else -> null
                 }
@@ -97,7 +99,7 @@ class CloudWorkflowBackend(
 
     private fun successEntry(result: com.comfyremote.app.data.cloud.CloudTaskResult): JSONObject {
         if (result.results.isEmpty()) {
-            return errorEntry("AutoDL 任务完成但没有返回结果")
+            return errorEntry("$providerLabel 任务完成但没有返回结果")
         }
         val images = JSONArray()
         val videos = JSONArray()
@@ -135,10 +137,23 @@ class CloudWorkflowBackend(
                         JSONArray().put("execution_error").put(
                             JSONObject()
                                 .put("node_id", "cloud")
-                                .put("node_type", "AutoDL")
+                                .put("node_type", providerLabel)
                                 .put("exception_message", message)
                         )
                     )
+                ),
+        )
+        .put("outputs", JSONObject())
+
+    /** Shape recognized by [com.comfyremote.app.historyCancelled]. */
+    private fun cancelledEntry(): JSONObject = JSONObject()
+        .put(
+            "status",
+            JSONObject()
+                .put("status_str", "success")
+                .put(
+                    "messages",
+                    JSONArray().put(JSONArray().put("execution_interrupted")),
                 ),
         )
         .put("outputs", JSONObject())

@@ -92,7 +92,10 @@ class StoryboardStore internal constructor(private val file: File) {
         updateLocked(projectId) { project ->
             val shot = StoryboardShot(prompt = prompt.trim())
             created = shot
-            project.copy(shots = project.shots + shot, updatedAt = System.currentTimeMillis())
+            project.copy(
+                shots = rebaseAutoReferences(project.shots + shot),
+                updatedAt = System.currentTimeMillis(),
+            )
         }
         created
     }
@@ -105,7 +108,10 @@ class StoryboardStore internal constructor(private val file: File) {
             val shot = StoryboardShot(prompt = prompt.trim())
             created = shot
             val shots = project.shots.toMutableList().apply { add(index + 1, shot) }
-            project.copy(shots = shots, updatedAt = System.currentTimeMillis())
+            project.copy(
+                shots = rebaseAutoReferences(shots),
+                updatedAt = System.currentTimeMillis(),
+            )
         }
         created
     }
@@ -125,7 +131,10 @@ class StoryboardStore internal constructor(private val file: File) {
             )
             created = copy
             val shots = project.shots.toMutableList().apply { add(index + 1, copy) }
-            project.copy(shots = shots, updatedAt = System.currentTimeMillis())
+            project.copy(
+                shots = rebaseAutoReferences(shots),
+                updatedAt = System.currentTimeMillis(),
+            )
         }
         created
     }
@@ -140,7 +149,10 @@ class StoryboardStore internal constructor(private val file: File) {
             val shot = shots.removeAt(index)
             shots.add(target, shot)
             moved = true
-            project.copy(shots = shots, updatedAt = System.currentTimeMillis())
+            project.copy(
+                shots = rebaseAutoReferences(shots),
+                updatedAt = System.currentTimeMillis(),
+            )
         }
         moved
     }
@@ -156,12 +168,50 @@ class StoryboardStore internal constructor(private val file: File) {
 
     fun removeAsset(projectId: String, assetId: String): Boolean = synchronized(lock) {
         var removed = false
+        var removedPath: String? = null
         update(projectId) { project ->
-            val next = project.assets.filterNot { it.id == assetId }
-            removed = next.size != project.assets.size
-            project.copy(assets = next, updatedAt = System.currentTimeMillis())
+            val asset = project.assets.firstOrNull { it.id == assetId }
+                ?: return@update project
+            removed = true
+            removedPath = asset.path
+            val remaining = project.assets.filterNot { it.id == assetId }
+            val cleaned = project.shots.map { shot ->
+                val referencedById = assetId in shot.referenceAssetIds
+                val referencedByPath = shot.referencePath == asset.path
+                if (!referencedById && !referencedByPath) return@map shot
+
+                val ids = shot.referenceAssetIds - assetId
+                val nextAsset = ids.firstNotNullOfOrNull { id ->
+                    remaining.firstOrNull { it.id == id }
+                }
+                shot.copy(
+                    referenceAssetIds = ids,
+                    referencePath = when {
+                        !referencedByPath -> shot.referencePath
+                        nextAsset != null -> nextAsset.path
+                        else -> null
+                    },
+                    referenceRole = if (referencedByPath && nextAsset != null) {
+                        nextAsset.role
+                    } else {
+                        shot.referenceRole
+                    },
+                    // Removing an explicit asset must not silently fall back to an auto frame.
+                    referenceManual = true,
+                )
+            }
+            project.copy(
+                assets = remaining,
+                shots = rebaseAutoReferences(cleaned),
+                updatedAt = System.currentTimeMillis(),
+            )
         }
-        if (removed) gcOrphanMediaLocked()
+        if (removed) {
+            // An explicitly removed asset no longer needs the GC grace period.
+            removedPath?.takeIf { path -> path.isNotBlank() && path !in referencedMediaPaths() }
+                ?.let { path -> runCatching { File(path).delete() } }
+            gcOrphanMediaLocked()
+        }
         removed
     }
 
@@ -178,18 +228,12 @@ class StoryboardStore internal constructor(private val file: File) {
     fun deleteShot(projectId: String, shotId: String) = synchronized(lock) {
         updateLocked(projectId) { project ->
             val index = project.shots.indexOfFirst { it.id == shotId }
-            val removed = project.shots.getOrNull(index) ?: return@updateLocked project
+            if (index < 0) return@updateLocked project
             val remaining = project.shots.toMutableList().apply { removeAt(index) }
-            // Shots wired to the deleted shot's media now fall back to the new previous shot.
-            val stale = listOfNotNull(removed.lastFramePath, removed.resultPath).toSet()
-            if (stale.isNotEmpty()) {
-                remaining.indices.forEach { i ->
-                    if (!remaining[i].referenceManual && remaining[i].referencePath in stale) {
-                        remaining[i] = remaining[i].copy(referencePath = remaining.getOrNull(i - 1)?.lastFramePath)
-                    }
-                }
-            }
-            project.copy(shots = remaining, updatedAt = System.currentTimeMillis())
+            project.copy(
+                shots = rebaseAutoReferences(remaining),
+                updatedAt = System.currentTimeMillis(),
+            )
         }.also { gcOrphanMediaLocked() }
     }
 
@@ -207,13 +251,22 @@ class StoryboardStore internal constructor(private val file: File) {
     }
 
     fun markDone(projectId: String, shotId: String, resultPath: String, lastFramePath: String?) =
-        updateShot(projectId, shotId) {
-            it.copy(
-                status = "done",
-                resultPath = resultPath,
-                lastFramePath = lastFramePath ?: it.lastFramePath,
-                error = null,
-            )
+        synchronized(lock) {
+            updateLocked(projectId) { project ->
+                val shots = project.shots.map { shot ->
+                    if (shot.id != shotId) shot
+                    else shot.copy(
+                        status = "done",
+                        resultPath = resultPath,
+                        lastFramePath = lastFramePath ?: shot.lastFramePath,
+                        error = null,
+                    )
+                }
+                project.copy(
+                    shots = rebaseAutoReferences(shots),
+                    updatedAt = System.currentTimeMillis(),
+                )
+            }
         }
 
     fun markFailed(projectId: String, shotId: String, message: String) = updateShot(projectId, shotId) {
@@ -243,6 +296,29 @@ class StoryboardStore internal constructor(private val file: File) {
             .flatMap { it.assets.asSequence() }
             .map { it.path }
         return (shots + assets).filter { it.isNotBlank() }.toSet()
+    }
+
+    /**
+     * Rebuilds automatic frame inheritance in timeline order. Manual references and
+     * project-asset references always win; the most recent preceding last frame is
+     * carried forward until a shot produces a newer one.
+     */
+    private fun rebaseAutoReferences(shots: List<StoryboardShot>): List<StoryboardShot> {
+        var inherited: String? = null
+        var changed = false
+        val result = shots.map { shot ->
+            val next = if (!shot.referenceManual && shot.referenceAssetIds.isEmpty() &&
+                shot.referencePath != inherited
+            ) {
+                changed = true
+                shot.copy(referencePath = inherited)
+            } else {
+                shot
+            }
+            if (shot.lastFramePath != null) inherited = shot.lastFramePath
+            next
+        }
+        return if (changed) result else shots
     }
 
     private fun update(projectId: String, transform: (StoryboardProject) -> StoryboardProject) =

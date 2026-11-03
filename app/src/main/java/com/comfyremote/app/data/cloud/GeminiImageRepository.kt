@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
 /** Google Gemini / Imagen official image APIs. */
 class GeminiImageRepository(
     private val settings: CloudProviderSettingsStore,
+    private val taskStore: CloudProviderTaskStore,
 ) : CloudProvider {
     override val id: String = PROVIDER
     override val label: String = "Google Gemini"
@@ -24,6 +25,8 @@ class GeminiImageRepository(
     private fun account() = settings.account(id, DEFAULT_BASE, MODELS)
 
     override fun configured(): Boolean = account().token.isNotBlank()
+
+    override fun endpoint(): String = account().baseUrl
 
     override suspend fun discoverModels(): List<String> {
         val account = account()
@@ -70,7 +73,9 @@ class GeminiImageRepository(
         val items = submitGemini(base, workflowId, prompt, aspect, body, headers)
         if (items.isEmpty()) throw ComfyException("Provider returned no images")
         val taskId = UUID.randomUUID().toString()
-        results[taskId] = CloudTaskResult(taskId, "SUCCESS", items, "", 0)
+        val result = CloudTaskResult(taskId, "SUCCESS", items, "", 0)
+        results[taskId] = result
+        taskStore.saveResult(id, taskId, result)
         return taskId
     }
 
@@ -124,7 +129,14 @@ class GeminiImageRepository(
     }
 
     override suspend fun result(taskId: String): CloudTaskResult =
-        results[taskId] ?: CloudTaskResult(taskId, "FAILED", emptyList(), "Image result expired", 0)
+        results[taskId]
+            ?: taskStore.result(id, taskId)
+            ?: CloudTaskResult(taskId, "FAILED", emptyList(), "Image result expired", 0)
+
+    override fun forgetTask(taskId: String) {
+        results.remove(taskId)
+        taskStore.clear(id, taskId)
+    }
 
     private fun auth(account: CloudProviderAccount) =
         settings.mergeHeaders(id, mapOf("x-goog-api-key" to account.token))

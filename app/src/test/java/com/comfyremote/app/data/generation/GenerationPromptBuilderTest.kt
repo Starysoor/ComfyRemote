@@ -94,6 +94,52 @@ class GenerationPromptBuilderTest {
     }
 
     @Test
+    fun nonAutoDlCloudProvidersUseTheCloudPromptBuilder() = runBlocking {
+        val spec = com.comfyremote.app.data.cloud.CloudWorkflowSpec(
+            id = "black-forest-labs/flux-dev",
+            name = "Flux Dev",
+            kind = "image",
+            description = "",
+            rules = listOf(
+                com.comfyremote.app.data.cloud.CloudInputRule("prompt", "prompt", required = true),
+                com.comfyremote.app.data.cloud.CloudInputRule(
+                    "steps", "integer", required = false, defaultValue = "20",
+                ),
+                com.comfyremote.app.data.cloud.CloudInputRule(
+                    "watermark", "boolean", required = false, defaultValue = "false",
+                ),
+                com.comfyremote.app.data.cloud.CloudInputRule("image", "image", required = false),
+            ),
+        )
+        val fields = com.comfyremote.app.data.cloud.CloudWorkflowMapping.fields(spec)
+        val request = GenerationRequest(
+            id = "replicate-request",
+            provider = "replicate",
+            serverUrl = "https://api.replicate.com/v1",
+            workflowPath = "replicate:black-forest-labs/flux-dev",
+            workflowName = "Flux Dev",
+            fieldValues = mapOf(
+                "prompt" to "a red fox",
+                "steps" to "30",
+                "watermark" to "true",
+                "image" to "local:/tmp/ref.png",
+            ),
+            randomSeed = true,
+            nodeTitles = emptyMap(),
+            fields = fields,
+            convertedPrompt = spec.toJson(),
+            createdAt = 1L,
+        )
+
+        val (body, _) = GenerationPromptBuilder.build(request) { "data:image/png;base64,AA==" }
+
+        assertEquals("a red fox", body.getString("prompt"))
+        assertEquals(30L, body.getLong("steps"))
+        assertEquals(true, body.getBoolean("watermark"))
+        assertEquals("data:image/png;base64,AA==", body.getString("image"))
+    }
+
+    @Test
     fun generationTaskTerminalStatesAreNotActive() {
         val req = request(randomSeed = false, values = emptyMap())
 

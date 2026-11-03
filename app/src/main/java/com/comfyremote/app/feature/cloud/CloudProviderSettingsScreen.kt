@@ -385,6 +385,10 @@ fun CloudProviderSettingsScreen(
                         text = context.getString(R.string.cloud_status_ok, result.modelCount),
                         tone = BannerTone.Success,
                     )
+                    CloudHealthStatus.CONFIGURED_UNVERIFIED -> InfoBanner(
+                        text = stringResource(R.string.cloud_status_unverified_detail),
+                        tone = BannerTone.Warning,
+                    )
                     CloudHealthStatus.NOT_CONFIGURED -> InfoBanner(
                         text = stringResource(R.string.cloud_provider_not_configured),
                         tone = BannerTone.Warning,

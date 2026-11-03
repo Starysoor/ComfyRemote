@@ -178,6 +178,121 @@ class StoryboardStoreTest {
     }
 
     @Test
+    fun removingAnAssetCleansEveryShotReference() {
+        val store = store()
+        val project = store.create("Board", "wf")
+        val shot = store.addShot(project.id, "shot")!!
+        val first = com.comfyremote.app.data.reference.ProjectAsset(
+            id = "asset-a",
+            role = com.comfyremote.app.data.reference.ReferenceRole.START_FRAME,
+            path = "/tmp/a.png",
+        )
+        val second = com.comfyremote.app.data.reference.ProjectAsset(
+            id = "asset-b",
+            role = com.comfyremote.app.data.reference.ReferenceRole.CHARACTER_REFERENCE,
+            path = "/tmp/b.png",
+        )
+        store.addAsset(project.id, first)
+        store.addAsset(project.id, second)
+        store.updateShot(project.id, shot.id) {
+            it.copy(
+                referenceAssetIds = listOf("asset-a", "asset-b"),
+                referencePath = "/tmp/a.png",
+                referenceRole = com.comfyremote.app.data.reference.ReferenceRole.START_FRAME,
+                referenceManual = true,
+            )
+        }
+
+        assertTrue(store.removeAsset(project.id, "asset-a"))
+
+        val afterFirst = store.project(project.id)!!.shots.single()
+        assertEquals(listOf("asset-b"), afterFirst.referenceAssetIds)
+        assertEquals("/tmp/b.png", afterFirst.referencePath)
+        assertEquals(com.comfyremote.app.data.reference.ReferenceRole.CHARACTER_REFERENCE, afterFirst.referenceRole)
+
+        assertTrue(store.removeAsset(project.id, "asset-b"))
+
+        val afterLast = store.project(project.id)!!.shots.single()
+        assertTrue(afterLast.referenceAssetIds.isEmpty())
+        assertNull(afterLast.referencePath)
+        assertTrue(afterLast.referenceManual)
+    }
+
+    @Test
+    fun reorderingShotsRebuildsTheAutomaticFrameChain() {
+        val store = store()
+        val project = store.create("Board", "wf")
+        val first = store.addShot(project.id, "first")!!
+        val second = store.addShot(project.id, "second")!!
+        val third = store.addShot(project.id, "third")!!
+        store.markDone(project.id, first.id, "/tmp/first.mp4", "/tmp/first.png")
+        store.markDone(project.id, second.id, "/tmp/second.mp4", "/tmp/second.png")
+        store.setReference(project.id, second.id, "/tmp/first.png", manual = false)
+        store.setReference(project.id, third.id, "/tmp/second.png", manual = false)
+
+        assertTrue(store.moveShot(project.id, third.id, -1))
+
+        val shots = store.project(project.id)!!.shots
+        assertEquals(listOf(first.id, third.id, second.id), shots.map { it.id })
+        assertEquals("/tmp/first.png", shots[1].referencePath)
+        assertEquals("/tmp/first.png", shots[2].referencePath)
+    }
+
+    @Test
+    fun insertingAShotRebuildsTheAutomaticFrameChain() {
+        val store = store()
+        val project = store.create("Board", "wf")
+        val first = store.addShot(project.id, "first")!!
+        val second = store.addShot(project.id, "second")!!
+        store.markDone(project.id, first.id, "/tmp/first.mp4", "/tmp/first.png")
+        store.setReference(project.id, second.id, "/tmp/first.png", manual = false)
+
+        val inserted = store.insertShotAfter(project.id, first.id, "inserted")!!
+
+        val shots = store.project(project.id)!!.shots
+        assertEquals(listOf(first.id, inserted.id, second.id), shots.map { it.id })
+        assertEquals("/tmp/first.png", shots[1].referencePath)
+        assertEquals("/tmp/first.png", shots[2].referencePath)
+    }
+
+    @Test
+    fun manualReferencesSurviveReordering() {
+        val store = store()
+        val project = store.create("Board", "wf")
+        val first = store.addShot(project.id, "first")!!
+        val manual = store.addShot(project.id, "manual")!!
+        val auto = store.addShot(project.id, "auto")!!
+        store.markDone(project.id, first.id, "/tmp/first.mp4", "/tmp/first.png")
+        store.setReference(project.id, manual.id, "/tmp/manual.png", manual = true)
+        store.setReference(project.id, auto.id, "/tmp/first.png", manual = false)
+
+        assertTrue(store.moveShot(project.id, auto.id, -1))
+
+        val shots = store.project(project.id)!!.shots
+        assertEquals(listOf(first.id, auto.id, manual.id), shots.map { it.id })
+        assertEquals("/tmp/first.png", shots[1].referencePath)
+        assertEquals("/tmp/manual.png", shots[2].referencePath)
+    }
+
+    @Test
+    fun removingAnAssetDeletesItsAppOwnedFileImmediately() {
+        val store = store()
+        val mediaDir = File(temp.root, "storyboards").apply { mkdirs() }
+        val file = File(mediaDir, "fresh.png").apply { writeText("asset") }
+        val project = store.create("Board", "wf")
+        val asset = com.comfyremote.app.data.reference.ProjectAsset(
+            id = "asset-file",
+            role = com.comfyremote.app.data.reference.ReferenceRole.GENERIC_REFERENCE,
+            path = file.absolutePath,
+        )
+        store.addAsset(project.id, asset)
+
+        assertTrue(store.removeAsset(project.id, "asset-file"))
+
+        assertFalse(file.exists())
+    }
+
+    @Test
     fun projectAssetsPersistAndCountAsReferencedMedia() {
         val store = store()
         val project = store.create("Board", "wf")

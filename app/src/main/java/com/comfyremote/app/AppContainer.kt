@@ -53,13 +53,14 @@ class AppContainer(val app: Application) {
     val autoDlSettingsStore = AutoDlSettingsStore(secretStore)
     val autoDlRepository = AutoDlRepository(autoDlSettingsStore)
     val cloudProviderSettingsStore = CloudProviderSettingsStore(prefs, secretStore)
-    val openAiImageRepository = OpenAiCompatibleImageRepository(cloudProviderSettingsStore)
-    val autoDlModelRepository = AutoDlModelRepository(cloudProviderSettingsStore)
-    val geminiImageRepository = GeminiImageRepository(cloudProviderSettingsStore)
+    val cloudTaskStore = com.comfyremote.app.data.cloud.CloudProviderTaskStore(app)
+    val openAiImageRepository = OpenAiCompatibleImageRepository(cloudProviderSettingsStore, cloudTaskStore)
+    val autoDlModelRepository = AutoDlModelRepository(cloudProviderSettingsStore, cloudTaskStore)
+    val geminiImageRepository = GeminiImageRepository(cloudProviderSettingsStore, cloudTaskStore)
     val replicateRepository = ReplicateRepository(cloudProviderSettingsStore)
-    val siliconFlowRepository = SiliconFlowRepository(cloudProviderSettingsStore)
-    val customOpenAiRepository = CustomOpenAiRepository(cloudProviderSettingsStore)
-    val customTemplateRepository = CustomTemplateRepository(cloudProviderSettingsStore)
+    val siliconFlowRepository = SiliconFlowRepository(cloudProviderSettingsStore, cloudTaskStore)
+    val customOpenAiRepository = CustomOpenAiRepository(cloudProviderSettingsStore, cloudTaskStore)
+    val customTemplateRepository = CustomTemplateRepository(cloudProviderSettingsStore, cloudTaskStore)
     val cloudProviders = com.comfyremote.app.data.cloud.CloudProviderRegistry(
         listOf(
             autoDlRepository,

@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
 /** SiliconFlow image and video models (OpenAI-compatible image API + async video API). */
 class SiliconFlowRepository(
     private val settings: CloudProviderSettingsStore,
+    private val taskStore: CloudProviderTaskStore,
 ) : CloudProvider {
     override val id: String = PROVIDER
     override val label: String = "SiliconFlow"
@@ -19,13 +20,15 @@ class SiliconFlowRepository(
     override val supportsModelDiscovery: Boolean = true
     override val supportsCustomHeaders: Boolean = true
 
-    private data class Pending(val model: String, val kind: String)
+    private data class Pending(val model: String, val kind: String, val base: String)
     private val imageResults = ConcurrentHashMap<String, CloudTaskResult>()
     private val pending = ConcurrentHashMap<String, Pending>()
 
     private fun account() = settings.account(id, DEFAULT_BASE, MODELS)
 
     override fun configured(): Boolean = account().token.isNotBlank()
+
+    override fun endpoint(): String = account().baseUrl
 
     override suspend fun discoverModels(): List<String> {
         val account = account()
@@ -75,7 +78,8 @@ class SiliconFlowRepository(
                 .takeIf { it.isNotBlank() }
                 ?: response.optJSONObject("data")?.optString("requestId")?.takeIf { it.isNotBlank() }
                 ?: throw ComfyException(CloudHttp.errorMessage(response, "SiliconFlow returned no requestId"))
-            pending[requestId] = Pending(workflowId, "video")
+            pending[requestId] = Pending(workflowId, "video", base)
+            taskStore.savePending(id, requestId, JSONObject().put("base", base))
             requestId
         } else {
             val payload = JSONObject()
@@ -106,16 +110,22 @@ class SiliconFlowRepository(
             }
             if (results.isEmpty()) throw ComfyException("SiliconFlow returned no images")
             val taskId = UUID.randomUUID().toString()
-            imageResults[taskId] = CloudTaskResult(taskId, "SUCCESS", results, "", 0)
+            val result = CloudTaskResult(taskId, "SUCCESS", results, "", 0)
+            imageResults[taskId] = result
+            taskStore.saveResult(id, taskId, result)
             taskId
         }
     }
 
     override suspend fun result(taskId: String): CloudTaskResult {
         imageResults[taskId]?.let { return it }
+        taskStore.result(id, taskId)?.let { return it }
         val account = account()
+        val base = pending[taskId]?.base
+            ?: taskStore.pending(id, taskId)?.optString("base")?.takeIf { it.isNotBlank() }
+            ?: account.baseUrl.trimEnd('/')
         val response = CloudHttp.postJson(
-            "${account.baseUrl.trimEnd('/')}/video/status",
+            "${base.trimEnd('/')}/video/status",
             JSONObject().put("requestId", taskId),
             auth(account),
         )
@@ -136,14 +146,25 @@ class SiliconFlowRepository(
                         outputType = "output",
                     )
                 }
-                CloudTaskResult(taskId, "SUCCESS", results, "", 0)
+                CloudTaskResult(taskId, "SUCCESS", results, "", 0).also {
+                    taskStore.saveResult(id, taskId, it)
+                }
             }
+            "cancelled", "canceled" -> CloudTaskResult(
+                taskId, "CANCELED", emptyList(),
+                data.optString("message").ifBlank { "SiliconFlow video generation cancelled" }, 0,
+            )
             "failed", "failure", "error" -> CloudTaskResult(
                 taskId, "FAILED", emptyList(),
                 data.optString("message").ifBlank { "SiliconFlow video generation failed" }, 0,
             )
             else -> CloudTaskResult(taskId, "RUNNING", emptyList(), status, 0)
         }
+    }
+
+    override fun forgetTask(taskId: String) {
+        imageResults.remove(taskId)
+        taskStore.clear(id, taskId)
     }
 
     override suspend fun download(url: String): ByteArray = CloudHttp.download(url)

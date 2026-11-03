@@ -25,6 +25,8 @@ class ReplicateRepository(
 
     override fun configured(): Boolean = account().token.isNotBlank()
 
+    override fun endpoint(): String = account().baseUrl
+
     /** Replicate has no user model catalogue; validate the token against the account API. */
     override suspend fun check(): CloudHealth {
         if (!configured()) {
@@ -110,7 +112,14 @@ class ReplicateRepository(
                 val results = outputs(response.opt("output"), kind)
                 CloudTaskResult(taskId, "SUCCESS", results, "", 0)
             }
-            "failed", "canceled" -> CloudTaskResult(
+            "canceled", "cancelled" -> CloudTaskResult(
+                taskId,
+                "CANCELED",
+                emptyList(),
+                response.optString("error").ifBlank { "Replicate prediction $status" },
+                0,
+            )
+            "failed" -> CloudTaskResult(
                 taskId,
                 "FAILED",
                 emptyList(),

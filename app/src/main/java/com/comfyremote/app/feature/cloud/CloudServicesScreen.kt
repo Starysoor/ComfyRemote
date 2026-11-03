@@ -155,6 +155,7 @@ private fun cloudStatusLabel(status: CloudHealthStatus?): String = stringResourc
         CloudHealthStatus.UNKNOWN -> R.string.cloud_status_unknown
         CloudHealthStatus.CHECKING -> R.string.cloud_status_checking
         CloudHealthStatus.READY -> R.string.cloud_status_ready
+        CloudHealthStatus.CONFIGURED_UNVERIFIED -> R.string.cloud_status_unverified
         CloudHealthStatus.NOT_CONFIGURED -> R.string.cloud_provider_not_configured
         CloudHealthStatus.AUTH_FAILED -> R.string.cloud_status_auth_failed
         CloudHealthStatus.UNREACHABLE -> R.string.cloud_status_unreachable
@@ -164,6 +165,7 @@ private fun cloudStatusLabel(status: CloudHealthStatus?): String = stringResourc
 
 private fun cloudStatusTone(status: CloudHealthStatus?): ChipTone = when (status) {
     CloudHealthStatus.READY -> ChipTone.Success
+    CloudHealthStatus.CONFIGURED_UNVERIFIED -> ChipTone.Warning
     CloudHealthStatus.NOT_CONFIGURED -> ChipTone.Warning
     CloudHealthStatus.AUTH_FAILED,
     CloudHealthStatus.UNREACHABLE,

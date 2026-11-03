@@ -29,6 +29,8 @@
     <string name="cloud_status_unknown">未检查</string>
     <string name="cloud_status_checking">检查中…</string>
     <string name="cloud_status_ready">正常</string>
+    <string name="cloud_status_unverified">已配置 · 未验证</string>
+    <string name="cloud_status_unverified_detail">模板配置有效，但未设置 healthUrl，无法验证远端连接。可在模板配置中添加 healthUrl。</string>
     <string name="cloud_status_auth_failed">认证失败</string>
     <string name="cloud_status_unreachable">不可达</string>
     <string name="cloud_status_error">异常</string>
@@ -89,7 +91,7 @@
     <string name="cloud_cap_audio">音频</string>
     <string name="cloud_provider_default_cleared">默认模型已清除</string>
     <string name="cloud_template_config">模板配置（JSON）</string>
-    <string name="cloud_template_config_hint">submitUrl、带 {{field}} 的 bodyTemplate、taskIdPath、statusUrlTemplate、resultUrlPath、fields</string>
+    <string name="cloud_template_config_hint">submitUrl、带 {{field}} 的 bodyTemplate、taskIdPath、statusUrlTemplate、resultUrlPath、fields、可选 healthUrl</string>
     <string name="cloud_template_sample_request">示例请求 JSON（可选）</string>
     <string name="cloud_template_sample_response">示例响应 JSON（可选）</string>
     <string name="cloud_template_infer">从示例推断字段</string>

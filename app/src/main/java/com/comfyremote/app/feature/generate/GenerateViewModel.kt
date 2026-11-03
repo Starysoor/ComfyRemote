@@ -20,6 +20,7 @@ import com.comfyremote.app.PromptField
 import com.comfyremote.app.WorkflowConverter
 import com.comfyremote.app.WorkflowEntry
 import com.comfyremote.app.data.cloud.AutoDlConfig
+import com.comfyremote.app.data.cloud.draftScopeKey
 import com.comfyremote.app.data.cloud.CloudInputStore
 import com.comfyremote.app.data.cloud.CloudWorkflowMapping
 import com.comfyremote.app.data.cloud.CloudWorkflowSpec
@@ -63,9 +64,9 @@ data class WorkflowDraft(
 ) {
     val isCloud: Boolean get() = cloud != null
 
-    /** Drafts are scoped per server; cloud drafts use a stable pseudo-server. */
+    /** Drafts are scoped per server; cloud drafts use a stable provider+endpoint key. */
     val storageServerUrl: String
-        get() = if (isCloud) cloudBaseUrl ?: AutoDlConfig.BASE_URL else ""
+        get() = if (isCloud) cloudBaseUrl ?: "cloud:unknown" else ""
 }
 
 enum class ImageUploadPhase { UPLOADING, FAILED }
@@ -215,10 +216,15 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                     val remembered = if (transfer == null &&
                         container.appSettingsStore.settings.value.autoRestoreDrafts
                     ) {
-                        container.workflowDraftStore.load(
-                            path,
-                            baseDraft.storageServerUrl.ifBlank { container.serverSession.url },
-                        )
+                        val primaryKey = baseDraft.storageServerUrl
+                            .ifBlank { container.serverSession.url }
+                        container.workflowDraftStore.load(path, primaryKey)
+                            ?: if (baseDraft.isCloud) {
+                                // Older builds scoped cloud drafts by class baseUrl or the local server.
+                                legacyCloudDraftKeys(path).firstNotNullOfOrNull { key ->
+                                    container.workflowDraftStore.load(path, key)
+                                }
+                            } else null
                     } else null
                     val mapped = transfer?.let { pending ->
                         if (pending.reuseAcrossWorkflows && pending.workflowPath != path) {
@@ -268,6 +274,14 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** Pre-2.3.0 cloud drafts used a raw base URL or the active local server as their key. */
+    private fun legacyCloudDraftKeys(path: String): List<String> = buildList {
+        container.cloudProviders.forPath(path)?.baseUrl
+            ?.takeIf { it.isNotBlank() }
+            ?.let { add(it) }
+        container.serverSession.url.takeIf { it.isNotBlank() }?.let { add(it) }
+    }.distinct()
+
     private suspend fun buildDraft(path: String, name: String): Pair<WorkflowDraft, ConvertedWorkflow> {
         val cloudProvider = container.cloudProviders.forPath(path)
         if (cloudProvider != null) {
@@ -295,7 +309,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 warnings = warnings,
                 notes = notes,
                 cloud = spec,
-                cloudBaseUrl = cloudProvider.baseUrl,
+                cloudBaseUrl = cloudProvider.draftScopeKey(),
             ) to ConvertedWorkflow(prompt, fields, warnings, notes)
         }
         val conv = container.workflowRepository.convert(WorkflowEntry(path, name, ""))
@@ -475,7 +489,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         return GenerationRequest(
             id = UUID.randomUUID().toString(),
             provider = cloudProvider?.id ?: "comfyui",
-            serverUrl = cloudProvider?.baseUrl ?: container.serverSession.url,
+            serverUrl = cloudProvider?.endpoint() ?: container.serverSession.url,
             workflowPath = draft.workflowPath,
             workflowName = draft.workflowName,
             fieldValues = values,

@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap
 /** OpenAI-compatible Images API (official OpenAI and AutoDL model gateways). */
 class OpenAiCompatibleImageRepository(
     private val settings: CloudProviderSettingsStore,
+    private val taskStore: CloudProviderTaskStore,
     override val id: String = PROVIDER,
     override val label: String = "OpenAI",
     override val settingsSummary: String = "Official image models · API key",
@@ -24,6 +25,8 @@ class OpenAiCompatibleImageRepository(
     private fun account() = settings.account(id, baseUrl, models)
 
     override fun configured(): Boolean = account().token.isNotBlank()
+
+    override fun endpoint(): String = account().baseUrl
 
     override suspend fun discoverModels(): List<String> {
         val account = account()
@@ -95,18 +98,27 @@ class OpenAiCompatibleImageRepository(
         }
         if (results.isEmpty()) throw ComfyException("OpenAI returned no images")
         val taskId = UUID.randomUUID().toString()
-        this.results[taskId] = CloudTaskResult(
+        val result = CloudTaskResult(
             taskId = taskId,
             status = "SUCCESS",
             results = results,
             message = "",
             durationSeconds = 0,
         )
+        this.results[taskId] = result
+        taskStore.saveResult(id, taskId, result)
         return taskId
     }
 
     override suspend fun result(taskId: String): CloudTaskResult =
-        results[taskId] ?: CloudTaskResult(taskId, "FAILED", emptyList(), "Image result expired", 0)
+        results[taskId]
+            ?: taskStore.result(id, taskId)
+            ?: CloudTaskResult(taskId, "FAILED", emptyList(), "Image result expired", 0)
+
+    override fun forgetTask(taskId: String) {
+        results.remove(taskId)
+        taskStore.clear(id, taskId)
+    }
 
     override suspend fun download(url: String): ByteArray = CloudHttp.download(url)
 

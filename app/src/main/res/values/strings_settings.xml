@@ -29,6 +29,8 @@
     <string name="cloud_status_unknown">Not checked</string>
     <string name="cloud_status_checking">Checking…</string>
     <string name="cloud_status_ready">Online</string>
+    <string name="cloud_status_unverified">Configured · unverified</string>
+    <string name="cloud_status_unverified_detail">Template config is valid, but no healthUrl is defined. Add one to verify the remote endpoint.</string>
     <string name="cloud_status_auth_failed">Auth failed</string>
     <string name="cloud_status_unreachable">Unreachable</string>
     <string name="cloud_status_error">Error</string>
@@ -89,7 +91,7 @@
     <string name="cloud_cap_audio">audio</string>
     <string name="cloud_provider_default_cleared">Default model cleared</string>
     <string name="cloud_template_config">Template config (JSON)</string>
-    <string name="cloud_template_config_hint">submitUrl, bodyTemplate with {{field}}, taskIdPath, statusUrlTemplate, resultUrlPath, fields</string>
+    <string name="cloud_template_config_hint">submitUrl, bodyTemplate with {{field}}, taskIdPath, statusUrlTemplate, resultUrlPath, fields, optional healthUrl</string>
     <string name="cloud_template_sample_request">Sample request JSON (optional)</string>
     <string name="cloud_template_sample_response">Sample response JSON (optional)</string>
     <string name="cloud_template_infer">Infer fields from samples</string>

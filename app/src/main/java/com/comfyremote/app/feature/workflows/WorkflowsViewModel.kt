@@ -93,7 +93,12 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
             reuseTransfer = pendingAtStart,
             cloudConfigured = container.cloudProviders.all.any { it.configured() },
             cloudPrefixes = container.cloudProviders.all.mapTo(hashSetOf()) { it.pathPrefix },
-            cloudBaseUrls = container.cloudProviders.all.mapTo(hashSetOf()) { it.baseUrl },
+            cloudBaseUrls = container.cloudProviders.all.flatMapTo(hashSetOf()) { provider ->
+                listOfNotNull(
+                    provider.baseUrl.takeIf { it.isNotBlank() },
+                    provider.endpoint().takeIf { it.isNotBlank() },
+                )
+            },
         )
     )
     val state: StateFlow<WorkflowsUiState> = _state.asStateFlow()
@@ -219,6 +224,12 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                     cloudLoaded = true,
                     cloudWorkflows = entries,
                     defaultPaths = defaultCloudPaths(),
+                    cloudBaseUrls = providers.flatMapTo(hashSetOf()) { provider ->
+                        listOfNotNull(
+                            provider.baseUrl.takeIf { it.isNotBlank() },
+                            provider.endpoint().takeIf { it.isNotBlank() },
+                        )
+                    },
                     cloudError = if (entries.isEmpty() && errors.isNotEmpty()) {
                         AppStrings.get(R.string.wf_err_cloud_load, errors.joinToString("; "))
                     } else null,

@@ -9,6 +9,7 @@ enum class CloudHealthStatus {
     UNKNOWN,
     CHECKING,
     READY,
+    CONFIGURED_UNVERIFIED,
     NOT_CONFIGURED,
     AUTH_FAILED,
     UNREACHABLE,

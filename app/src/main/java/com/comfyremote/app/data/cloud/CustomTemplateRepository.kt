@@ -1,6 +1,7 @@
 package com.comfyremote.app.data.cloud
 
 import com.comfyremote.app.ComfyException
+import kotlin.coroutines.cancellation.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -12,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class CustomTemplateRepository(
     private val settings: CloudProviderSettingsStore,
+    private val taskStore: CloudProviderTaskStore,
 ) : CloudProvider {
     override val id: String = PROVIDER
     override val label: String = "Custom API Template"
@@ -31,6 +33,35 @@ class CustomTemplateRepository(
         }
 
     override fun configured(): Boolean = config().submitUrl.isNotBlank()
+
+    override fun endpoint(): String = config().submitUrl
+
+    /** A template can only prove health when it defines a side-effect-free `healthUrl`. */
+    override suspend fun check(): CloudHealth {
+        val config = config()
+        templatePreflightHealth(configured(), config.healthUrl)?.let {
+            return it.copy(checkedAt = System.currentTimeMillis())
+        }
+        val values = emptyMap<String, String>()
+        val headers = config.headers.mapValues { (_, value) ->
+            TemplateValues.renderString(value, values, account().token)
+        }
+        return try {
+            CloudHttp.probe(
+                url = TemplateValues.renderString(config.healthUrl, values, account().token),
+                headers = headers,
+            )
+            CloudHealth(
+                CloudHealthStatus.READY,
+                modelCount = 1,
+                checkedAt = System.currentTimeMillis(),
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            classifyCloudFailure(error).copy(checkedAt = System.currentTimeMillis())
+        }
+    }
 
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
         val config = config()
@@ -66,7 +97,12 @@ class CustomTemplateRepository(
         val values = linkedMapOf<String, String>().apply {
             body.keys().forEach { key -> put(key, body.optString(key)) }
         }
-        val payload = TemplateValues.render(config.bodyTemplate, values, account().token)
+        val payload = TemplateValues.render(
+            config.bodyTemplate,
+            values,
+            account().token,
+            typedValues = body,
+        )
         val headers = config.headers.mapValues { (_, value) ->
             TemplateValues.renderString(value, values, account().token)
         }
@@ -82,20 +118,27 @@ class CustomTemplateRepository(
             if (results.isEmpty()) {
                 throw ComfyException(CloudHttp.errorMessage(response, "Template response has no result URL"))
             }
-            cached[taskId] = CloudTaskResult(taskId, "SUCCESS", results, "", 0)
+            val result = CloudTaskResult(taskId, "SUCCESS", results, "", 0)
+            cached[taskId] = result
+            taskStore.saveResult(id, taskId, result)
             return taskId
         }
         val taskId = TemplateValues.pathValue(response, config.taskIdPath)?.toString()
             ?.takeIf { it.isNotBlank() }
             ?: throw ComfyException(CloudHttp.errorMessage(response, "Template response has no task id"))
         pending[taskId] = Pending(config, taskId)
+        taskStore.savePending(id, taskId, JSONObject().put("config", settings.extra(id)))
         return taskId
     }
 
     override suspend fun result(taskId: String): CloudTaskResult {
         cached[taskId]?.let { return it }
-        val pending = pending[taskId]
-            ?: return CloudTaskResult(taskId, "FAILED", emptyList(), "Template task expired", 0)
+        taskStore.result(id, taskId)?.let { return it }
+        val pending = pending[taskId] ?: taskStore.pending(id, taskId)?.let { stored ->
+            val snapshot = stored.optString("config")
+            val config = TemplateConfig.parse(snapshot, account().token).getOrNull() ?: return@let null
+            Pending(config, taskId)
+        } ?: return CloudTaskResult(taskId, "FAILED", emptyList(), "Template task expired", 0)
         val config = pending.config
         val values = mapOf("taskId" to taskId, "task_id" to taskId)
         val url = TemplateValues.renderString(config.statusUrlTemplate, values, account().token)
@@ -110,12 +153,22 @@ class CustomTemplateRepository(
         val status = TemplateValues.pathValue(response, config.statusPath)?.toString().orEmpty()
         return if (config.successValues.any { it.equals(status, ignoreCase = true) }) {
             val results = TemplateValues.resultUrls(response, config.resultUrlPath, config.resultType)
-            CloudTaskResult(taskId, "SUCCESS", results, "", 0)
+            CloudTaskResult(taskId, "SUCCESS", results, "", 0).also {
+                taskStore.saveResult(id, taskId, it)
+            }
+        } else if (status.equals("cancelled", true) || status.equals("canceled", true)) {
+            CloudTaskResult(taskId, "CANCELED", emptyList(), status, 0)
         } else if (status.equals("failed", true) || status.equals("error", true)) {
             CloudTaskResult(taskId, "FAILED", emptyList(), status, 0)
         } else {
             CloudTaskResult(taskId, "RUNNING", emptyList(), status, 0)
         }
+    }
+
+    override fun forgetTask(taskId: String) {
+        cached.remove(taskId)
+        pending.remove(taskId)
+        taskStore.clear(id, taskId)
     }
 
     override suspend fun download(url: String): ByteArray = CloudHttp.download(url)
@@ -127,6 +180,12 @@ class CustomTemplateRepository(
     companion object {
         const val PROVIDER = "template"
     }
+}
+
+internal fun templatePreflightHealth(configured: Boolean, healthUrl: String): CloudHealth? = when {
+    !configured -> CloudHealth(CloudHealthStatus.NOT_CONFIGURED)
+    healthUrl.isBlank() -> CloudHealth(CloudHealthStatus.CONFIGURED_UNVERIFIED, modelCount = 1)
+    else -> null
 }
 
 data class TemplateConfig(
@@ -143,13 +202,15 @@ data class TemplateConfig(
     val resultType: String,
     val fields: List<CloudInputRule>,
     val description: String,
+    /** Optional side-effect-free GET endpoint used by "Test connection". */
+    val healthUrl: String = "",
 ) {
     companion object {
         fun empty() = TemplateConfig(
             submitUrl = "", method = "POST", headers = emptyMap(), bodyTemplate = null,
             taskIdPath = "", statusUrlTemplate = "", statusMethod = "GET",
             statusPath = "status", successValues = DEFAULT_SUCCESS, resultUrlPath = "",
-            resultType = "image", fields = emptyList(), description = "",
+            resultType = "image", fields = emptyList(), description = "", healthUrl = "",
         )
 
         fun parse(raw: String, token: String): Result<TemplateConfig> = runCatching {
@@ -201,6 +262,7 @@ data class TemplateConfig(
                 resultType = root.optString("resultType", "image"),
                 fields = inferredFields,
                 description = root.optString("description"),
+                healthUrl = root.optString("healthUrl"),
             )
         }
 
@@ -224,34 +286,59 @@ object TemplateValues {
             }
         }
 
-    fun render(template: JSONObject?, values: Map<String, String>, token: String): JSONObject? {
+    /**
+     * [typedValues] preserves JSON numbers/booleans for exact `{{field}}` placeholders.
+     * Embedded placeholders such as `run-{{name}}` always interpolate as strings.
+     */
+    fun render(
+        template: JSONObject?,
+        values: Map<String, String>,
+        token: String,
+        typedValues: JSONObject? = null,
+    ): JSONObject? {
         template ?: return null
-        return renderObject(template, values, token) as? JSONObject
+        return renderObject(template, values, token, typedValues) as? JSONObject
     }
 
-    private fun renderObject(value: Any?, values: Map<String, String>, token: String): Any? = when (value) {
+    private fun renderObject(
+        value: Any?,
+        values: Map<String, String>,
+        token: String,
+        typedValues: JSONObject?,
+    ): Any? = when (value) {
         is JSONObject -> {
             val out = JSONObject()
-            value.keys().forEach { key -> out.put(key, renderObject(value.opt(key), values, token)) }
+            value.keys().forEach { key ->
+                out.put(key, renderObject(value.opt(key), values, token, typedValues))
+            }
             out
         }
         is JSONArray -> {
             val out = JSONArray()
             (0 until value.length()).forEach { index ->
-                out.put(renderObject(value.opt(index), values, token))
+                out.put(renderObject(value.opt(index), values, token, typedValues))
             }
             out
         }
-        is String -> renderScalar(value, values, token)
+        is String -> renderScalar(value, values, token, typedValues)
         else -> value
     }
 
-    private fun renderScalar(value: String, values: Map<String, String>, token: String): Any {
+    private fun renderScalar(
+        value: String,
+        values: Map<String, String>,
+        token: String,
+        typedValues: JSONObject?,
+    ): Any {
         val exact = Regex("^\\{\\{([^}]+)}}$").matchEntire(value)
         if (exact != null) {
             val key = exact.groupValues[1].trim()
-            val resolved = if (key == "token") token else values[key]
-            return resolved ?: ""
+            if (key == "token") return token
+            if (typedValues != null && typedValues.has(key)) {
+                val typed = typedValues.opt(key)
+                return if (typed == null || typed == JSONObject.NULL) "" else typed
+            }
+            return values[key] ?: ""
         }
         return renderString(value, values, token)
     }

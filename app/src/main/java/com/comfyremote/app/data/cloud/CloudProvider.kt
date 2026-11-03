@@ -23,11 +23,17 @@ interface CloudProvider {
 
     fun configured(): Boolean
 
+    /** Endpoint actually used for requests; settings-backed providers override this. */
+    fun endpoint(): String = baseUrl
+
     suspend fun catalog(force: Boolean = false): List<CloudWorkflowSummary>
     suspend fun detail(workflowId: String): CloudWorkflowSpec
     suspend fun submit(workflowId: String, body: JSONObject): String
     suspend fun result(taskId: String): CloudTaskResult
     suspend fun download(url: String): ByteArray
+
+    /** Drops any persisted recovery state once the task reached a terminal phase. */
+    fun forgetTask(taskId: String) = Unit
 
     /**
      * Optional live model discovery (`GET /models` and similar). Null means the
@@ -95,4 +101,15 @@ class CloudProviderRegistry(private val providers: List<CloudProvider>) {
 
     fun byPrefix(prefix: String): CloudProvider? =
         providers.firstOrNull { it.pathPrefix == prefix }
+}
+
+/**
+ * Stable draft scope for a cloud provider. Never falls back to a local ComfyUI
+ * server URL, so custom providers keep their drafts without a local connection.
+ */
+fun CloudProvider.draftScopeKey(): String = cloudDraftScope(id, endpoint())
+
+internal fun cloudDraftScope(providerId: String, endpoint: String): String {
+    val resolved = endpoint.trim().trimEnd('/')
+    return if (resolved.isBlank()) "cloud:$providerId" else "cloud:$providerId:$resolved"
 }

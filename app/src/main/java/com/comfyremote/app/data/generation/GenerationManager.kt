@@ -272,6 +272,7 @@ class GenerationManager(
                 persistProgress(updated)
             }
             persistProgress(final)
+            forgetIfTerminal(final)
         } catch (e: kotlinx.coroutines.CancellationException) {
             patch(task.taskId) {
                 it.copy(
@@ -282,6 +283,7 @@ class GenerationManager(
                     localPending = false,
                 )
             }
+            forgetIfTerminal(task.copy(phase = GenerationPhase.CANCELLED))
             throw e
         } catch (e: Exception) {
             patchFailure(task.taskId, e)
@@ -308,6 +310,7 @@ class GenerationManager(
         try {
             val final = runner.recover(task) { updated -> persistProgress(updated, allowTerminalExit = true) }
             persistProgress(final, allowTerminalExit = true)
+            forgetIfTerminal(final)
         } catch (e: kotlinx.coroutines.CancellationException) {
             patch(task.taskId, allowTerminalExit = true) {
                 it.copy(
@@ -318,6 +321,7 @@ class GenerationManager(
                     localPending = false,
                 )
             }
+            forgetIfTerminal(task.copy(phase = GenerationPhase.CANCELLED))
             throw e
         } catch (e: Exception) {
             patch(task.taskId, allowTerminalExit = true) {
@@ -334,6 +338,14 @@ class GenerationManager(
         }
     }
 
+    /** Provider recovery state is only needed while a task can still be resumed. */
+    private fun forgetIfTerminal(task: GenerationTask) {
+        if (task.request.provider == "comfyui") return
+        if (task.phase != GenerationPhase.SUCCEEDED && task.phase != GenerationPhase.CANCELLED) return
+        val promptId = task.promptId?.takeIf { it.isNotBlank() } ?: return
+        container.cloudProviders.byId(task.request.provider)?.forgetTask(promptId)
+    }
+
     private fun runnerFor(task: GenerationTask): GenerationRunner {
         val request = task.request
         val history = RepositoryGenerationHistorySink(container.historyRepository, request.serverUrl)
@@ -348,6 +360,7 @@ class GenerationManager(
                 backend = CloudWorkflowBackend(
                     repository = provider,
                     workflowId = workflowId,
+                    providerLabel = provider.label,
                     retryCount = settings.pollRetryCount(provider.id),
                     retryDelayMs = pollMs,
                 ),

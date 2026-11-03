@@ -61,6 +61,21 @@ object CloudHttp {
         }
     }
 
+    /** Status-only GET probe for health endpoints that may not return JSON. */
+    fun probe(url: String, headers: Map<String, String> = emptyMap()) {
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .apply { headers.forEach { (key, value) -> header(key, value) } }
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val text = response.body?.string().orEmpty()
+                throw ComfyException("HTTP ${response.code}: ${text.take(300)}")
+            }
+        }
+    }
+
     fun getJson(url: String, headers: Map<String, String> = emptyMap()): JSONObject {
         val request = Request.Builder()
             .url(url)

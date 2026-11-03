@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class CustomOpenAiRepository(
     private val settings: CloudProviderSettingsStore,
+    private val taskStore: CloudProviderTaskStore,
 ) : CloudProvider {
     override val id: String = PROVIDER
     override val label: String = "Custom OpenAI API"
@@ -25,6 +26,8 @@ class CustomOpenAiRepository(
     private fun account() = settings.account(id, "", emptyList())
 
     override fun configured(): Boolean = account().baseUrl.isNotBlank()
+
+    override fun endpoint(): String = account().baseUrl
 
     override suspend fun discoverModels(): List<String> {
         val account = account()
@@ -100,12 +103,21 @@ class CustomOpenAiRepository(
         }
         if (results.isEmpty()) throw ComfyException("Custom API returned no images")
         val taskId = UUID.randomUUID().toString()
-        this.results[taskId] = CloudTaskResult(taskId, "SUCCESS", results, "", 0)
+        val result = CloudTaskResult(taskId, "SUCCESS", results, "", 0)
+        this.results[taskId] = result
+        taskStore.saveResult(id, taskId, result)
         return taskId
     }
 
     override suspend fun result(taskId: String): CloudTaskResult =
-        results[taskId] ?: CloudTaskResult(taskId, "FAILED", emptyList(), "Image result expired", 0)
+        results[taskId]
+            ?: taskStore.result(id, taskId)
+            ?: CloudTaskResult(taskId, "FAILED", emptyList(), "Image result expired", 0)
+
+    override fun forgetTask(taskId: String) {
+        results.remove(taskId)
+        taskStore.clear(id, taskId)
+    }
 
     private fun auth(account: CloudProviderAccount): Map<String, String> =
         settings.mergeHeaders(

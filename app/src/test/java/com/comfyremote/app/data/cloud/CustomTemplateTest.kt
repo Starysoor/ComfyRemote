@@ -14,16 +14,34 @@ class CustomTemplateTest {
             .put("model", "demo")
             .put("prompt", "{{prompt}}")
             .put("steps", "{{steps}}")
+            .put("watermark", "{{watermark}}")
+            .put("guidance", "{{guidance}}")
             .put("label", "run-{{name}}")
+            .put("stepLabel", "run-{{steps}}")
         val rendered = TemplateValues.render(
             template,
-            mapOf("prompt" to "a castle", "steps" to "20", "name" to "x"),
+            mapOf(
+                "prompt" to "a castle",
+                "steps" to "20",
+                "watermark" to "true",
+                "guidance" to "7.5",
+                "name" to "x",
+            ),
             "secret",
+            typedValues = JSONObject()
+                .put("prompt", "a castle")
+                .put("steps", 20L)
+                .put("watermark", true)
+                .put("guidance", 7.5)
+                .put("name", "x"),
         )!!
 
         assertEquals("a castle", rendered.getString("prompt"))
-        assertEquals("20", rendered.getString("steps"))
+        assertEquals(20L, rendered.getLong("steps"))
+        assertEquals(true, rendered.getBoolean("watermark"))
+        assertEquals(7.5, rendered.getDouble("guidance"), 0.0)
         assertEquals("run-x", rendered.getString("label"))
+        assertEquals("run-20", rendered.getString("stepLabel"))
     }
 
     @Test
@@ -71,5 +89,30 @@ class CustomTemplateTest {
         assertEquals(1, config.fields.size)
         assertTrue(config.fields.single().required)
         assertEquals("prompt", config.fields.single().type)
+    }
+
+    @Test
+    fun templateConfigParsesAnOptionalHealthUrl() {
+        val raw = JSONObject()
+            .put("submitUrl", "https://example.com/submit")
+            .put("healthUrl", "https://example.com/health")
+            .toString()
+
+        val config = TemplateConfig.parse(raw, "token").getOrThrow()
+
+        assertEquals("https://example.com/health", config.healthUrl)
+    }
+
+    @Test
+    fun templateWithoutHealthUrlIsConfiguredButUnverified() {
+        assertEquals(
+            CloudHealthStatus.CONFIGURED_UNVERIFIED,
+            templatePreflightHealth(true, "")!!.status,
+        )
+        assertEquals(
+            CloudHealthStatus.NOT_CONFIGURED,
+            templatePreflightHealth(false, "https://example.com/health")!!.status,
+        )
+        assertTrue(templatePreflightHealth(true, "https://example.com/health") == null)
     }
 }

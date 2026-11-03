@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class AutoDlModelRepository(
     private val settings: CloudProviderSettingsStore,
+    private val taskStore: CloudProviderTaskStore,
 ) : CloudProvider {
     override val id: String = PROVIDER
     override val label: String = "AutoDL Models"
@@ -21,12 +22,12 @@ class AutoDlModelRepository(
     override val supportsModelDiscovery: Boolean = true
     override val supportsCustomHeaders: Boolean = true
 
-    private data class Pending(val family: String, val submitUrl: String)
+    private data class Pending(val family: String, val submitUrl: String, val base: String)
     private val pending = ConcurrentHashMap<String, Pending>()
-    private val videoResults = ConcurrentHashMap<String, CloudTaskResult>()
 
     private val imageApi = OpenAiCompatibleImageRepository(
         settings = settings,
+        taskStore = taskStore,
         id = PROVIDER,
         label = label,
         settingsSummary = settingsSummary,
@@ -38,6 +39,8 @@ class AutoDlModelRepository(
     private fun account() = settings.account(id, BASE, defaultModels)
 
     override fun configured(): Boolean = account().token.isNotBlank()
+
+    override fun endpoint(): String = account().baseUrl
 
     override suspend fun discoverModels(): List<String> = imageApi.discoverModels()
 
@@ -97,23 +100,42 @@ class AutoDlModelRepository(
             else -> null
         }?.takeIf { it.isNotBlank() }
             ?: throw ComfyException(CloudHttp.errorMessage(response, "AutoDL returned no task id"))
-        pending[taskId] = Pending(family, submitUrl)
+        pending[taskId] = Pending(family, submitUrl, base)
+        taskStore.savePending(
+            id,
+            taskId,
+            JSONObject().put("family", family).put("submitUrl", submitUrl).put("base", base),
+        )
         return taskId
     }
 
     override suspend fun result(taskId: String): CloudTaskResult {
-        val task = pending[taskId]
-            ?: return imageApi.result(taskId)
+        taskStore.result(id, taskId)?.let { return it }
+        val task = pending[taskId] ?: taskStore.pending(id, taskId)?.let { stored ->
+            val family = stored.optString("family").takeIf { it.isNotBlank() } ?: return@let null
+            Pending(
+                family = family,
+                submitUrl = stored.optString("submitUrl"),
+                base = stored.optString("base"),
+            )
+        } ?: return imageApi.result(taskId)
         val account = account()
         val headers = settings.mergeHeaders(id, mapOf("Authorization" to "Bearer ${account.token}"))
-        val base = account.baseUrl.trimEnd('/')
-        return when (task.family) {
+        val base = task.base.ifBlank { account.baseUrl.trimEnd('/') }
+        val result = when (task.family) {
             "wan" -> wanResult(base, taskId, headers)
             "h3", "minimax" -> miniMaxResult(base, taskId, headers)
             "seedance" -> seedanceResult(base, taskId, headers)
             "kling" -> klingResult(task.submitUrl, taskId, headers)
             else -> CloudTaskResult(taskId, "FAILED", emptyList(), "Unsupported task", 0)
         }
+        if (result.status == "SUCCESS") taskStore.saveResult(id, taskId, result)
+        return result
+    }
+
+    override fun forgetTask(taskId: String) {
+        pending.remove(taskId)
+        taskStore.clear(id, taskId)
     }
 
     override suspend fun download(url: String): ByteArray = CloudHttp.download(url)
@@ -197,7 +219,11 @@ class AutoDlModelRepository(
                 val url = output.optString("video_url")
                 CloudTaskResult(taskId, "SUCCESS", videoResults(url), "", 0)
             }
-            "FAILED", "CANCELED", "CANCELLED" -> CloudTaskResult(
+            "CANCELED", "CANCELLED" -> CloudTaskResult(
+                taskId, "CANCELED", emptyList(),
+                output.optString("message").ifBlank { "Wan video generation cancelled" }, 0,
+            )
+            "FAILED" -> CloudTaskResult(
                 taskId, "FAILED", emptyList(),
                 output.optString("message").ifBlank { "Wan video generation failed" }, 0,
             )
@@ -218,6 +244,10 @@ class AutoDlModelRepository(
                     ?: file.optString("download_url")
                 CloudTaskResult(taskId, "SUCCESS", videoResults(url), "", 0)
             }
+            "cancel", "cancelled", "canceled" -> CloudTaskResult(
+                taskId, "CANCELED", emptyList(),
+                response.optString("status_msg").ifBlank { "MiniMax video generation cancelled" }, 0,
+            )
             "fail", "failed" -> CloudTaskResult(
                 taskId, "FAILED", emptyList(),
                 response.optString("status_msg").ifBlank { "MiniMax video generation failed" }, 0,
@@ -233,7 +263,13 @@ class AutoDlModelRepository(
                 val url = response.optJSONObject("content")?.optString("video_url")
                 CloudTaskResult(taskId, "SUCCESS", videoResults(url), "", 0)
             }
-            "failed", "cancelled", "canceled", "expired" -> CloudTaskResult(
+            "cancelled", "canceled" -> CloudTaskResult(
+                taskId, "CANCELED", emptyList(),
+                response.optJSONObject("error")?.optString("message").orEmpty().ifBlank {
+                    "Seedance video generation cancelled"
+                }, 0,
+            )
+            "failed", "expired" -> CloudTaskResult(
                 taskId, "FAILED", emptyList(),
                 response.optJSONObject("error")?.optString("message").orEmpty().ifBlank {
                     "Seedance video generation failed"
@@ -256,6 +292,10 @@ class AutoDlModelRepository(
                 }
                 CloudTaskResult(taskId, "SUCCESS", results, "", 0)
             }
+            "cancelled", "canceled" -> CloudTaskResult(
+                taskId, "CANCELED", emptyList(),
+                data.optString("task_status_msg").ifBlank { "Kling video generation cancelled" }, 0,
+            )
             "failed" -> CloudTaskResult(
                 taskId, "FAILED", emptyList(),
                 data.optString("task_status_msg").ifBlank { "Kling video generation failed" }, 0,
