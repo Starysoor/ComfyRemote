@@ -454,6 +454,8 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             convertedPrompt = JSONObject(cv.prompt.toString()),
             createdAt = System.currentTimeMillis() + batchOffset,
             estimatedCloudCost = if (draft.isCloud) cloudCostEstimate(draft, values) else null,
+            storyboardProjectId = pendingStoryboardProjectId,
+            storyboardShotId = pendingStoryboardShotId,
         )
     }
 

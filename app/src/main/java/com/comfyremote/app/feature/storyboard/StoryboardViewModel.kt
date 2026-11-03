@@ -2,6 +2,7 @@ package com.comfyremote.app.feature.storyboard
 
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.comfyremote.app.AppContainer
@@ -9,6 +10,9 @@ import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.cloud.CloudWorkflowSummary
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
+import com.comfyremote.app.data.media.ImagePreprocessor
+import com.comfyremote.app.data.reference.ProjectAsset
+import com.comfyremote.app.data.reference.ReferenceRole
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.storyboard.StoryboardProject
 import com.comfyremote.app.data.storyboard.StoryboardShot
@@ -22,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.UUID
 
 class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     val projects: StateFlow<List<StoryboardProject>> = container.storyboardStore.projects
@@ -97,6 +102,64 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         container.storyboardStore.updateShot(projectId, shotId) {
             it.copy(prompt = prompt.trim())
         }
+
+    fun moveShot(projectId: String, shotId: String, delta: Int) =
+        container.storyboardStore.moveShot(projectId, shotId, delta)
+
+    fun duplicateShot(projectId: String, shotId: String) =
+        container.storyboardStore.duplicateShot(projectId, shotId)
+
+    fun insertShotAfter(projectId: String, shotId: String, prompt: String) =
+        container.storyboardStore.insertShotAfter(projectId, shotId, prompt)
+
+    fun assignAssetToShot(projectId: String, shotId: String, assetId: String) {
+        val asset = container.storyboardStore.project(projectId)
+            ?.assets?.firstOrNull { it.id == assetId } ?: return
+        container.storyboardStore.updateShot(projectId, shotId) {
+            it.copy(
+                referencePath = asset.path,
+                referenceManual = true,
+                referenceRole = asset.role,
+            )
+        }
+    }
+
+    fun clearShotReference(projectId: String, shotId: String) =
+        container.storyboardStore.updateShot(projectId, shotId) {
+            it.copy(referencePath = null, referenceManual = true, referenceRole = ReferenceRole.AUTO)
+        }
+
+    /** Copies a picked image into project-owned storage so it survives gallery changes. */
+    fun addAsset(projectId: String, role: ReferenceRole, uri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                val bytes = withContext(Dispatchers.IO) {
+                    container.app.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                } ?: throw IllegalStateException("Cannot read image")
+                val (prepared, ext) = withContext(Dispatchers.IO) {
+                    ImagePreprocessor.prepare(
+                        bytes,
+                        container.app.contentResolver.getType(uri),
+                        1536,
+                        88,
+                        forceJpeg = true,
+                    )
+                }
+                val dir = File(container.app.filesDir, "storyboards/assets").apply { mkdirs() }
+                val file = File(dir, "asset_${UUID.randomUUID()}.$ext")
+                withContext(Dispatchers.IO) { file.writeBytes(prepared) }
+                ProjectAsset(role = role, path = file.absolutePath, label = role.name)
+            }.onSuccess { asset ->
+                container.storyboardStore.addAsset(projectId, asset)
+            }.onFailure { e ->
+                _message.value = AppStrings.get(R.string.board_err_add_asset, e.message ?: "error")
+            }
+        }
+    }
+
+    fun removeAsset(projectId: String, assetId: String) {
+        container.storyboardStore.removeAsset(projectId, assetId)
+    }
 
     fun project(projectId: String): StoryboardProject? =
         projects.value.firstOrNull { it.id == projectId }

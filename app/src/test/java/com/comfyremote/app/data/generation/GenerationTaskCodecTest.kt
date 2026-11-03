@@ -26,6 +26,8 @@ class GenerationTaskCodecTest {
             ),
             convertedPrompt = JSONObject().put("1", JSONObject().put("class_type", "CLIPTextEncode")),
             createdAt = 123L,
+            storyboardProjectId = "project-1",
+            storyboardShotId = "shot-2",
         )
         val task = GenerationTask(
             taskId = "task-1",
@@ -60,6 +62,8 @@ class GenerationTaskCodecTest {
         assertEquals(task.request.fieldValues, restored.request.fieldValues)
         assertEquals(FieldKind.TEXT, restored.request.fields.first().kind)
         assertEquals("CLIPTextEncode", restored.request.convertedPrompt.getJSONObject("1").getString("class_type"))
+        assertEquals("project-1", restored.request.storyboardProjectId)
+        assertEquals("shot-2", restored.request.storyboardShotId)
         assertTrue(restored.recovered)
         assertEquals("batch-a", restored.batchId)
         assertEquals(2, restored.batchIndex)

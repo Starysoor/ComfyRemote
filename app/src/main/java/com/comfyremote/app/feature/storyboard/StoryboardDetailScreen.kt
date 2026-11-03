@@ -1,5 +1,7 @@
 package com.comfyremote.app.feature.storyboard
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,8 +14,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowDownward
@@ -30,6 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -46,6 +54,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
+import com.comfyremote.app.data.reference.ProjectAsset
+import com.comfyremote.app.data.reference.ReferenceRole
 import com.comfyremote.app.data.storyboard.StoryboardShot
 import com.comfyremote.app.feature.generate.MediaThumbnail
 import com.comfyremote.app.ui.IrisType
@@ -79,7 +89,16 @@ fun StoryboardDetailScreen(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var addingShot by remember { mutableStateOf(false) }
+    var insertAfterShotId by remember { mutableStateOf<String?>(null) }
+    var assetRoleDialog by remember { mutableStateOf(false) }
+    var pendingAssetRole by remember { mutableStateOf<ReferenceRole?>(null) }
+    var assetShotId by remember { mutableStateOf<String?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
+    val assetPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val role = pendingAssetRole
+        if (uri != null && role != null) viewModel.addAsset(projectId, role, uri)
+        pendingAssetRole = null
+    }
     val allDoneText = stringResource(R.string.board_all_done)
     val runningText = stringResource(R.string.gen_vm_storyboard_running)
     val anyRunning = project?.shots?.any { it.status == "running" } == true
@@ -173,6 +192,27 @@ fun StoryboardDetailScreen(
                 }
             }
 
+            item("assets-heading") {
+                SectionHeader(stringResource(R.string.board_assets)) {
+                    TextAction(stringResource(R.string.board_add_asset), onClick = { assetRoleDialog = true })
+                }
+            }
+            item("assets") {
+                if (project.assets.isEmpty()) {
+                    Text(
+                        stringResource(R.string.board_assets_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        items(project.assets, key = { it.id }) { asset ->
+                            AssetCard(asset) { viewModel.removeAsset(project.id, asset.id) }
+                        }
+                    }
+                }
+            }
+
             item("shots-heading") {
                 SectionHeader(stringResource(R.string.board_shots)) {
                     TextAction(stringResource(R.string.board_add_shot), onClick = { addingShot = true })
@@ -199,12 +239,21 @@ fun StoryboardDetailScreen(
                         referenceFromPrevious = !shot.referenceManual && shot.referencePath != null &&
                             shot.referencePath == previous?.lastFramePath,
                         feedsNext = shot.lastFramePath != null && index < project.shots.lastIndex,
+                        canMoveUp = index > 0,
+                        canMoveDown = index < project.shots.lastIndex,
+                        canUseAssets = project.assets.isNotEmpty(),
                         onOpen = {
                             viewModel.openShot(project.id, shot.id)?.let { (path, name) ->
                                 onOpenShot(path, name)
                             }
                         },
                         onDelete = { viewModel.deleteShot(project.id, shot.id) },
+                        onMoveUp = { viewModel.moveShot(project.id, shot.id, -1) },
+                        onMoveDown = { viewModel.moveShot(project.id, shot.id, 1) },
+                        onDuplicate = { viewModel.duplicateShot(project.id, shot.id) },
+                        onInsertAfter = { insertAfterShotId = shot.id },
+                        onPickAsset = { assetShotId = shot.id },
+                        onClearReference = { viewModel.clearShotReference(project.id, shot.id) },
                     )
                 }
             }
@@ -220,6 +269,108 @@ fun StoryboardDetailScreen(
             },
         )
     }
+    insertAfterShotId?.let { shotId ->
+        AddShotDialog(
+            onDismiss = { insertAfterShotId = null },
+            onAdd = { prompt ->
+                viewModel.insertShotAfter(projectId, shotId, prompt)
+                insertAfterShotId = null
+            },
+        )
+    }
+    if (assetRoleDialog) {
+        AlertDialog(
+            onDismissRequest = { assetRoleDialog = false },
+            title = { Text(stringResource(R.string.board_asset_role)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ReferenceRole.entries.forEach { role ->
+                        TextButton(onClick = {
+                            pendingAssetRole = role
+                            assetRoleDialog = false
+                            assetPicker.launch("image/*")
+                        }) { Text(referenceRoleLabel(role)) }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { assetRoleDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+    assetShotId?.let { shotId ->
+        val assets = project?.assets.orEmpty()
+        AlertDialog(
+            onDismissRequest = { assetShotId = null },
+            title = { Text(stringResource(R.string.board_use_asset)) },
+            text = {
+                if (assets.isEmpty()) {
+                    Text(stringResource(R.string.board_assets_empty))
+                } else {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        assets.forEach { asset ->
+                            TextButton(onClick = {
+                                viewModel.assignAssetToShot(projectId, shotId, asset.id)
+                                assetShotId = null
+                            }) {
+                                Text("${referenceRoleLabel(asset.role)} · ${asset.label.ifBlank { asset.path.substringAfterLast('/') }}")
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { assetShotId = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun AssetCard(asset: ProjectAsset, onDelete: () -> Unit) {
+    Column(
+        Modifier.width(96.dp),
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+    ) {
+        Box {
+            MediaThumbnail(asset.path, 96.dp, Modifier.clip(MaterialTheme.shapes.medium))
+            IconButton(onClick = onDelete, modifier = Modifier.align(Alignment.TopEnd)) {
+                Icon(
+                    Icons.Outlined.Delete,
+                    stringResource(R.string.action_delete),
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+        Text(
+            referenceRoleLabel(asset.role),
+            style = IrisType.metaSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun referenceRoleLabel(role: ReferenceRole): String = when (role) {
+    ReferenceRole.AUTO -> stringResource(R.string.reference_role_auto)
+    ReferenceRole.START_FRAME -> stringResource(R.string.reference_role_start)
+    ReferenceRole.END_FRAME -> stringResource(R.string.reference_role_end)
+    ReferenceRole.CHARACTER_REFERENCE -> stringResource(R.string.reference_role_character)
+    ReferenceRole.SCENE_REFERENCE -> stringResource(R.string.reference_role_scene)
+    ReferenceRole.STYLE_REFERENCE -> stringResource(R.string.reference_role_style)
+    ReferenceRole.OUTFIT_REFERENCE -> stringResource(R.string.reference_role_outfit)
+    ReferenceRole.COMPOSITION_REFERENCE -> stringResource(R.string.reference_role_composition)
+    ReferenceRole.ACTION_REFERENCE -> stringResource(R.string.reference_role_action)
+    ReferenceRole.GENERIC_REFERENCE -> stringResource(R.string.reference_role_generic)
 }
 
 /** One shot on the timeline: accent rail, media, prompt, status and actions. */
@@ -229,9 +380,19 @@ private fun ShotTimelineItem(
     shot: StoryboardShot,
     referenceFromPrevious: Boolean,
     feedsNext: Boolean,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    canUseAssets: Boolean,
     onOpen: () -> Unit,
     onDelete: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onDuplicate: () -> Unit,
+    onInsertAfter: () -> Unit,
+    onPickAsset: () -> Unit,
+    onClearReference: () -> Unit,
 ) {
+    var shotMenu by remember { mutableStateOf(false) }
     val (statusLabel, tone) = when (shot.status) {
         "done" -> stringResource(R.string.board_status_done) to ChipTone.Success
         "running" -> stringResource(R.string.board_status_running) to ChipTone.Accent
@@ -286,6 +447,43 @@ private fun ShotTimelineItem(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Spacer(Modifier.weight(1f))
                         val running = shot.status == "running"
+                        Box {
+                            IconButton(onClick = { shotMenu = true }) {
+                                Icon(Icons.Outlined.MoreVert, stringResource(R.string.action_more))
+                            }
+                            DropdownMenu(shotMenu, { shotMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_move_up)) },
+                                    enabled = canMoveUp && !running,
+                                    onClick = { shotMenu = false; onMoveUp() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_move_down)) },
+                                    enabled = canMoveDown && !running,
+                                    onClick = { shotMenu = false; onMoveDown() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_duplicate)) },
+                                    enabled = !running,
+                                    onClick = { shotMenu = false; onDuplicate() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_insert_after)) },
+                                    enabled = !running,
+                                    onClick = { shotMenu = false; onInsertAfter() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_use_asset)) },
+                                    enabled = canUseAssets && !running,
+                                    onClick = { shotMenu = false; onPickAsset() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_clear_reference)) },
+                                    enabled = shot.referencePath != null && !running,
+                                    onClick = { shotMenu = false; onClearReference() },
+                                )
+                            }
+                        }
                         TextAction(
                             text = when {
                                 shot.status == "done" -> stringResource(R.string.board_regenerate)

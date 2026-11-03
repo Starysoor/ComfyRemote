@@ -24,6 +24,9 @@ data class GenerationRequest(
     val createdAt: Long = System.currentTimeMillis(),
     /** Best-effort platform price estimate captured at submit time. */
     val estimatedCloudCost: Int? = null,
+    /** Set when this task belongs to a storyboard shot. */
+    val storyboardProjectId: String? = null,
+    val storyboardShotId: String? = null,
 )
 
 enum class GenerationPhase { PREPARING, QUEUEING, QUEUED, RUNNING, CANCELLING, CANCELLED, SUCCEEDED, FAILED }

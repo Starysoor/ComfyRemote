@@ -13,6 +13,9 @@
 - AI reasoning controls are provider/model-aware; inapplicable protocol fields are stripped from requests.
 - Retired the built-in English-expand and translate skills; users can recreate them as custom skills.
 - Independent "auto-save drafts" and "auto-restore drafts" settings.
+- Project workspace core: project-owned assets with semantic roles, durable copies, and role labels.
+- Shot reordering, duplication and insertion; project assets can become a shot's manual reference or be cleared.
+- Storyboard project/shot ids persist on generation tasks; Task Detail links back to the board.
 - Cloud provider registry metadata for the upcoming multi-provider settings page.
 - Version `2.3.0` (versionCode 26).
 

@@ -91,6 +91,8 @@ object GenerationTaskCodec {
         .put("convertedPrompt", JSONObject(request.convertedPrompt.toString()))
         .put("createdAt", request.createdAt)
         .put("estimatedCloudCost", request.estimatedCloudCost ?: JSONObject.NULL)
+        .put("storyboardProjectId", request.storyboardProjectId ?: JSONObject.NULL)
+        .put("storyboardShotId", request.storyboardShotId ?: JSONObject.NULL)
 
     private fun requestFromJson(o: JSONObject): GenerationRequest? = runCatching {
         GenerationRequest(
@@ -106,6 +108,8 @@ object GenerationTaskCodec {
             convertedPrompt = o.optJSONObject("convertedPrompt") ?: JSONObject(),
             createdAt = o.optLong("createdAt", System.currentTimeMillis()),
             estimatedCloudCost = nullableInt(o, "estimatedCloudCost"),
+            storyboardProjectId = nullableString(o, "storyboardProjectId"),
+            storyboardShotId = nullableString(o, "storyboardShotId"),
         )
     }.getOrNull()
 

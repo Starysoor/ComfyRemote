@@ -1,6 +1,7 @@
 package com.comfyremote.app.data.storyboard
 
 import android.content.Context
+import com.comfyremote.app.data.reference.ProjectAsset
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -50,6 +51,74 @@ class StoryboardStore internal constructor(private val file: File) {
             project.copy(shots = project.shots + shot, updatedAt = System.currentTimeMillis())
         }
         created
+    }
+
+    fun insertShotAfter(projectId: String, shotId: String, prompt: String): StoryboardShot? = synchronized(lock) {
+        var created: StoryboardShot? = null
+        updateLocked(projectId) { project ->
+            val index = project.shots.indexOfFirst { it.id == shotId }
+            if (index < 0) return@updateLocked project
+            val shot = StoryboardShot(prompt = prompt.trim())
+            created = shot
+            val shots = project.shots.toMutableList().apply { add(index + 1, shot) }
+            project.copy(shots = shots, updatedAt = System.currentTimeMillis())
+        }
+        created
+    }
+
+    fun duplicateShot(projectId: String, shotId: String): StoryboardShot? = synchronized(lock) {
+        var created: StoryboardShot? = null
+        updateLocked(projectId) { project ->
+            val index = project.shots.indexOfFirst { it.id == shotId }
+            if (index < 0) return@updateLocked project
+            val copy = project.shots[index].copy(
+                id = UUID.randomUUID().toString(),
+                status = "draft",
+                taskId = null,
+                resultPath = null,
+                lastFramePath = null,
+                error = null,
+            )
+            created = copy
+            val shots = project.shots.toMutableList().apply { add(index + 1, copy) }
+            project.copy(shots = shots, updatedAt = System.currentTimeMillis())
+        }
+        created
+    }
+
+    fun moveShot(projectId: String, shotId: String, delta: Int): Boolean = synchronized(lock) {
+        var moved = false
+        updateLocked(projectId) { project ->
+            val index = project.shots.indexOfFirst { it.id == shotId }
+            val target = index + delta
+            if (index < 0 || target !in project.shots.indices) return@updateLocked project
+            val shots = project.shots.toMutableList()
+            val shot = shots.removeAt(index)
+            shots.add(target, shot)
+            moved = true
+            project.copy(shots = shots, updatedAt = System.currentTimeMillis())
+        }
+        moved
+    }
+
+    fun addAsset(projectId: String, asset: ProjectAsset): Boolean = synchronized(lock) {
+        var added = false
+        update(projectId) { project ->
+            added = true
+            project.copy(assets = project.assets + asset, updatedAt = System.currentTimeMillis())
+        }
+        added
+    }
+
+    fun removeAsset(projectId: String, assetId: String): Boolean = synchronized(lock) {
+        var removed = false
+        update(projectId) { project ->
+            val next = project.assets.filterNot { it.id == assetId }
+            removed = next.size != project.assets.size
+            project.copy(assets = next, updatedAt = System.currentTimeMillis())
+        }
+        if (removed) gcOrphanMediaLocked()
+        removed
     }
 
     fun updateShot(projectId: String, shotId: String, transform: (StoryboardShot) -> StoryboardShot) =
@@ -122,11 +191,15 @@ class StoryboardStore internal constructor(private val file: File) {
     fun project(projectId: String): StoryboardProject? = _projects.value.firstOrNull { it.id == projectId }
 
     /** Media History must never prune while a storyboard still references it. */
-    fun referencedMediaPaths(): Set<String> = _projects.value.asSequence()
-        .flatMap { it.shots.asSequence() }
-        .flatMap { shot -> listOfNotNull(shot.resultPath, shot.lastFramePath, shot.referencePath).asSequence() }
-        .filter { it.isNotBlank() }
-        .toSet()
+    fun referencedMediaPaths(): Set<String> {
+        val shots = _projects.value.asSequence()
+            .flatMap { it.shots.asSequence() }
+            .flatMap { shot -> listOfNotNull(shot.resultPath, shot.lastFramePath, shot.referencePath).asSequence() }
+        val assets = _projects.value.asSequence()
+            .flatMap { it.assets.asSequence() }
+            .map { it.path }
+        return (shots + assets).filter { it.isNotBlank() }.toSet()
+    }
 
     private fun update(projectId: String, transform: (StoryboardProject) -> StoryboardProject) =
         synchronized(lock) { updateLocked(projectId, transform) }
@@ -157,8 +230,8 @@ class StoryboardStore internal constructor(private val file: File) {
         val mediaDir = File(file.parentFile, "storyboards")
         val referenced = referencedMediaPaths()
         val cutoff = System.currentTimeMillis() - MEDIA_GC_GRACE_MS
-        mediaDir.listFiles()?.forEach { candidate ->
-            if (candidate.isFile && candidate.absolutePath !in referenced && candidate.lastModified() < cutoff) {
+        mediaDir.walkTopDown().filter { it.isFile }.forEach { candidate ->
+            if (candidate.absolutePath !in referenced && candidate.lastModified() < cutoff) {
                 runCatching { candidate.delete() }
             }
         }

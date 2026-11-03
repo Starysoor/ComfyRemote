@@ -103,6 +103,49 @@ class StoryboardStoreTest {
     }
 
     @Test
+    fun moveDuplicateAndInsertKeepShotOrder() {
+        val store = store()
+        val project = store.create("Board", "wf")
+        val first = store.addShot(project.id, "first")!!
+        val second = store.addShot(project.id, "second")!!
+
+        assertTrue(store.moveShot(project.id, second.id, -1))
+        assertEquals(listOf(second.id, first.id), store.project(project.id)?.shots?.map { it.id })
+
+        store.markDone(project.id, second.id, "/tmp/second.mp4", "/tmp/second.png")
+        val copy = store.duplicateShot(project.id, second.id)!!
+        val shots = store.project(project.id)!!.shots
+        assertEquals(second.id, shots[0].id)
+        assertEquals(copy.id, shots[1].id)
+        assertEquals("draft", shots[1].status)
+        assertNull(shots[1].taskId)
+        assertNull(shots[1].resultPath)
+
+        val inserted = store.insertShotAfter(project.id, first.id, "inserted")!!
+        assertEquals(inserted.id, store.project(project.id)!!.shots.last().id)
+    }
+
+    @Test
+    fun projectAssetsPersistAndCountAsReferencedMedia() {
+        val store = store()
+        val project = store.create("Board", "wf")
+        val asset = com.comfyremote.app.data.reference.ProjectAsset(
+            id = "asset-1",
+            role = com.comfyremote.app.data.reference.ReferenceRole.CHARACTER_REFERENCE,
+            path = "/tmp/character.png",
+            label = "hero",
+        )
+
+        assertTrue(store.addAsset(project.id, asset))
+        assertEquals("hero", store.project(project.id)?.assets?.single()?.label)
+        assertTrue("/tmp/character.png" in store.referencedMediaPaths())
+
+        assertTrue(store.removeAsset(project.id, asset.id))
+        assertTrue(store.project(project.id)?.assets?.isEmpty() == true)
+        assertFalse("/tmp/character.png" in store.referencedMediaPaths())
+    }
+
+    @Test
     fun referencedMediaPathsCoverResultsFramesAndReferences() {
         val store = store()
         val project = store.create("Board", "wf")

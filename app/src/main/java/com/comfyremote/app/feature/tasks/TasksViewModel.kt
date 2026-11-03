@@ -147,6 +147,13 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
         return ok
     }
 
+    fun storyboardLabel(task: GenerationTask): String? {
+        val projectId = task.request.storyboardProjectId ?: return null
+        val project = container.storyboardStore.project(projectId) ?: return projectId
+        val index = project.shots.indexOfFirst { it.id == task.request.storyboardShotId }
+        return if (index >= 0) "${project.title} · ${index + 1}" else project.title
+    }
+
     fun serverLabel(url: String): String = container.serverRepository.load()
         .firstOrNull { it.url == url }
         ?.name

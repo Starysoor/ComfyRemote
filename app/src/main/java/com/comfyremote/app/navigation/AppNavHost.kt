@@ -250,6 +250,7 @@ private fun AppNavHost(
                     taskId = entry.arguments?.getString("taskId").orEmpty(),
                     onBack = { navController.popBackStack() },
                     onReuse = ::openTransfer,
+                    onOpenStoryboard = { projectId -> navController.navigate(Routes.storyboard(projectId)) },
                 )
             }
             composable(Routes.SETTINGS) {
