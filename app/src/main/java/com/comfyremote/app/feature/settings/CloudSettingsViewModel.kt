@@ -93,7 +93,7 @@ class CloudSettingsViewModel(private val container: AppContainer) : ViewModel() 
     }
 
     fun clearCloudInputs() {
-        container.cloudInputStore.clearAll()
+        container.clearCloudInputCache()
         _state.update { it.copy(message = AppStrings.get(R.string.settings_cloud_inputs_cleared)) }
     }
 

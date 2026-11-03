@@ -78,7 +78,6 @@ fun TaskDetailScreen(
     viewModel: TasksViewModel,
     taskId: String,
     onBack: () -> Unit,
-    onRetry: (String) -> Unit,
     onReuse: (DraftTransfer) -> Unit,
 ) {
     val tasks by viewModel.tasks.collectAsState()
@@ -138,7 +137,7 @@ fun TaskDetailScreen(
                         if (task.request.provider == AutoDlConfig.PROVIDER) confirmCloudCancel = true
                         else viewModel.cancel(task.taskId)
                     },
-                    onRetry = { viewModel.retry(task.taskId)?.let(onRetry) },
+                    onRetry = { viewModel.retry(task.taskId) },
                     onReuse = { viewModel.prepareReuse(task.taskId)?.let(onReuse) },
                     onRecover = { viewModel.recover(task.taskId) },
                     onCopyDiagnostics = {

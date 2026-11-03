@@ -386,13 +386,6 @@ fun GenerateScreen(
             },
         )
     }
-    state.cloudConfirm?.let { confirmation ->
-        CloudConfirmDialog(
-            confirmation = confirmation,
-            onConfirm = viewModel::confirmCloudSubmit,
-            onDismiss = viewModel::dismissCloudConfirm,
-        )
-    }
     if (confirmCloudCancel) {
         CancelCloudTaskDialog(
             onConfirm = {

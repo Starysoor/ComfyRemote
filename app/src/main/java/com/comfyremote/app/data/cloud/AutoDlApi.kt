@@ -79,9 +79,26 @@ class AutoDlApi(private val base: String = AutoDlConfig.BASE_URL) {
     }
 
     suspend fun download(url: String): ByteArray = withContext(Dispatchers.IO) {
-        client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+        downloadClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
             if (!response.isSuccessful) throw ComfyException("下载云端结果失败 HTTP ${response.code}")
             response.body?.bytes() ?: throw ComfyException("下载云端结果失败：空响应")
+        }
+    }
+
+    /** Streams large videos/audio straight to disk instead of buffering them in memory. */
+    suspend fun downloadTo(url: String, target: java.io.File) = withContext(Dispatchers.IO) {
+        try {
+            downloadClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                if (!response.isSuccessful) throw ComfyException("下载云端结果失败 HTTP ${response.code}")
+                val body = response.body ?: throw ComfyException("下载云端结果失败：空响应")
+                target.parentFile?.mkdirs()
+                body.byteStream().use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+        } catch (t: Throwable) {
+            target.delete()
+            throw t
         }
     }
 

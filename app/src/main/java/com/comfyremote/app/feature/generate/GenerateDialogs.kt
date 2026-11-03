@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import com.comfyremote.app.data.generation.CloudConfirmation
 import com.comfyremote.app.ui.components.IrisSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -134,14 +135,27 @@ fun CloudConfirmDialog(
         title = { Text(stringResource(R.string.gen_cloud_confirm_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(confirmation.workflowName, style = MaterialTheme.typography.titleSmall)
+                confirmation.workflowName.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = MaterialTheme.typography.titleSmall)
+                }
                 Text(
                     stringResource(R.string.gen_cloud_price, confirmation.priceLabel),
                     color = MaterialTheme.colorScheme.primary,
                     style = IrisType.meta,
                 )
-                confirmation.estimatedCost?.let {
+                if (confirmation.count > 1) {
+                    Text(
+                        stringResource(R.string.gen_cloud_quantity, confirmation.count),
+                        style = IrisType.meta,
+                    )
+                }
+                confirmation.perRunCost?.let {
                     Text(stringResource(R.string.gen_cloud_estimate, it), style = IrisType.meta)
+                }
+                if (confirmation.count > 1) {
+                    confirmation.totalCost?.let {
+                        Text(stringResource(R.string.gen_cloud_total, it), style = IrisType.meta)
+                    }
                 }
                 if (confirmation.duration.isNotBlank() || confirmation.resolution.isNotBlank()) {
                     val duration = confirmation.duration.takeIf { it.isNotBlank() }?.let { stringResource(R.string.gen_cloud_duration, it) }

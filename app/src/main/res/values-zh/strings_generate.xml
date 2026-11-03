@@ -65,6 +65,8 @@
     <string name="gen_cloud_confirm_title">确认云端提交</string>
     <string name="gen_cloud_price">平台计价：%1$s</string>
     <string name="gen_cloud_estimate">本次预计：%1$d（平台单位）</string>
+    <string name="gen_cloud_quantity">提交数量：%1$d</string>
+    <string name="gen_cloud_total">预计合计：%1$d（平台单位）</string>
     <string name="gen_cloud_duration">时长 %1$ss</string>
     <string name="gen_cloud_billing_note">实际扣费以 AutoDL 账单为准。提交后取消不一定停止平台侧执行，仍可能计费。</string>
     <string name="gen_submit">确认提交</string>
@@ -123,6 +125,9 @@
     </plurals>
     <string name="gen_vm_local_audio_unsupported">本地 ComfyUI 工作流暂不支持音频输入</string>
     <string name="gen_vm_wait_media">请等待参考素材处理完成</string>
+    <string name="gen_vm_storyboard_running">该分镜正在生成中，请等待完成</string>
+    <string name="gen_vm_reuse_partial">已映射 %1$d/%2$d 个参数，未匹配的参数已跳过</string>
+    <string name="gen_vm_reuse_none">没有参数能映射到该工作流</string>
     <string name="gen_vm_no_reference_input">当前工作流没有可接收参考图的输入</string>
     <string name="gen_vm_result_as_reference">结果图已设为参考图</string>
     <string name="gen_vm_no_video_workflow">请先在设置中配置默认云端视频工作流</string>

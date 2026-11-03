@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.2.3 — 2026-11-03
+
+### Changed
+
+- Every cloud submission now passes one confirmation gate; retries and bulk retries show run count, per-run estimate and total estimate.
+- Cross-workflow parameter reuse maps values by field role/input instead of raw node IDs, reports unmatched values, and never guesses between positive/negative prompts.
+
+### Fixed
+
+- Running storyboard shots can no longer be reopened or resubmitted; the next shot waits for the running one, deleted shots rebase downstream references, and tail frames use the actual final frame.
+- History keeps media referenced by storyboards and writes its index atomically; pruning waits for in-flight downloads.
+- Cloud result downloads use the long-timeout client and stream directly to disk instead of buffering whole videos in memory.
+- Image preprocessing now scales exactly to the configured limit and fails clearly when an image cannot be decoded.
+- Clearing the cloud input cache keeps files referenced by queued tasks, drafts, history and presets.
+- Bulk "Cancel queued" warns when cloud jobs were already submitted.
+- Recent results are filtered by server/cloud before the display limit.
+- Transient Keystore decrypt failures no longer delete saved API tokens.
+- Version `2.2.3` (versionCode 24).
+
 ## 2.2.2 — 2026-11-03
 
 ### Added

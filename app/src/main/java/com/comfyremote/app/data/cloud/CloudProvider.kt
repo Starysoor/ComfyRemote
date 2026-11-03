@@ -20,6 +20,11 @@ interface CloudProvider {
     suspend fun submit(workflowId: String, body: JSONObject): String
     suspend fun result(taskId: String): CloudTaskResult
     suspend fun download(url: String): ByteArray
+
+    /** Prefer this for large media; providers can stream directly to [target]. */
+    suspend fun downloadTo(url: String, target: java.io.File) {
+        target.writeBytes(download(url))
+    }
 }
 
 class CloudProviderRegistry(private val providers: List<CloudProvider>) {

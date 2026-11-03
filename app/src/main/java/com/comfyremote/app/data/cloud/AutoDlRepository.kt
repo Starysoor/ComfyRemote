@@ -52,5 +52,9 @@ class AutoDlRepository(
 
     override suspend fun download(url: String): ByteArray = api.download(url)
 
+    override suspend fun downloadTo(url: String, target: java.io.File) {
+        api.downloadTo(url, target)
+    }
+
     companion object { private const val CATALOG_TTL_MS = 10 * 60_000L }
 }

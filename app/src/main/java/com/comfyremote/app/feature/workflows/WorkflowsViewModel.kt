@@ -78,7 +78,7 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
             recentPaths = container.workflowUsageRepository.recentPaths(),
             favoritePaths = container.workflowUsageRepository.favorites(),
             recentPresets = recentSetups(container.promptPresetRepository.load()),
-            recentResults = recentResults(container.historyRepository.load(), container.serverSession.session.value?.url),
+            recentResults = recentResults(container.historyRepository.load()),
             session = container.serverSession.session.value,
             servers = container.serverRepository.load(),
             source = initialSource,
@@ -99,7 +99,7 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                         session = session,
                         workflows = if (session == null || changed) emptyList() else it.workflows,
                         error = if (session == null || changed) null else it.error,
-                        recentResults = recentResults(container.historyRepository.load(), session?.url),
+                        recentResults = recentResults(container.historyRepository.load()),
                         switchingServer = null,
                     )
                 }
@@ -130,7 +130,7 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
         }
         viewModelScope.launch {
             container.historyRepository.items.collect { history ->
-                _state.update { state -> state.copy(recentResults = recentResults(history, state.session?.url)) }
+                _state.update { state -> state.copy(recentResults = recentResults(history)) }
             }
         }
         load()
@@ -320,11 +320,8 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
             .sortedWith(compareByDescending<PromptPreset> { it.favorite }.thenByDescending { it.lastUsedAt ?: it.createdAt })
             .take(4)
 
-        private fun recentResults(items: List<HistoryItem>, serverUrl: String?): List<HistoryItem> = items
-            .asSequence()
-            .sortedByDescending { it.time }
-            .take(8)
-            .toList()
+        private fun recentResults(items: List<HistoryItem>): List<HistoryItem> =
+            items.sortedByDescending { it.time }
     }
 }
 

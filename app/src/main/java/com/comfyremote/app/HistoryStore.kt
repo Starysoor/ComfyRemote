@@ -12,6 +12,8 @@ data class HistoryItem(
     val wfName: String,
     val time: Long,
     val values: Map<String, String>, // field edits used for this run
+    /** Source field metadata, used to map values onto a different workflow. */
+    val fields: List<PromptField> = emptyList(),
     val randomSeed: Boolean,
     val images: List<String>,        // local file paths
     val summary: String,             // first prompt text, truncated
@@ -23,9 +25,17 @@ data class HistoryItem(
 )
 
 /** JSON-file-backed result library; result PNGs saved under app-external files dir. */
-class HistoryStore(context: Context) {
+class HistoryStore(
+    private val dir: File,
+    /** Files still referenced by storyboards (or other stores) must survive delete/prune. */
+    private val protectedMedia: () -> Set<String> = { emptySet() },
+) {
 
-    private val dir: File = File(context.getExternalFilesDir(null), "history").apply { mkdirs() }
+    constructor(
+        context: Context,
+        protectedMedia: () -> Set<String> = { emptySet() },
+    ) : this(File(context.getExternalFilesDir(null), "history").apply { mkdirs() }, protectedMedia)
+
     private val indexFile = File(dir, "index.json")
 
     fun load(): List<HistoryItem> = runCatching {
@@ -38,6 +48,7 @@ class HistoryStore(context: Context) {
                 wfName = o.optString("wfName"),
                 time = o.optLong("time"),
                 values = strMap(o.optJSONObject("values")),
+                fields = promptFields(o.optJSONArray("fields")),
                 randomSeed = o.optBoolean("randomSeed", true),
                 images = strList(o.optJSONArray("images")).filter { p -> File(p).isFile },
                 summary = o.optString("summary"),
@@ -80,13 +91,17 @@ class HistoryStore(context: Context) {
     fun deleteMany(ids: Collection<String>) {
         val idSet = ids.toSet()
         val victims = load().filter { it.id in idSet }
-        victims.flatMap { it.images }.forEach { runCatching { File(it).delete() } }
+        val protected = protectedMedia()
+        victims.flatMap { it.images }
+            .filter { it !in protected }
+            .forEach { runCatching { File(it).delete() } }
         writeItems(load().filter { it.id !in idSet })
     }
 
     fun delete(id: String) {
         val victim = load().firstOrNull { it.id == id }
-        victim?.images?.forEach { runCatching { File(it).delete() } }
+        val protected = protectedMedia()
+        victim?.images?.filter { it !in protected }?.forEach { runCatching { File(it).delete() } }
         writeItems(load().filter { it.id != id })
     }
 
@@ -98,13 +113,24 @@ class HistoryStore(context: Context) {
     }
 
     private fun writeItems(items: List<HistoryItem>) {
-        indexFile.writeText(JSONArray().apply { items.forEach { put(it.toJson()) } }.toString())
+        val raw = JSONArray().apply { items.forEach { put(it.toJson()) } }.toString()
+        val tmp = File(dir, "index.json.tmp")
+        tmp.writeText(raw)
+        if (!tmp.renameTo(indexFile)) {
+            indexFile.writeText(raw)
+            tmp.delete()
+        }
     }
 
     private fun pruneImages(kept: List<HistoryItem>) {
         val liveFiles = kept.flatMap { it.images }.toSet()
-        dir.listFiles { f -> f.isFile && f.name != "index.json" }?.forEach { f ->
-            if (f.absolutePath !in liveFiles) f.delete()
+        val protected = protectedMedia()
+        val cutoff = System.currentTimeMillis() - PRUNE_GRACE_MS
+        dir.listFiles { f -> f.isFile && f.name != "index.json" && !f.name.endsWith(".tmp") }?.forEach { f ->
+            // A runner may still be writing a file before its History entry exists.
+            if (f.absolutePath !in liveFiles && f.absolutePath !in protected && f.lastModified() < cutoff) {
+                f.delete()
+            }
         }
     }
 
@@ -114,6 +140,7 @@ class HistoryStore(context: Context) {
         .put("wfName", wfName)
         .put("time", time)
         .put("values", JSONObject(values))
+        .put("fields", JSONArray().apply { fields.forEach { put(it.toJson()) } })
         .put("randomSeed", randomSeed)
         .put("images", JSONArray().apply { images.forEach { put(it) } })
         .put("summary", summary)
@@ -135,6 +162,43 @@ class HistoryStore(context: Context) {
         return out.filter { it.isNotBlank() }
     }
 
+    private fun PromptField.toJson(): JSONObject = JSONObject()
+        .put("key", key)
+        .put("nodeId", nodeId)
+        .put("input", input)
+        .put("label", label)
+        .put("kind", kind.name)
+        .put("value", value)
+        .put("multiline", multiline)
+        .put("ptype", ptype)
+        .put("options", JSONArray().apply { options.forEach { put(it) } })
+        .put("min", min ?: JSONObject.NULL)
+        .put("max", max ?: JSONObject.NULL)
+        .put("required", required)
+
+    private fun promptFields(a: JSONArray?): List<PromptField> {
+        val out = mutableListOf<PromptField>()
+        if (a != null) for (i in 0 until a.length()) {
+            val o = a.optJSONObject(i) ?: continue
+            val key = o.optString("key").takeIf { it.isNotBlank() } ?: continue
+            out += PromptField(
+                key = key,
+                nodeId = o.optString("nodeId"),
+                input = o.optString("input"),
+                label = o.optString("label"),
+                kind = runCatching { FieldKind.valueOf(o.optString("kind")) }.getOrDefault(FieldKind.PARAM),
+                value = o.optString("value"),
+                multiline = o.optBoolean("multiline", false),
+                ptype = o.optString("ptype"),
+                options = strList(o.optJSONArray("options")),
+                min = if (o.isNull("min")) null else o.optString("min"),
+                max = if (o.isNull("max")) null else o.optString("max"),
+                required = o.optBoolean("required", false),
+            )
+        }
+        return out
+    }
+
     private fun labeledList(a: JSONArray?): List<LabeledText> {
         val out = mutableListOf<LabeledText>()
         if (a != null) for (i in 0 until a.length()) {
@@ -146,5 +210,6 @@ class HistoryStore(context: Context) {
 
     companion object {
         private const val MAX_ITEMS = 200
+        private const val PRUNE_GRACE_MS = 60 * 60_000L
     }
 }

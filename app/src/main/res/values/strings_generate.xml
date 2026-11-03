@@ -65,6 +65,8 @@
     <string name="gen_cloud_confirm_title">Confirm cloud submission</string>
     <string name="gen_cloud_price">Platform price: %1$s</string>
     <string name="gen_cloud_estimate">Estimated this run: %1$d (platform units)</string>
+    <string name="gen_cloud_quantity">Runs: %1$d</string>
+    <string name="gen_cloud_total">Estimated total: %1$d (platform units)</string>
     <string name="gen_cloud_duration">duration %1$ss</string>
     <string name="gen_cloud_billing_note">Actual billing is determined by AutoDL. Cancelling locally may not stop the remote job, which can still be billed.</string>
     <string name="gen_submit">Submit</string>
@@ -125,6 +127,9 @@
     </plurals>
     <string name="gen_vm_local_audio_unsupported">Local ComfyUI audio inputs are not supported yet</string>
     <string name="gen_vm_wait_media">Wait for the reference media to finish loading</string>
+    <string name="gen_vm_storyboard_running">This storyboard shot is already running; wait for it to finish</string>
+    <string name="gen_vm_reuse_partial">Reused %1$d of %2$d values; unmatched values were skipped</string>
+    <string name="gen_vm_reuse_none">No saved values matched this workflow</string>
     <string name="gen_vm_no_reference_input">This workflow has no reference-image input</string>
     <string name="gen_vm_result_as_reference">Result set as reference image</string>
     <string name="gen_vm_no_video_workflow">Set a default cloud video workflow in Settings</string>

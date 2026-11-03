@@ -1,11 +1,15 @@
 package com.comfyremote.app.data.repository
 
+import com.comfyremote.app.PromptField
+
 /** One-shot handoff used when History/Task Center reopens a workflow for editing. */
 data class DraftTransfer(
     val workflowPath: String,
     val workflowName: String,
     val values: Map<String, String>,
     val randomSeed: Boolean,
+    /** Source field metadata for semantic cross-workflow remapping; empty for legacy records. */
+    val sourceFields: List<PromptField> = emptyList(),
     /** Original server for cross-server reuse/continuation. Blank legacy records keep the current server. */
     val serverUrl: String? = null,
     /** Local generated image to upload into the first compatible image input on reopen. */

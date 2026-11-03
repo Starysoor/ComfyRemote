@@ -81,6 +81,8 @@ fun StoryboardDetailScreen(
     var addingShot by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     val allDoneText = stringResource(R.string.board_all_done)
+    val runningText = stringResource(R.string.gen_vm_storyboard_running)
+    val anyRunning = project?.shots?.any { it.status == "running" } == true
 
     LaunchedEffect(message) {
         message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() }
@@ -126,12 +128,16 @@ fun StoryboardDetailScreen(
                     text = stringResource(R.string.board_next_shot),
                     icon = Icons.Outlined.PlayArrow,
                     onClick = {
-                        viewModel.nextShot(project.id)?.let { shot ->
-                            viewModel.openShot(project.id, shot.id)?.let { (path, name) ->
-                                onOpenShot(path, name)
+                        if (anyRunning) {
+                            scope.launch { snackbar.showSnackbar(runningText) }
+                        } else {
+                            viewModel.nextShot(project.id)?.let { shot ->
+                                viewModel.openShot(project.id, shot.id)?.let { (path, name) ->
+                                    onOpenShot(path, name)
+                                }
+                            } ?: run {
+                                scope.launch { snackbar.showSnackbar(allDoneText) }
                             }
-                        } ?: run {
-                            scope.launch { snackbar.showSnackbar(allDoneText) }
                         }
                     },
                 )
@@ -280,9 +286,15 @@ private fun ShotTimelineItem(
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Spacer(Modifier.weight(1f))
+                        val running = shot.status == "running"
                         TextAction(
-                            if (shot.status == "done") stringResource(R.string.board_regenerate) else stringResource(R.string.board_prepare),
+                            text = when {
+                                shot.status == "done" -> stringResource(R.string.board_regenerate)
+                                running -> stringResource(R.string.phase_running)
+                                else -> stringResource(R.string.board_prepare)
+                            },
                             onClick = onOpen,
+                            enabled = !running,
                         )
                         TextAction(stringResource(R.string.action_delete), onClick = onDelete, color = MaterialTheme.colorScheme.error)
                     }

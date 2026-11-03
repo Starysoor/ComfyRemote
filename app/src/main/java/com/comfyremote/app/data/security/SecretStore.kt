@@ -28,7 +28,9 @@ class SecretStore(private val prefs: SharedPreferences) {
         if (!encrypted.isNullOrBlank()) {
             val decrypted = runCatching { decrypt(encrypted) }.getOrNull()
             if (decrypted != null) return decrypted
-            prefs.edit().remove(encKey(key)).apply()
+            // Keep the ciphertext: a transient Keystore failure must not destroy the
+            // saved token. A permanent key loss simply keeps returning null until the
+            // user re-enters the value.
         }
         val legacy = prefs.getString(key, null)?.takeIf { it.isNotBlank() } ?: return null
         put(key, legacy)

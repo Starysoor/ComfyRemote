@@ -10,5 +10,5 @@ class AppSettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun update(transform: (AppSettings) -> AppSettings) = container.appSettingsStore.update(transform)
 
-    fun clearCloudInputs() = container.cloudInputStore.clearAll()
+    fun clearCloudInputs() = container.clearCloudInputCache()
 }

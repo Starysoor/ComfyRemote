@@ -17,6 +17,11 @@ interface GenerationBackend {
     suspend fun historyEntry(promptId: String): JSONObject?
     suspend fun downloadImage(image: OutputImage): ByteArray
 
+    /** Streams an output to [target]; cloud providers override this for large videos. */
+    suspend fun downloadTo(image: OutputImage, target: File) {
+        target.writeBytes(downloadImage(image))
+    }
+
     /** Optional for fake/legacy backends; production uses it for exact queue state and recovery. */
     suspend fun queueSnapshot(): QueueSnapshot? = null
 }

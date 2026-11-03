@@ -74,6 +74,11 @@ class CloudWorkflowBackend(
         return repository.download(url)
     }
 
+    override suspend fun downloadTo(image: OutputImage, target: java.io.File) {
+        val url = image.url ?: throw ComfyException("云端结果缺少下载地址")
+        repository.downloadTo(url, target)
+    }
+
     private fun successEntry(result: com.comfyremote.app.data.cloud.CloudTaskResult): JSONObject {
         if (result.results.isEmpty()) {
             return errorEntry("AutoDL 任务完成但没有返回结果")

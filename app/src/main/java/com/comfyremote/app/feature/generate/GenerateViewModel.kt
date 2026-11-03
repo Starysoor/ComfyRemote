@@ -73,14 +73,6 @@ data class ImageUploadStatus(
 
 enum class PresetApplyMode { ALL, PROMPTS, PARAMETERS }
 
-data class CloudConfirmation(
-    val workflowName: String,
-    val priceLabel: String,
-    val estimatedCost: Int?,
-    val duration: String,
-    val resolution: String,
-)
-
 data class GenerateUiState(
     val loading: Boolean = false,
     val error: String? = null,
@@ -95,7 +87,6 @@ data class GenerateUiState(
     val uploads: Map<String, ImageUploadStatus> = emptyMap(),
     val batchCount: Int = 1,
     val batchLocalQueue: Boolean = true,
-    val cloudConfirm: CloudConfirmation? = null,
     val message: String? = null,
 ) {
     val filteredPresets: List<PromptPreset>
@@ -157,6 +148,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     private var loadedPath: String? = null
     private val appliedSeedTasks = mutableSetOf<String>()
     private var draftSaveJob: Job? = null
+    private var submitJob: Job? = null
     private var pendingStoryboardProjectId: String? = null
     private var pendingStoryboardShotId: String? = null
 
@@ -217,8 +209,21 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                             baseDraft.storageServerUrl.ifBlank { container.serverSession.url },
                         )
                     } else null
+                    val mapped = transfer?.let { pending ->
+                        if (pending.reuseAcrossWorkflows && pending.workflowPath != path) {
+                            ReuseValueMapper.map(pending, baseDraft)
+                        } else null
+                    }
+                    val reuseMessage = when {
+                        transfer == null || mapped == null -> null
+                        mapped.values.isEmpty() && transfer.values.isNotEmpty() ->
+                            AppStrings.get(R.string.gen_vm_reuse_none)
+                        mapped.unmapped > 0 ->
+                            AppStrings.get(R.string.gen_vm_reuse_partial, mapped.values.size, transfer.values.size)
+                        else -> null
+                    }
                     val draft = baseDraft.copy(
-                        values = transfer?.values ?: remembered?.values.orEmpty(),
+                        values = mapped?.values ?: transfer?.values ?: remembered?.values.orEmpty(),
                         randomSeed = transfer?.randomSeed ?: remembered?.randomSeed
                             ?: container.appSettingsStore.settings.value.defaultRandomSeed,
                     )
@@ -229,6 +234,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                             insight = insightFor(draft, conv),
                             skills = container.aiSkillBindingStore.filter(container.aiSkillStore.load(), name, path),
                             activeTaskId = null,
+                            message = reuseMessage,
                         )
                     }
                     transfer?.referenceLocalPath?.takeIf(String::isNotBlank)?.let(::useLocalResultAsReference)
@@ -307,7 +313,8 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_defaults_restored)) }
     }
 
-    fun generate(confirmed: Boolean = false) {
+    fun generate() {
+        if (submitJob?.isActive == true) return
         val draft = _state.value.draft ?: return
         val cv = converted ?: return
         if (!draft.isCloud && !container.serverSession.connected) {
@@ -334,56 +341,37 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         }
         val current = _state.value.activeTaskId?.let { id -> tasks.value.firstOrNull { it.taskId == id } }
         if (current?.isActive == true || (current?.batchId != null && tasks.value.any { it.batchId == current.batchId && it.isActive })) return
-        if (draft.isCloud && !confirmed && container.appSettingsStore.settings.value.confirmCloudSubmit) {
-            _state.update { it.copy(cloudConfirm = cloudConfirmation(draft, draft.values)) }
-            return
+
+        val projectId = pendingStoryboardProjectId
+        val shotId = pendingStoryboardShotId
+        if (projectId != null && shotId != null) {
+            val status = container.storyboardStore.project(projectId)
+                ?.shots?.firstOrNull { it.id == shotId }?.status
+            if (status == "running") {
+                _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_storyboard_running)) }
+                return
+            }
         }
-        _state.update { it.copy(cloudConfirm = null) }
 
         persistDraftNow(draft)
         val count = _state.value.batchCount.coerceIn(1, MAX_BATCH)
         val requests = (0 until count).map { index -> buildRequest(draft, cv, index) }
-        val ids = if (requests.size == 1) {
-            listOf(container.generationManager.submit(requests.single()))
-        } else {
-            container.generationManager.submitBatch(requests, localQueue = _state.value.batchLocalQueue)
+        val localQueue = _state.value.batchLocalQueue
+        submitJob = viewModelScope.launch {
+            val ids = container.cloudSubmissionGate.submit(requests, localQueue, draft.cloud?.pricing?.label)
+            if (ids.isEmpty()) return@launch
+            if (projectId != null && shotId != null) {
+                container.storyboardStore.attachTask(projectId, shotId, ids.first())
+                pendingStoryboardProjectId = null
+                pendingStoryboardShotId = null
+            }
+            _state.update {
+                it.copy(
+                    activeTaskId = ids.firstOrNull(),
+                    message = if (ids.size > 1) AppStrings.plural(R.plurals.gen_vm_batch_created, ids.size, ids.size) else null,
+                )
+            }
         }
-        val projectId = pendingStoryboardProjectId
-        val shotId = pendingStoryboardShotId
-        if (projectId != null && shotId != null && ids.isNotEmpty()) {
-            container.storyboardStore.attachTask(projectId, shotId, ids.first())
-            pendingStoryboardProjectId = null
-            pendingStoryboardShotId = null
-        }
-        _state.update {
-            it.copy(
-                activeTaskId = ids.firstOrNull(),
-                message = if (ids.size > 1) AppStrings.plural(R.plurals.gen_vm_batch_created, ids.size, ids.size) else null,
-            )
-        }
-    }
-
-    fun confirmCloudSubmit() = generate(confirmed = true)
-
-    fun dismissCloudConfirm() = _state.update { it.copy(cloudConfirm = null) }
-
-    private fun cloudConfirmation(draft: WorkflowDraft, values: Map<String, String>): CloudConfirmation {
-        val spec = draft.cloud
-        val duration = fieldValue(draft, values, "duration")
-            ?: fieldValue(draft, values, "audio_duration").orEmpty()
-        val resolution = fieldValue(draft, values, "resolution").orEmpty()
-        val estimate = if (spec?.kind == "audio" && duration.isBlank()) {
-            null
-        } else {
-            spec?.pricing?.estimate(resolution, duration.toIntOrNull())
-        }
-        return CloudConfirmation(
-            workflowName = spec?.name ?: draft.workflowName,
-            priceLabel = spec?.pricing?.label ?: AppStrings.get(R.string.price_platform),
-            estimatedCost = estimate,
-            duration = duration,
-            resolution = resolution,
-        )
     }
 
     private fun fieldValue(
@@ -450,7 +438,15 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
 
     fun retryActiveTask() {
         val id = _state.value.activeTaskId ?: return
-        container.generationManager.retry(id)?.let { newId -> _state.update { it.copy(activeTaskId = newId) } }
+        val task = tasks.value.firstOrNull { it.taskId == id } ?: return
+        val request = task.request.copy(
+            id = UUID.randomUUID().toString(),
+            createdAt = System.currentTimeMillis(),
+        )
+        viewModelScope.launch {
+            val ids = container.cloudSubmissionGate.submit(listOf(request), localQueue = false)
+            ids.firstOrNull()?.let { newId -> _state.update { it.copy(activeTaskId = newId) } }
+        }
     }
 
     fun aiExpand(fieldKey: String, currentText: String, skill: AiSkillDef) {
@@ -777,7 +773,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun cloudImageDimension(): Int =
-        container.appSettingsStore.settings.value.maxImageDimension.coerceAtMost(1024)
+        container.appSettingsStore.settings.value.maxImageDimension.coerceIn(1024, 2048)
 
     suspend fun loadInputBitmap(name: String): Bitmap? = withContext(Dispatchers.IO) {
         val local = container.cloudInputStore.localPath(name)

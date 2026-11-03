@@ -7,6 +7,7 @@ import com.comfyremote.app.AppContainer
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.repository.DraftTransfer
+import com.comfyremote.app.navigation.Routes
 import com.comfyremote.app.R
 import com.comfyremote.app.ui.AppStrings
 import kotlinx.coroutines.Dispatchers
@@ -84,13 +85,48 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun retryFailed() {
-        val ids = container.generationManager.retryFailed(_serverUrl.value)
-        _message.value = if (ids.isEmpty()) AppStrings.get(R.string.tasks_msg_no_failed)
-        else AppStrings.plural(R.plurals.tasks_msg_retries_queued, ids.size, ids.size)
+        val serverUrl = _serverUrl.value
+        val requests = tasks.value
+            .filter { it.phase == GenerationPhase.FAILED && (serverUrl == null || it.request.serverUrl == serverUrl) }
+            .sortedBy { it.createdAt }
+            .map {
+                it.request.copy(
+                    id = java.util.UUID.randomUUID().toString(),
+                    createdAt = System.currentTimeMillis(),
+                )
+            }
+        if (requests.isEmpty()) {
+            _message.value = AppStrings.get(R.string.tasks_msg_no_failed)
+            return
+        }
+        viewModelScope.launch {
+            val ids = container.cloudSubmissionGate.submit(requests, localQueue = true)
+            if (ids.isNotEmpty()) {
+                _message.value = AppStrings.plural(R.plurals.tasks_msg_retries_queued, ids.size, ids.size)
+            }
+        }
     }
 
-    fun retry(id: String): String? = container.generationManager.retry(id)
-    fun duplicate(id: String): String? = container.generationManager.retry(id)
+    fun retry(id: String) {
+        retryRequest(id) { newId -> container.navigationRequests.request(Routes.task(newId)) }
+    }
+
+    fun duplicate(id: String) {
+        retryRequest(id) { newId -> container.navigationRequests.request(Routes.task(newId)) }
+    }
+
+    private fun retryRequest(id: String, onSubmitted: (String) -> Unit) {
+        val task = task(id) ?: return
+        val request = task.request.copy(
+            id = java.util.UUID.randomUUID().toString(),
+            createdAt = System.currentTimeMillis(),
+        )
+        viewModelScope.launch {
+            container.cloudSubmissionGate.submit(listOf(request), localQueue = false)
+                .firstOrNull()
+                ?.let(onSubmitted)
+        }
+    }
 
     fun recover(id: String): Boolean {
         val ok = container.generationManager.recoverExisting(id)
@@ -112,6 +148,7 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
             workflowPath = task.request.workflowPath,
             workflowName = task.request.workflowName,
             values = if (hasActualSeed) task.request.fieldValues + task.seedValues else task.request.fieldValues,
+            sourceFields = task.request.fields,
             randomSeed = if (hasActualSeed) false else task.request.randomSeed,
             serverUrl = task.request.serverUrl,
             reuseAcrossWorkflows = container.appSettingsStore.settings.value.reuseChooseWorkflow,

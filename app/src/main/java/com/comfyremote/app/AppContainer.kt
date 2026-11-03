@@ -7,6 +7,7 @@ import com.comfyremote.app.data.cloud.AutoDlSettingsStore
 import com.comfyremote.app.data.cloud.CloudInputStore
 import com.comfyremote.app.data.cloud.CloudSpendStore
 import com.comfyremote.app.data.discovery.LanServerDiscovery
+import com.comfyremote.app.data.generation.CloudSubmissionGate
 import com.comfyremote.app.data.generation.GenerationManager
 import com.comfyremote.app.data.generation.GenerationTaskStore
 import com.comfyremote.app.data.media.GalleryExporter
@@ -65,7 +66,9 @@ class AppContainer(val app: Application) {
     val workflowUsageRepository = WorkflowUsageRepository(prefs)
     val workflowDraftStore = WorkflowDraftStore(prefs)
 
-    val historyRepository = HistoryRepository(HistoryStore(app))
+    val historyRepository = HistoryRepository(
+        HistoryStore(app) { storyboardStore.referencedMediaPaths() }
+    )
     val objectInfoCache = ObjectInfoCache(app.cacheDir)
     val workflowRepository = WorkflowRepository(serverSession, objectInfoCache)
 
@@ -75,4 +78,23 @@ class AppContainer(val app: Application) {
 
     val generationTaskStore = GenerationTaskStore(app)
     val generationManager = GenerationManager(this, app)
+    val cloudSubmissionGate = CloudSubmissionGate(appSettingsStore, generationManager)
+
+    /** Clears unreferenced cloud inputs; queued tasks, drafts and history keep their files. */
+    fun clearCloudInputCache() {
+        val protected = buildSet {
+            fun addValues(values: Map<String, String>) {
+                values.values.filter { it.startsWith(CloudInputStore.PREFIX) }.forEach(::add)
+            }
+            historyRepository.load().forEach { addValues(it.values) }
+            promptPresetRepository.load().forEach { addValues(it.values) }
+            workflowDraftStore.all().forEach { addValues(it.values) }
+            draftTransferRepository.peek()?.let { addValues(it.values) }
+            generationManager.tasks.value.forEach { task ->
+                addValues(task.request.fieldValues)
+                addValues(task.seedValues)
+            }
+        }
+        cloudInputStore.clearAll(protected)
+    }
 }

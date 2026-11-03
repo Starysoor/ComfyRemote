@@ -93,6 +93,10 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         val index = project.shots.indexOfFirst { it.id == shotId }
         if (index < 0) return null
         val shot = project.shots[index]
+        val running = shot.status == "running" || shot.taskId?.let { taskId ->
+            container.generationManager.tasks.value.firstOrNull { it.taskId == taskId }?.isActive
+        } == true
+        if (running) return null
         val previous = project.shots.getOrNull(index - 1)
         val reference = shot.referencePath ?: previous?.lastFramePath
         val prompt = listOf(project.stylePrompt, shot.prompt)
@@ -149,10 +153,15 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                     }
                     if (!syncing.add(shot.id)) return@forEach
                     viewModelScope.launch {
+                        val previousLastFrame = shot.lastFramePath
                         val lastFrame = extractLastFrame(shot.id, resultPath)
                         container.storyboardStore.markDone(project.id, shot.id, resultPath, lastFrame)
                         val next = project.shots.getOrNull(project.shots.indexOfFirst { it.id == shot.id } + 1)
-                        if (next != null && next.referencePath.isNullOrBlank() && lastFrame != null) {
+                        if (next != null && lastFrame != null &&
+                            (next.referencePath.isNullOrBlank() ||
+                                next.referencePath == previousLastFrame ||
+                                next.referencePath == shot.resultPath)
+                        ) {
                             container.storyboardStore.setReference(project.id, next.id, lastFrame)
                         }
                         syncing.remove(shot.id)
@@ -181,11 +190,11 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
             val retriever = MediaMetadataRetriever()
             try {
                 retriever.setDataSource(path)
-                val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                     ?.toLongOrNull() ?: 0L
-                val at = (duration * 1000L - 50_000L).coerceAtLeast(0L)
-                retriever.getFrameAtTime(at, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    ?: retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                val at = (durationMs * 1000L - 1L).coerceAtLeast(0L)
+                retriever.getFrameAtTime(at, MediaMetadataRetriever.OPTION_CLOSEST)
+                    ?: retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST)
             } finally {
                 retriever.release()
             }

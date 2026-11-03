@@ -186,23 +186,6 @@ class GenerationManager(
         jobs.keys.toList().forEach { id -> if (id !in activeIds) jobs.remove(id)?.cancel() }
     }
 
-    fun retry(taskId: String): String? {
-        val old = _tasks.value.firstOrNull { it.taskId == taskId } ?: return null
-        return submit(old.request.copy(id = UUID.randomUUID().toString(), createdAt = System.currentTimeMillis()))
-    }
-
-    /** Retries all failed/cancelled tasks through the durable local queue to avoid flooding a server. */
-    fun retryFailed(serverUrl: String? = null): List<String> {
-        val requests = _tasks.value
-            .filter {
-                (it.phase == GenerationPhase.FAILED || it.phase == GenerationPhase.CANCELLED) &&
-                    (serverUrl == null || it.request.serverUrl == serverUrl)
-            }
-            .sortedBy { it.createdAt }
-            .map { it.request.copy(id = UUID.randomUUID().toString(), createdAt = System.currentTimeMillis()) }
-        return submitBatch(requests, localQueue = true)
-    }
-
     /** Re-attach a previously failed recovery without submitting a duplicate prompt. */
     fun recoverExisting(taskId: String): Boolean {
         val current = _tasks.value.firstOrNull { it.taskId == taskId } ?: return false

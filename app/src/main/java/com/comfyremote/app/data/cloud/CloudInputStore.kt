@@ -90,9 +90,16 @@ class CloudInputStore(private val context: Context) {
         return "data:${mimeForExt(file.extension)};base64,$encoded"
     }
 
-    fun clearAll() {
-        dir.listFiles()?.forEach { runCatching { it.delete() } }
-        audioDir.listFiles()?.forEach { runCatching { it.delete() } }
+    /** Deletes cached inputs except files referenced by queued tasks, drafts or history. */
+    fun clearAll(protectedValues: Set<String> = emptySet()) {
+        val keep = protectedValues
+            .mapNotNull { localPath(it)?.let { path -> File(path).absolutePath } }
+            .toSet()
+        listOf(dir, audioDir).forEach { folder ->
+            folder.listFiles()?.forEach { file ->
+                if (file.absolutePath !in keep) runCatching { file.delete() }
+            }
+        }
     }
 
     companion object {

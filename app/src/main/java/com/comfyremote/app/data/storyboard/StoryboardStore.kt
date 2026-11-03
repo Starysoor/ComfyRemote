@@ -8,8 +8,9 @@ import java.io.File
 import java.util.UUID
 
 /** JSON-file-backed multi-shot projects. */
-class StoryboardStore(context: Context) {
-    private val file = File(context.filesDir, "storyboards.json")
+class StoryboardStore internal constructor(private val file: File) {
+    constructor(context: Context) : this(File(context.filesDir, "storyboards.json"))
+
     private val lock = Any()
     private val _projects = MutableStateFlow(load())
     val projects: StateFlow<List<StoryboardProject>> = _projects.asStateFlow()
@@ -62,15 +63,33 @@ class StoryboardStore(context: Context) {
 
     fun deleteShot(projectId: String, shotId: String) = synchronized(lock) {
         updateLocked(projectId) { project ->
-            project.copy(
-                shots = project.shots.filterNot { it.id == shotId },
-                updatedAt = System.currentTimeMillis(),
-            )
+            val index = project.shots.indexOfFirst { it.id == shotId }
+            val removed = project.shots.getOrNull(index) ?: return@updateLocked project
+            val remaining = project.shots.toMutableList().apply { removeAt(index) }
+            // Shots wired to the deleted shot's media now fall back to the new previous shot.
+            val stale = listOfNotNull(removed.lastFramePath, removed.resultPath).toSet()
+            if (stale.isNotEmpty()) {
+                remaining.indices.forEach { i ->
+                    if (remaining[i].referencePath in stale) {
+                        remaining[i] = remaining[i].copy(referencePath = remaining.getOrNull(i - 1)?.lastFramePath)
+                    }
+                }
+            }
+            project.copy(shots = remaining, updatedAt = System.currentTimeMillis())
         }
     }
 
-    fun attachTask(projectId: String, shotId: String, taskId: String) = updateShot(projectId, shotId) {
-        it.copy(status = "running", taskId = taskId, error = null, resultPath = null)
+    fun attachTask(projectId: String, shotId: String, taskId: String): Boolean {
+        var attached = false
+        updateShot(projectId, shotId) { shot ->
+            if (shot.status == "running" && !shot.taskId.isNullOrBlank()) {
+                shot
+            } else {
+                attached = true
+                shot.copy(status = "running", taskId = taskId, error = null, resultPath = null)
+            }
+        }
+        return attached
     }
 
     fun markDone(projectId: String, shotId: String, resultPath: String, lastFramePath: String?) =
@@ -93,10 +112,19 @@ class StoryboardStore(context: Context) {
 
     fun nextShot(projectId: String): StoryboardShot? {
         val project = _projects.value.firstOrNull { it.id == projectId } ?: return null
-        return project.shots.firstOrNull { it.status != "done" || it.resultPath.isNullOrBlank() }
+        // Do not skip over a running shot: its last frame feeds the next reference.
+        val firstPending = project.shots.firstOrNull { it.status != "done" } ?: return null
+        return firstPending.takeIf { it.status == "draft" || it.status == "failed" }
     }
 
     fun project(projectId: String): StoryboardProject? = _projects.value.firstOrNull { it.id == projectId }
+
+    /** Media History must never prune while a storyboard still references it. */
+    fun referencedMediaPaths(): Set<String> = _projects.value.asSequence()
+        .flatMap { it.shots.asSequence() }
+        .flatMap { shot -> listOfNotNull(shot.resultPath, shot.lastFramePath, shot.referencePath).asSequence() }
+        .filter { it.isNotBlank() }
+        .toSet()
 
     private fun update(projectId: String, transform: (StoryboardProject) -> StoryboardProject) =
         synchronized(lock) { updateLocked(projectId, transform) }

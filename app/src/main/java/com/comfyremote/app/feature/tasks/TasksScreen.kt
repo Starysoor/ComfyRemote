@@ -37,6 +37,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import com.comfyremote.app.R
+import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.ui.IrisType
 import com.comfyremote.app.ui.Spacing
@@ -57,7 +58,16 @@ fun TasksScreen(
     val hasFinished = ui.tasks.any { it.isTerminal }
     val hasQueued = ui.tasks.any { it.localPending || it.phase == GenerationPhase.QUEUEING || it.phase == GenerationPhase.QUEUED }
     val hasFailed = ui.tasks.any { it.phase == GenerationPhase.FAILED }
+    val queuedTargets = ui.tasks.filter { task ->
+        task.isActive && (ui.serverUrl == null || task.request.serverUrl == ui.serverUrl) &&
+            (task.localPending || task.phase == GenerationPhase.PREPARING ||
+                task.phase == GenerationPhase.QUEUEING || task.phase == GenerationPhase.QUEUED)
+    }
+    val remoteCloudQueued = queuedTargets.count {
+        it.isRemoteQueued && it.request.provider == AutoDlConfig.PROVIDER
+    }
     var confirmClearFinished by remember { mutableStateOf(false) }
+    var confirmCancelQueued by remember { mutableStateOf(false) }
     var serverMenu by remember { mutableStateOf(false) }
     var actionMenu by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
@@ -87,7 +97,11 @@ fun TasksScreen(
                             if (hasQueued) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.tasks_cancel_queued)) },
-                                    onClick = { viewModel.cancelQueued(); actionMenu = false },
+                                    onClick = {
+                                        actionMenu = false
+                                        if (remoteCloudQueued > 0) confirmCancelQueued = true
+                                        else viewModel.cancelQueued()
+                                    },
                                 )
                             }
                             if (hasFailed) {
@@ -202,6 +216,24 @@ fun TasksScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmClearFinished = false }) { Text(stringResource(R.string.action_cancel)) }
+            },
+        )
+    }
+    if (confirmCancelQueued) {
+        AlertDialog(
+            onDismissRequest = { confirmCancelQueued = false },
+            title = { Text(stringResource(R.string.tasks_bulk_cancel_cloud_title)) },
+            text = { Text(stringResource(R.string.tasks_bulk_cancel_cloud_text, remoteCloudQueued)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmCancelQueued = false
+                    viewModel.cancelQueued()
+                }) { Text(stringResource(R.string.tasks_cancel_anyway), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmCancelQueued = false }) {
+                    Text(stringResource(R.string.tasks_keep_waiting))
+                }
             },
         )
     }

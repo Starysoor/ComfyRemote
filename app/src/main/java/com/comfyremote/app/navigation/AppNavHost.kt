@@ -59,6 +59,7 @@ import com.comfyremote.app.feature.ai.AiSettingsViewModel
 import com.comfyremote.app.feature.connect.ConnectScreen
 import com.comfyremote.app.feature.connect.ConnectViewModel
 import com.comfyremote.app.feature.connect.ServerManagerScreen
+import com.comfyremote.app.feature.generate.CloudConfirmDialog
 import com.comfyremote.app.feature.generate.GenerateScreen
 import com.comfyremote.app.feature.generate.GenerateViewModel
 import com.comfyremote.app.feature.history.HistoryScreen
@@ -97,6 +98,14 @@ fun ComfyRemoteRoot(container: AppContainer) {
         factory = factory,
         startDestination = if (appState.session != null) Routes.CREATE else Routes.CONNECT,
     )
+    val cloudPending by container.cloudSubmissionGate.pending.collectAsState()
+    cloudPending?.let { pending ->
+        CloudConfirmDialog(
+            confirmation = pending.confirmation,
+            onConfirm = container.cloudSubmissionGate::confirm,
+            onDismiss = container.cloudSubmissionGate::dismiss,
+        )
+    }
 }
 
 @Composable
@@ -235,7 +244,6 @@ private fun AppNavHost(
                     viewModel = vm,
                     taskId = entry.arguments?.getString("taskId").orEmpty(),
                     onBack = { navController.popBackStack() },
-                    onRetry = { newTaskId -> navController.navigate(Routes.task(newTaskId)) { launchSingleTop = true } },
                     onReuse = ::openTransfer,
                 )
             }

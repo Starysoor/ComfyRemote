@@ -20,6 +20,8 @@ class WorkflowDraftStore(private val prefs: SharedPreferences) {
         read().firstOrNull { it.workflowPath == workflowPath && it.serverUrl == serverUrl }
     }
 
+    fun all(): List<WorkflowDraftSnapshot> = synchronized(lock) { read() }
+
     fun save(workflowPath: String, serverUrl: String, values: Map<String, String>, randomSeed: Boolean) = synchronized(lock) {
         val next = listOf(
             WorkflowDraftSnapshot(workflowPath, serverUrl, values, randomSeed, System.currentTimeMillis())

@@ -111,6 +111,7 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
             workflowPath = item.wfPath,
             workflowName = item.wfName,
             values = item.values,
+            sourceFields = item.fields,
             randomSeed = if (reproduceSeed && item.seeds.isNotBlank()) false else item.randomSeed,
             serverUrl = item.serverUrl.takeIf(String::isNotBlank),
             referenceLocalPath = referenceLocalPath,

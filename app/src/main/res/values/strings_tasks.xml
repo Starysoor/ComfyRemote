@@ -45,6 +45,8 @@
     <string name="tasks_copy_diag">Copy diagnostics</string>
     <string name="tasks_diag_copied">Diagnostics copied</string>
     <string name="tasks_delete_task">Delete task</string>
+    <string name="tasks_bulk_cancel_cloud_title">Cancel queued tasks?</string>
+    <string name="tasks_bulk_cancel_cloud_text">%1$d already-submitted cloud job(s) may keep running and billing after you cancel.</string>
     <string name="tasks_cloud_cancel_title">Cancel cloud task?</string>
     <string name="tasks_cloud_cancel_text">This only stops local tracking. The AutoDL job may keep running and billing.</string>
     <string name="tasks_cancel_anyway">Cancel anyway</string>

@@ -292,8 +292,7 @@ class GenerationRunner(
             runCatching {
                 val file = history.newMediaFile(promptId, index, extensionFor(image))
                 if (!file.isFile || file.length() == 0L) {
-                    val bytes = backend.downloadImage(image)
-                    withContext(Dispatchers.IO) { file.writeBytes(bytes) }
+                    backend.downloadTo(image, file)
                 }
                 results += ResultImage(id = "$promptId:$index", localPath = file.absolutePath)
             }
@@ -324,6 +323,7 @@ class GenerationRunner(
                 wfName = task.request.workflowName,
                 time = System.currentTimeMillis(),
                 values = valuesUsed,
+                fields = task.request.fields,
                 randomSeed = task.request.randomSeed,
                 images = results.map { it.localPath },
                 summary = summary,

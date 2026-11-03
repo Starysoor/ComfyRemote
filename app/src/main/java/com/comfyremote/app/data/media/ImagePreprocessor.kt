@@ -6,6 +6,7 @@ import android.graphics.Matrix
 import androidx.exifinterface.media.ExifInterface
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import kotlin.math.roundToInt
 
 /** Pure image transformation used before uploading reference images. */
 object ImagePreprocessor {
@@ -28,7 +29,10 @@ object ImagePreprocessor {
         val limit = maxDimension.coerceAtLeast(256)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        if (bounds.outWidth <= 0) return Pair(bytes, extFor(mime))
+        if (bounds.outWidth <= 0) {
+            if (forceJpeg) throw IllegalArgumentException("无法解码图片，请换一张 JPG/PNG")
+            return Pair(bytes, extFor(mime))
+        }
         val maxDim = maxOf(bounds.outWidth, bounds.outHeight)
         if (maxDim <= limit && !forceJpeg) return Pair(bytes, extFor(mime))
 
@@ -36,7 +40,10 @@ object ImagePreprocessor {
             inSampleSize = (maxDim / limit).coerceAtLeast(1)
         }
         val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
-            ?: return Pair(bytes, "jpg")
+        if (bmp == null) {
+            if (forceJpeg) throw IllegalArgumentException("无法解码图片，请换一张 JPG/PNG")
+            return Pair(bytes, extFor(mime))
+        }
         val rotation = runCatching {
             when (ExifInterface(ByteArrayInputStream(bytes))
                 .getAttributeInt(ExifInterface.TAG_ORIENTATION, 1)) {
@@ -50,8 +57,21 @@ object ImagePreprocessor {
             val m = Matrix().apply { postRotate(rotation) }
             Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
         } else bmp
+        // inSampleSize only rounds down to powers of two, so enforce the limit exactly.
+        val orientedMax = maxOf(oriented.width, oriented.height)
+        val scaled = if (orientedMax > limit) {
+            val ratio = limit.toFloat() / orientedMax
+            Bitmap.createScaledBitmap(
+                oriented,
+                (oriented.width * ratio).roundToInt().coerceAtLeast(1),
+                (oriented.height * ratio).roundToInt().coerceAtLeast(1),
+                true,
+            )
+        } else {
+            oriented
+        }
         val bos = ByteArrayOutputStream()
-        oriented.compress(Bitmap.CompressFormat.JPEG, jpegQuality, bos)
+        scaled.compress(Bitmap.CompressFormat.JPEG, jpegQuality, bos)
         return Pair(bos.toByteArray(), "jpg")
     }
 
