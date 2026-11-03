@@ -45,6 +45,14 @@
     <string name="board_insert_after">在后面插入镜头</string>
     <string name="board_clear_reference">清除参考图</string>
     <string name="board_err_add_asset">添加素材失败：%1$s</string>
+    <string name="board_err_unknown_provider">未知的工作流 Provider：%1$s</string>
+    <string name="board_err_provider_not_configured">请先配置 %1$s 再生成该镜头</string>
+    <string name="board_err_workflow_missing">%1$s 已不可用，请为该镜头重新选择工作流。</string>
+    <string name="board_shot_workflow">镜头工作流</string>
+    <string name="board_shot_workflow_hint">为该镜头单独指定工作流，覆盖项目默认值</string>
+    <string name="board_shot_workflow_value">工作流：%1$s</string>
+    <string name="board_follow_project">跟随项目工作流</string>
+    <string name="board_no_shot_workflows">暂无可用工作流，请先配置云端 Provider。</string>
     <string name="reference_role_auto">自动</string>
     <string name="reference_role_start">首帧</string>
     <string name="reference_role_end">尾帧</string>

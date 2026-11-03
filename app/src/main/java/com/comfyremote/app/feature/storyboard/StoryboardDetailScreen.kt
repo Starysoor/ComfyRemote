@@ -57,9 +57,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
-import com.comfyremote.app.data.cloud.CloudWorkflowSummary
 import com.comfyremote.app.data.reference.ProjectAsset
 import com.comfyremote.app.data.reference.ReferenceRole
+import com.comfyremote.app.data.storyboard.StoryboardProject
 import com.comfyremote.app.data.storyboard.StoryboardShot
 import com.comfyremote.app.feature.generate.MediaThumbnail
 import com.comfyremote.app.ui.IrisType
@@ -100,6 +100,7 @@ fun StoryboardDetailScreen(
     var selectedAssetIds by remember { mutableStateOf(setOf<String>()) }
     var menuOpen by remember { mutableStateOf(false) }
     var projectSettings by remember { mutableStateOf(false) }
+    var shotWorkflowFor by remember { mutableStateOf<String?>(null) }
     val assetPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val role = pendingAssetRole
         if (uri != null && role != null) viewModel.addAsset(projectId, role, uri)
@@ -189,7 +190,10 @@ fun StoryboardDetailScreen(
             item("meta") {
                 IrisCard {
                     Text(
-                        workflows.firstOrNull { it.id == project.workflowId }?.name ?: project.workflowId,
+                        workflows.firstOrNull {
+                            it.path == project.workflowPath || it.workflowId == project.workflowId
+                        }?.let { "${it.providerLabel} · ${it.name}" }
+                            ?: project.workflowPath.ifBlank { project.workflowId },
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -266,6 +270,7 @@ fun StoryboardDetailScreen(
                     ShotTimelineItem(
                         index = index,
                         shot = shot,
+                        workflowLabel = shotWorkflowLabel(shot, project, workflows),
                         referenceFromPrevious = !shot.referenceManual && shot.referencePath != null &&
                             shot.referencePath == previous?.lastFramePath,
                         feedsNext = shot.lastFramePath != null && index < project.shots.lastIndex,
@@ -282,6 +287,7 @@ fun StoryboardDetailScreen(
                         onMoveDown = { viewModel.moveShot(project.id, shot.id, 1) },
                         onDuplicate = { viewModel.duplicateShot(project.id, shot.id) },
                         onInsertAfter = { insertAfterShotId = shot.id },
+                        onPickWorkflow = { shotWorkflowFor = shot.id },
                         onPickAsset = {
                             assetShotId = shot.id
                             selectedAssetIds = shot.referenceAssetIds.toSet()
@@ -347,6 +353,55 @@ fun StoryboardDetailScreen(
             },
         )
     }
+    shotWorkflowFor?.let { shotId ->
+        val currentPath = project?.shots?.firstOrNull { it.id == shotId }?.workflowPath
+        AlertDialog(
+            onDismissRequest = { shotWorkflowFor = null },
+            title = { Text(stringResource(R.string.board_shot_workflow)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        stringResource(R.string.board_shot_workflow_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = {
+                        viewModel.setShotWorkflow(projectId, shotId, null)
+                        shotWorkflowFor = null
+                    }) {
+                        Text(
+                            (if (currentPath.isNullOrBlank()) "✓ " else "") +
+                                stringResource(R.string.board_follow_project),
+                        )
+                    }
+                    if (workflows.isEmpty()) {
+                        Text(
+                            stringResource(R.string.board_no_shot_workflows),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    workflows.forEach { wf ->
+                        TextButton(onClick = {
+                            viewModel.setShotWorkflow(projectId, shotId, wf.path)
+                            shotWorkflowFor = null
+                        }) {
+                            Text(
+                                (if (currentPath == wf.path) "✓ " else "") +
+                                    "${wf.providerLabel} · ${wf.name}",
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { shotWorkflowFor = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
     assetShotId?.let { shotId ->
         val assets = project?.assets.orEmpty()
         AlertDialog(
@@ -396,21 +451,35 @@ fun StoryboardDetailScreen(
     }
 }
 
+private fun shotWorkflowLabel(
+    shot: StoryboardShot,
+    project: StoryboardProject,
+    workflows: List<StoryboardWorkflowOption>,
+): String? {
+    val path = shot.workflowPath?.takeIf { it.isNotBlank() } ?: return null
+    if (path == project.workflowPath) return null
+    return workflows.firstOrNull { it.path == path }?.let { "${it.providerLabel} · ${it.name}" } ?: path
+}
+
 @Composable
 private fun ProjectSettingsDialog(
     project: com.comfyremote.app.data.storyboard.StoryboardProject,
-    workflows: List<CloudWorkflowSummary>,
+    workflows: List<StoryboardWorkflowOption>,
     onDismiss: () -> Unit,
-    onSave: (title: String, workflowId: String, aspectRatio: String, defaults: Map<String, String>) -> Unit,
+    onSave: (title: String, workflowPath: String, aspectRatio: String, defaults: Map<String, String>) -> Unit,
 ) {
     var title by remember(project.title) { mutableStateOf(project.title) }
-    var workflowId by remember(project.workflowId) { mutableStateOf(project.workflowId) }
+    var workflowPath by remember(project.workflowPath) {
+        mutableStateOf(project.workflowPath.ifBlank { project.workflowId })
+    }
     var aspectRatio by remember(project.aspectRatio) { mutableStateOf(project.aspectRatio) }
     var defaultsText by remember(project.defaultValues) {
         mutableStateOf(project.defaultValues.entries.joinToString("\n") { "${it.key}=${it.value}" })
     }
     var workflowMenu by remember { mutableStateOf(false) }
-    val workflowName = workflows.firstOrNull { it.id == workflowId }?.name ?: workflowId
+    val workflowName = workflows.firstOrNull {
+        it.path == workflowPath || it.workflowId == workflowPath
+    }?.let { "${it.providerLabel} · ${it.name}" } ?: workflowPath
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -435,9 +504,9 @@ private fun ProjectSettingsDialog(
                     DropdownMenu(workflowMenu, { workflowMenu = false }) {
                         workflows.forEach { wf ->
                             DropdownMenuItem(
-                                text = { Text(wf.name) },
+                                text = { Text("${wf.providerLabel} · ${wf.name}") },
                                 onClick = {
-                                    workflowId = wf.id
+                                    workflowPath = wf.path
                                     workflowMenu = false
                                 },
                             )
@@ -472,7 +541,7 @@ private fun ProjectSettingsDialog(
                         if (key.isBlank()) null else key to value
                     }
                 }.toMap()
-                onSave(title, workflowId, aspectRatio, defaults)
+                onSave(title, workflowPath, aspectRatio, defaults)
             }) { Text(stringResource(R.string.board_save)) }
         },
         dismissButton = {
@@ -527,6 +596,7 @@ internal fun referenceRoleLabel(role: ReferenceRole): String = when (role) {
 private fun ShotTimelineItem(
     index: Int,
     shot: StoryboardShot,
+    workflowLabel: String?,
     referenceFromPrevious: Boolean,
     feedsNext: Boolean,
     canMoveUp: Boolean,
@@ -538,6 +608,7 @@ private fun ShotTimelineItem(
     onMoveDown: () -> Unit,
     onDuplicate: () -> Unit,
     onInsertAfter: () -> Unit,
+    onPickWorkflow: () -> Unit,
     onPickAsset: () -> Unit,
     onClearReference: () -> Unit,
 ) {
@@ -572,6 +643,15 @@ private fun ShotTimelineItem(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    workflowLabel?.let {
+                        Text(
+                            stringResource(R.string.board_shot_workflow_value, it),
+                            style = IrisType.metaSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     if (reference != null || shot.resultPath != null) {
                         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
                             reference?.let {
@@ -620,6 +700,11 @@ private fun ShotTimelineItem(
                                     text = { Text(stringResource(R.string.board_insert_after)) },
                                     enabled = !running,
                                     onClick = { shotMenu = false; onInsertAfter() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_shot_workflow)) },
+                                    enabled = !running,
+                                    onClick = { shotMenu = false; onPickWorkflow() },
                                 )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.board_use_asset)) },

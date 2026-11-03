@@ -22,17 +22,29 @@ class StoryboardStore internal constructor(private val file: File) {
         }.getOrDefault(emptyList()).sortedByDescending { it.updatedAt }
     }
 
-    fun create(title: String, workflowId: String, stylePrompt: String = ""): StoryboardProject =
-        synchronized(lock) {
-            val project = StoryboardProject(
-                id = UUID.randomUUID().toString(),
-                title = title.trim().ifBlank { "Storyboard" },
-                workflowId = workflowId.trim(),
-                stylePrompt = stylePrompt.trim(),
-            )
-            write(listOf(project) + _projects.value)
-            project
+    fun create(
+        title: String,
+        workflowId: String,
+        stylePrompt: String = "",
+        workflowPath: String = "",
+        providerId: String = "",
+    ): StoryboardProject = synchronized(lock) {
+        val path = workflowPath.trim().ifBlank {
+            workflowId.trim().takeIf { it.isNotBlank() }
+                ?.let { com.comfyremote.app.data.cloud.AutoDlConfig.PATH_PREFIX + it }
+                .orEmpty()
         }
+        val project = StoryboardProject(
+            id = UUID.randomUUID().toString(),
+            title = title.trim().ifBlank { "Storyboard" },
+            workflowId = workflowId.trim().ifBlank { path.substringAfter(':') },
+            workflowPath = path,
+            providerId = providerId.trim(),
+            stylePrompt = stylePrompt.trim(),
+        )
+        write(listOf(project) + _projects.value)
+        project
+    }
 
     fun delete(projectId: String) = synchronized(lock) {
         write(_projects.value.filterNot { it.id == projectId })
@@ -50,18 +62,24 @@ class StoryboardStore internal constructor(private val file: File) {
     fun updateSettings(
         projectId: String,
         title: String,
-        workflowId: String,
+        workflowPath: String,
+        providerId: String,
         aspectRatio: String,
         defaultValues: Map<String, String>,
     ) = update(projectId) { project ->
-        val workflowChanged = project.workflowId != workflowId
+        val path = workflowPath.trim()
+        val workflowChanged = project.workflowPath != path
         project.copy(
             title = title.trim().ifBlank { "Storyboard" },
-            workflowId = workflowId.trim(),
+            workflowId = path.substringAfter(':'),
+            workflowPath = path,
+            providerId = providerId.trim(),
             aspectRatio = aspectRatio.trim(),
             defaultValues = defaultValues,
             shots = if (workflowChanged) {
-                project.shots.map { it.copy(workflowId = null) }
+                project.shots.map {
+                    it.copy(workflowId = null, workflowPath = null, providerId = null, values = emptyMap())
+                }
             } else {
                 project.shots
             },

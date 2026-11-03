@@ -46,6 +46,14 @@
     <string name="board_insert_after">Insert shot after</string>
     <string name="board_clear_reference">Clear reference</string>
     <string name="board_err_add_asset">Could not add asset: %1$s</string>
+    <string name="board_err_unknown_provider">Unknown workflow provider: %1$s</string>
+    <string name="board_err_provider_not_configured">Configure %1$s before generating this shot</string>
+    <string name="board_err_workflow_missing">%1$s is no longer available. Choose another workflow for this shot.</string>
+    <string name="board_shot_workflow">Shot workflow</string>
+    <string name="board_shot_workflow_hint">Override the project workflow for this shot</string>
+    <string name="board_shot_workflow_value">Workflow: %1$s</string>
+    <string name="board_follow_project">Use project workflow</string>
+    <string name="board_no_shot_workflows">No workflows available. Configure a cloud provider first.</string>
     <string name="reference_role_auto">Auto</string>
     <string name="reference_role_start">Start frame</string>
     <string name="reference_role_end">End frame</string>

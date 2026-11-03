@@ -72,6 +72,51 @@ class StoryboardCodecTest {
     }
 
     @Test
+    fun legacyAutoDlWorkflowIdsMigrateToFullPaths() {
+        val raw = """[
+          {"id":"p1","title":"Legacy","workflowId":"minimax_h3_lightx2v_v5",
+           "shots":[{"id":"s1","prompt":"shot","workflowId":"minimax_h3_lightx2v_v5"}]}
+        ]"""
+
+        val project = StoryboardCodec.decode(raw).single()
+
+        assertEquals("autodl:minimax_h3_lightx2v_v5", project.workflowPath)
+        assertEquals("autodl", project.providerId)
+        assertEquals("autodl:minimax_h3_lightx2v_v5", project.shots.single().workflowPath)
+        assertEquals("autodl", project.shots.single().providerId)
+    }
+
+    @Test
+    fun providerIdentityRoundTripsForProjectAndShotOverrides() {
+        val project = StoryboardProject(
+            id = "project-cloud",
+            title = "Cloud board",
+            workflowId = "owner/project-model",
+            workflowPath = "replicate:owner/project-model",
+            providerId = "replicate",
+            shots = listOf(
+                StoryboardShot(
+                    id = "shot-a",
+                    prompt = "wide",
+                    workflowPath = "siliconflow:Wan-AI/Wan2.2",
+                    providerId = "siliconflow",
+                    workflowId = "Wan-AI/Wan2.2",
+                ),
+                StoryboardShot(id = "shot-b", prompt = "inherit"),
+            ),
+        )
+
+        val restored = StoryboardCodec.decode(StoryboardCodec.encode(listOf(project))).single()
+
+        assertEquals("replicate:owner/project-model", restored.workflowPath)
+        assertEquals("replicate", restored.providerId)
+        assertEquals("siliconflow:Wan-AI/Wan2.2", restored.shots[0].workflowPath)
+        assertEquals("siliconflow", restored.shots[0].providerId)
+        assertEquals("Wan-AI/Wan2.2", restored.shots[0].workflowId)
+        assertNull(restored.shots[1].workflowPath)
+    }
+
+    @Test
     fun malformedJsonDecodesToEmptyListInsteadOfCrashing() {
         assertTrue(StoryboardCodec.decode("not json").isEmpty())
     }

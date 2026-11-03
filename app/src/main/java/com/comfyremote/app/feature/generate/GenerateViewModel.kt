@@ -407,9 +407,16 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         val values = draft.fields
             .filter { it.kind == FieldKind.TEXT || it.kind == FieldKind.PARAM || it.kind == FieldKind.SEED }
             .associate { field -> field.key to (draft.values[field.key] ?: field.value) }
-        val workflowId = if (draft.isCloud) draft.workflowPath.removePrefix(AutoDlConfig.PATH_PREFIX) else null
+        val workflowPath = if (draft.isCloud) draft.workflowPath else ""
+        val workflowId = workflowPath.substringAfter(':').takeIf { workflowPath.isNotBlank() }
+        val providerId = container.cloudProviders.forPath(workflowPath)?.id.orEmpty()
         container.storyboardStore.updateShot(projectId, shotId) {
-            it.copy(values = values, workflowId = workflowId)
+            it.copy(
+                values = values,
+                workflowPath = workflowPath.takeIf { it.isNotBlank() },
+                providerId = providerId.takeIf { it.isNotBlank() },
+                workflowId = workflowId,
+            )
         }
     }
 

@@ -130,12 +130,20 @@ class StoryboardStoreTest {
         val store = store()
         val project = store.create("Board", "old-workflow")
         val shot = store.addShot(project.id, "shot")!!
-        store.updateShot(project.id, shot.id) { it.copy(workflowId = "old-workflow") }
+        store.updateShot(project.id, shot.id) {
+            it.copy(
+                workflowId = "old-workflow",
+                workflowPath = "autodl:old-workflow",
+                providerId = "autodl",
+                values = mapOf("duration" to "5"),
+            )
+        }
 
         store.updateSettings(
             projectId = project.id,
             title = "New board",
-            workflowId = "new-workflow",
+            workflowPath = "autodl:new-workflow",
+            providerId = "autodl",
             aspectRatio = "9:16",
             defaultValues = mapOf("resolution" to "768p"),
         )
@@ -143,9 +151,30 @@ class StoryboardStoreTest {
         val updated = store.project(project.id)!!
         assertEquals("New board", updated.title)
         assertEquals("new-workflow", updated.workflowId)
+        assertEquals("autodl:new-workflow", updated.workflowPath)
+        assertEquals("autodl", updated.providerId)
         assertEquals("9:16", updated.aspectRatio)
         assertEquals("768p", updated.defaultValues["resolution"])
         assertNull(updated.shots.single().workflowId)
+        assertNull(updated.shots.single().workflowPath)
+        assertNull(updated.shots.single().providerId)
+        assertTrue(updated.shots.single().values.isEmpty())
+    }
+
+    @Test
+    fun createKeepsProviderIdentityForNonAutoDlWorkflows() {
+        val store = store()
+        val project = store.create(
+            title = "Replicate board",
+            workflowId = "owner/model",
+            workflowPath = "replicate:owner/model",
+            providerId = "replicate",
+        )
+
+        assertEquals("owner/model", project.workflowId)
+        assertEquals("replicate:owner/model", project.workflowPath)
+        assertEquals("replicate", project.providerId)
+        assertEquals(project, store.project(project.id))
     }
 
     @Test

@@ -39,7 +39,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
-import com.comfyremote.app.data.cloud.CloudWorkflowSummary
 import com.comfyremote.app.data.storyboard.StoryboardProject
 import com.comfyremote.app.feature.generate.MediaThumbnail
 import com.comfyremote.app.ui.IrisType
@@ -112,8 +111,10 @@ fun StoryboardScreen(
                 items(projects, key = { it.id }) { project ->
                     StoryboardProjectRow(
                         project = project,
-                        workflowName = workflows.firstOrNull { it.id == project.workflowId }?.name
-                            ?: project.workflowId,
+                        workflowName = workflows.firstOrNull {
+                            it.path == project.workflowPath || it.workflowId == project.workflowId
+                        }?.let { "${it.providerLabel} · ${it.name}" }
+                            ?: project.workflowPath.ifBlank { project.workflowId },
                         onClick = { onOpenProject(project.id) },
                     )
                 }
@@ -125,8 +126,8 @@ fun StoryboardScreen(
         CreateStoryboardDialog(
             workflows = workflows,
             onDismiss = { creating = false },
-            onCreate = { title, workflowId, style ->
-                val project = viewModel.createProject(title, workflowId, style)
+            onCreate = { title, workflowPath, style ->
+                val project = viewModel.createProject(title, workflowPath, style)
                 creating = false
                 project?.let { onOpenProject(it.id) }
             },
@@ -186,16 +187,16 @@ private fun ProjectCover(path: String?) {
 
 @Composable
 private fun CreateStoryboardDialog(
-    workflows: List<CloudWorkflowSummary>,
+    workflows: List<StoryboardWorkflowOption>,
     onDismiss: () -> Unit,
     onCreate: (String, String, String) -> Unit,
 ) {
     var title by remember { mutableStateOf("") }
     var style by remember { mutableStateOf("") }
-    var workflowId by remember {
+    var workflowPath by remember {
         mutableStateOf(
-            workflows.firstOrNull { it.id == "minimax_h3_lightx2v_v5" }?.id
-                ?: workflows.firstOrNull()?.id.orEmpty()
+            workflows.firstOrNull { it.workflowId == "minimax_h3_lightx2v_v5" }?.path
+                ?: workflows.firstOrNull()?.path.orEmpty()
         )
     }
     AlertDialog(
@@ -220,16 +221,16 @@ private fun CreateStoryboardDialog(
                 )
                 WorkflowPicker(
                     workflows = workflows,
-                    selectedId = workflowId,
-                    onSelect = { workflowId = it },
+                    selectedPath = workflowPath,
+                    onSelect = { workflowPath = it },
                 )
             }
         },
         confirmButton = {
             TextAction(
                 text = stringResource(R.string.board_create),
-                onClick = { onCreate(title, workflowId, style) },
-                enabled = workflowId.isNotBlank(),
+                onClick = { onCreate(title, workflowPath, style) },
+                enabled = workflowPath.isNotBlank(),
             )
         },
         dismissButton = {
@@ -245,8 +246,8 @@ private fun CreateStoryboardDialog(
 /** Field-like dropdown for picking the cloud video workflow. */
 @Composable
 private fun WorkflowPicker(
-    workflows: List<CloudWorkflowSummary>,
-    selectedId: String,
+    workflows: List<StoryboardWorkflowOption>,
+    selectedPath: String,
     onSelect: (String) -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
@@ -265,8 +266,9 @@ private fun WorkflowPicker(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    workflows.firstOrNull { it.id == selectedId }?.name
-                        ?: stringResource(R.string.board_choose_workflow),
+                    workflows.firstOrNull { it.path == selectedPath }?.let {
+                        "${it.providerLabel} · ${it.name}"
+                    } ?: stringResource(R.string.board_choose_workflow),
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
@@ -278,8 +280,8 @@ private fun WorkflowPicker(
         DropdownMenu(menu, { menu = false }) {
             workflows.forEach { workflow ->
                 DropdownMenuItem(
-                    text = { Text(workflow.name) },
-                    onClick = { onSelect(workflow.id); menu = false },
+                    text = { Text("${workflow.providerLabel} · ${workflow.name}") },
+                    onClick = { onSelect(workflow.path); menu = false },
                 )
             }
         }
