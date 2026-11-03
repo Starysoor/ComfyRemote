@@ -146,7 +146,7 @@ data class AiSkillDef(
                 SkillInputSource.CURRENT_IMAGE, SkillInputSource.ALL_REFERENCES,
                 SkillInputSource.START_END_FRAMES, SkillInputSource.CURRENT_TEXT,
             ),
-            execution = SkillExecution.VISION_MODEL,
+            execution = SkillExecution.MULTI_STAGE,
             output = SkillOutput.CANDIDATES,
         )
 

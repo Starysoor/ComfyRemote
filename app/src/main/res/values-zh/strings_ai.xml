@@ -33,6 +33,11 @@
     <string name="ai_skill_patterns">绑定工作流关键词（逗号分隔）</string>
     <string name="ai_skill_patterns_hint">留空 = 所有工作流</string>
     <string name="ai_skill_prompt">系统提示词</string>
+    <string name="ai_skill_description">说明</string>
+    <string name="ai_skill_scopes">适用场景</string>
+    <string name="ai_skill_inputs">输入来源</string>
+    <string name="ai_skill_execution">执行方式</string>
+    <string name="ai_skill_output">输出方式</string>
     <string name="ai_reset">恢复默认</string>
 
     <!-- 测试 / 保存 -->

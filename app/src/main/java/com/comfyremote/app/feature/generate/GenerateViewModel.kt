@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.comfyremote.app.AiImagePayload
 import com.comfyremote.app.AiResult
 import com.comfyremote.app.AiSkillDef
+import com.comfyremote.app.SkillExecution
 import com.comfyremote.app.TagProfile
 import com.comfyremote.app.tagProfileInstruction
 import com.comfyremote.app.AppContainer
@@ -870,11 +871,26 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                     throw ComfyException(AppStrings.get(R.string.gen_vm_cannot_read_image))
                 }
                 val current = draft.values[target.key] ?: target.value
-                container.aiRepository.visionChat(
-                    systemPrompt = VisionContext.systemPrompt(skill.systemPrompt, mode, references),
-                    userText = VisionContext.userText(instruction, current, mode, references),
-                    images = payloads,
-                )
+                val requestText = VisionContext.userText(instruction, current, mode, references)
+                if (skill.execution == SkillExecution.MULTI_STAGE) {
+                    val analysis = container.aiRepository.visionChat(
+                        systemPrompt = SkillRuntime.visionAnalysisSystemPrompt(mode),
+                        userText = requestText,
+                        images = payloads,
+                    )
+                    container.aiRepository.chat(
+                        systemPrompt = SkillRuntime.plannerSystemPrompt(skill.systemPrompt, mode, references),
+                        userText = SkillRuntime.plannerUserText(
+                            instruction, current, analysis, references,
+                        ),
+                    )
+                } else {
+                    container.aiRepository.visionChat(
+                        systemPrompt = VisionContext.systemPrompt(skill.systemPrompt, mode, references),
+                        userText = requestText,
+                        images = payloads,
+                    )
+                }
             }.onSuccess { out ->
                 _state.update { it.copy(aiBusy = null, aiResult = AiResult(target.key, out)) }
             }.onFailure { e ->

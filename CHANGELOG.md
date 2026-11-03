@@ -9,6 +9,8 @@
 - Skill Runtime metadata on `AiSkillDef`: scopes, input sources, execution and output policies.
 - Multi-image vision requests that send every reference with its role/order in one request.
 - AI vision rewrite now treats references as hidden context, fuses all enabled references, and describes start→end transitions instead of captioning images.
+- Multi-stage vision skill: hidden visual analysis → planner/rewrite, with the analysis never shown or quoted into the final prompt.
+- Skill editor exposes description, scopes, input sources, execution and output policies.
 - Tag profiles (AUTO / Danbooru / Illustrious / Pony / Custom) shape the AI tag skill's quality conventions.
 - AI reasoning controls are provider/model-aware; inapplicable protocol fields are stripped from requests.
 - Retired the built-in English-expand and translate skills; users can recreate them as custom skills.

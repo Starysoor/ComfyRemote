@@ -33,6 +33,11 @@
     <string name="ai_skill_patterns">Workflow keywords (comma separated)</string>
     <string name="ai_skill_patterns_hint">Blank = all workflows</string>
     <string name="ai_skill_prompt">System prompt</string>
+    <string name="ai_skill_description">Description</string>
+    <string name="ai_skill_scopes">Applies to</string>
+    <string name="ai_skill_inputs">Input sources</string>
+    <string name="ai_skill_execution">Execution</string>
+    <string name="ai_skill_output">Output</string>
     <string name="ai_reset">Reset</string>
 
     <!-- Test / save -->
