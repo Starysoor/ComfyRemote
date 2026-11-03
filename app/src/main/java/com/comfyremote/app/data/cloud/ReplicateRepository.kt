@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
 /** Replicate models. Inputs are discovered from the model's OpenAPI input schema. */
 class ReplicateRepository(
     private val settings: CloudProviderSettingsStore,
+    private val taskStore: CloudProviderTaskStore,
 ) : CloudProvider {
     override val id: String = PROVIDER
     override val label: String = "Replicate"
@@ -18,7 +19,7 @@ class ReplicateRepository(
     override val baseUrl: String = DEFAULT_BASE
     override val supportsCustomHeaders: Boolean = true
 
-    private data class Pending(val model: String, val kind: String)
+    private data class Pending(val model: String, val kind: String, val endpoint: String)
     private val pending = ConcurrentHashMap<String, Pending>()
 
     private fun account() = settings.account(id, DEFAULT_BASE, MODELS)
@@ -95,20 +96,46 @@ class ReplicateRepository(
         )
         val taskId = response.optString("id").takeIf { it.isNotBlank() }
             ?: throw ComfyException(CloudHttp.errorMessage(response, "Replicate returned no prediction id"))
-        pending[taskId] = Pending(workflowId, kindOf(workflowId))
+        val snapshot = Pending(workflowId, kindOf(workflowId), account.baseUrl.trimEnd('/'))
+        try {
+            taskStore.savePending(
+                id,
+                taskId,
+                JSONObject()
+                    .put("model", snapshot.model)
+                    .put("kind", snapshot.kind)
+                    .put("endpoint", snapshot.endpoint),
+            )
+        } catch (error: Exception) {
+            // The remote task may already be billable; expose its id and never silently retry.
+            throw java.io.IOException(
+                "Replicate task $taskId was submitted but recovery data could not be saved; do not resubmit automatically",
+                error,
+            )
+        }
+        pending[taskId] = snapshot
         return taskId
     }
 
     override suspend fun result(taskId: String): CloudTaskResult {
+        taskStore.result(id, taskId)?.let { return it }
         val account = account()
+        val snapshot = pending[taskId] ?: taskStore.pending(id, taskId)?.let { stored ->
+            Pending(
+                model = stored.optString("model"),
+                kind = stored.optString("kind"),
+                endpoint = stored.optString("endpoint"),
+            )
+        }?.also { pending.putIfAbsent(taskId, it) }
         val response = CloudHttp.getJson(
-            "${account.baseUrl.trimEnd('/')}/predictions/$taskId",
+            replicatePredictionUrl(snapshot?.endpoint, account.baseUrl, taskId),
             auth(account),
         )
         val status = response.optString("status")
-        return when (status) {
+        val result = when (status) {
             "succeeded" -> {
-                val kind = pending[taskId]?.kind ?: kindOf(response.optString("model"))
+                val kind = snapshot?.kind?.takeIf { it.isNotBlank() }
+                    ?: kindOf(response.optString("model"))
                 val results = outputs(response.opt("output"), kind)
                 CloudTaskResult(taskId, "SUCCESS", results, "", 0)
             }
@@ -128,6 +155,13 @@ class ReplicateRepository(
             )
             else -> CloudTaskResult(taskId, "RUNNING", emptyList(), status, 0)
         }
+        if (result.status == "SUCCESS") taskStore.saveResult(id, taskId, result)
+        return result
+    }
+
+    override fun forgetTask(taskId: String) {
+        pending.remove(taskId)
+        taskStore.clear(id, taskId)
     }
 
     override suspend fun download(url: String): ByteArray = CloudHttp.download(url)
@@ -189,4 +223,14 @@ class ReplicateRepository(
             "tencent/hunyuan-video",
         )
     }
+}
+
+/** Keep polling an in-flight prediction on the endpoint used at submit time. */
+internal fun replicatePredictionUrl(
+    submittedEndpoint: String?,
+    currentEndpoint: String,
+    taskId: String,
+): String {
+    val base = submittedEndpoint?.takeIf { it.isNotBlank() } ?: currentEndpoint
+    return "${base.trimEnd('/')}/predictions/$taskId"
 }

@@ -4,10 +4,13 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
 
 class CloudProviderTaskStoreTest {
     @get:Rule
@@ -47,6 +50,27 @@ class CloudProviderTaskStoreTest {
         assertEquals(2, restored.results.size)
         assertEquals("https://example.com/out.png", restored.results[0].url)
         assertEquals("data:image/png;base64,AA==", restored.results[1].url)
+    }
+
+    @Test
+    fun failedWriteIsReportedInsteadOfPretendingRecoveryWasSaved() {
+        val blockedDirectory = temp.newFile("cloud_tasks")
+        val store = CloudProviderTaskStore(blockedDirectory)
+        val error = assertThrows(IOException::class.java) {
+            store.savePending("replicate", "paid-task", JSONObject().put("endpoint", "https://example.test"))
+        }
+        assertTrue(error.message.orEmpty().contains("recovery directory"))
+        assertNull(store.pending("replicate", "paid-task"))
+    }
+
+    @Test
+    fun longRunningPaidTaskIsNotPrunedByAge() {
+        val store = store()
+        store.savePending("replicate", "old-task", JSONObject().put("endpoint", "https://old.test"))
+        val target = File(temp.root, "cloud_tasks").listFiles()!!.single()
+        assertTrue(target.setLastModified(System.currentTimeMillis() - 10L * 24 * 60 * 60_000L))
+        store.savePending("replicate", "new-task", JSONObject().put("endpoint", "https://new.test"))
+        assertNotNull(store.pending("replicate", "old-task"))
     }
 
     @Test

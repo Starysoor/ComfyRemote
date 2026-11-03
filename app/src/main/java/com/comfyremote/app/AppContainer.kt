@@ -57,7 +57,7 @@ class AppContainer(val app: Application) {
     val openAiImageRepository = OpenAiCompatibleImageRepository(cloudProviderSettingsStore, cloudTaskStore)
     val autoDlModelRepository = AutoDlModelRepository(cloudProviderSettingsStore, cloudTaskStore)
     val geminiImageRepository = GeminiImageRepository(cloudProviderSettingsStore, cloudTaskStore)
-    val replicateRepository = ReplicateRepository(cloudProviderSettingsStore)
+    val replicateRepository = ReplicateRepository(cloudProviderSettingsStore, cloudTaskStore)
     val siliconFlowRepository = SiliconFlowRepository(cloudProviderSettingsStore, cloudTaskStore)
     val customOpenAiRepository = CustomOpenAiRepository(cloudProviderSettingsStore, cloudTaskStore)
     val customTemplateRepository = CustomTemplateRepository(cloudProviderSettingsStore, cloudTaskStore)
