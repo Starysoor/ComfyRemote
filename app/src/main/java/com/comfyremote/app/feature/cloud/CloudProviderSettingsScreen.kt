@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,16 +24,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import com.comfyremote.app.R
 import com.comfyremote.app.data.cloud.CloudHealth
 import com.comfyremote.app.data.cloud.CloudHealthStatus
+import com.comfyremote.app.data.cloud.CloudModelCapabilities
 import com.comfyremote.app.data.cloud.CloudProvider
 import com.comfyremote.app.data.cloud.CloudProviderSettingsStore
 import com.comfyremote.app.data.cloud.CustomTemplateRepository
 import com.comfyremote.app.data.cloud.TemplateValues
+import com.comfyremote.app.ui.IrisType
 import com.comfyremote.app.ui.Spacing
 import com.comfyremote.app.ui.components.BannerTone
 import com.comfyremote.app.ui.components.BottomActionBar
+import com.comfyremote.app.ui.components.ChipTone
+import com.comfyremote.app.ui.components.CollapsibleCard
 import com.comfyremote.app.ui.components.DetailTopBar
 import com.comfyremote.app.ui.components.InfoBanner
 import com.comfyremote.app.ui.components.IrisPrimaryButton
@@ -40,6 +46,7 @@ import com.comfyremote.app.ui.components.IrisProgressBar
 import com.comfyremote.app.ui.components.IrisScaffold
 import com.comfyremote.app.ui.components.IrisTextField
 import com.comfyremote.app.ui.components.IrisTonalButton
+import com.comfyremote.app.ui.components.StatusChip
 import com.comfyremote.app.ui.components.TextAction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -71,7 +78,15 @@ fun CloudProviderSettingsScreen(
     var health by remember(provider.id) { mutableStateOf<CloudHealth?>(null) }
     var note by remember(provider.id) { mutableStateOf<String?>(null) }
     var failure by remember(provider.id) { mutableStateOf<String?>(null) }
+    var disabledModels by remember(provider.id) { mutableStateOf(settings.disabledModels(provider.id)) }
+    var defaultModel by remember(provider.id) { mutableStateOf(settings.defaultModel(provider.id)) }
+    var modelQuery by remember(provider.id) { mutableStateOf("") }
+    var advancedOpen by remember(provider.id) { mutableStateOf(false) }
+    var headersText by remember(provider.id) { mutableStateOf(settings.customHeadersRaw(provider.id)) }
     val saveBeforeTest = stringResource(R.string.cloud_status_save_before_test)
+    val headersInvalid = stringResource(R.string.cloud_provider_headers_invalid)
+    val modelList = models.split(',', '\n').map(String::trim).filter(String::isNotBlank).distinct()
+    val visibleModels = modelList.filter { modelQuery.isBlank() || it.contains(modelQuery, true) }
 
     IrisScaffold(
         topBar = { DetailTopBar(title = provider.label, onBack = onBack) },
@@ -80,18 +95,26 @@ fun CloudProviderSettingsScreen(
                 IrisPrimaryButton(
                     text = stringResource(R.string.action_save),
                     onClick = {
-                        settings.save(
-                            provider.id,
-                            baseUrl,
-                            token,
-                            models.split(',', '\n').map(String::trim).filter(String::isNotBlank),
-                        )
-                        if (isTemplate) settings.saveExtra(provider.id, configText)
-                        saved = true
-                        dirty = false
-                        health = null
-                        note = null
-                        failure = null
+                        val headersOk = !provider.supportsCustomHeaders ||
+                            settings.saveCustomHeaders(provider.id, headersText)
+                        if (!headersOk) {
+                            saved = false
+                            failure = headersInvalid
+                        } else {
+                            settings.save(
+                                provider.id,
+                                baseUrl,
+                                token,
+                                models.split(',', '\n').map(String::trim).filter(String::isNotBlank),
+                            )
+                            if (isTemplate) settings.saveExtra(provider.id, configText)
+                            headersText = settings.customHeadersRaw(provider.id)
+                            saved = true
+                            dirty = false
+                            health = null
+                            note = null
+                            failure = null
+                        }
                     },
                 )
             }
@@ -119,6 +142,12 @@ fun CloudProviderSettingsScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (baseUrl.trim().startsWith("http://", ignoreCase = true)) {
+                    InfoBanner(
+                        text = stringResource(R.string.cloud_provider_insecure),
+                        tone = BannerTone.Warning,
+                    )
+                }
             }
             IrisTextField(
                 value = token,
@@ -175,6 +204,96 @@ fun CloudProviderSettingsScreen(
                     supportingText = stringResource(R.string.cloud_provider_models_hint),
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            if (!isTemplate && modelList.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.cloud_provider_models_manage),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            stringResource(R.string.cloud_provider_models_manage_hint),
+                            style = IrisType.metaSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (disabledModels.isNotEmpty()) {
+                        TextAction(
+                            text = stringResource(R.string.cloud_provider_models_enable_all),
+                            onClick = {
+                                settings.setAllModelsEnabled(provider.id)
+                                disabledModels = emptySet()
+                            },
+                        )
+                    }
+                }
+                if (modelList.size > 6) {
+                    IrisTextField(
+                        value = modelQuery,
+                        onValueChange = { modelQuery = it },
+                        label = stringResource(R.string.cloud_provider_models_search),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                visibleModels.take(60).forEach { model ->
+                    val enabled = model !in disabledModels
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = enabled,
+                            onCheckedChange = { checked ->
+                                settings.setModelEnabled(provider.id, model, checked)
+                                disabledModels = settings.disabledModels(provider.id)
+                                if (!checked && defaultModel == model) {
+                                    settings.setDefaultModel(provider.id, "")
+                                    defaultModel = ""
+                                }
+                            },
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                model,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (enabled) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                CloudModelCapabilities.of(model)
+                                    .map { capabilityLabel(it) }
+                                    .joinToString(" · "),
+                                style = IrisType.metaSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextAction(
+                            text = if (defaultModel == model) stringResource(R.string.cloud_provider_models_default)
+                            else stringResource(R.string.cloud_provider_models_set_default),
+                            enabled = enabled,
+                            onClick = {
+                                if (defaultModel == model) {
+                                    settings.setDefaultModel(provider.id, "")
+                                    defaultModel = ""
+                                } else {
+                                    settings.setDefaultModel(provider.id, model)
+                                    defaultModel = model
+                                }
+                            },
+                        )
+                    }
+                }
+                if (visibleModels.size > 60) {
+                    Text(
+                        stringResource(R.string.cloud_provider_models_more),
+                        style = IrisType.metaSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -261,6 +380,40 @@ fun CloudProviderSettingsScreen(
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
+            CollapsibleCard(
+                title = stringResource(R.string.cloud_provider_advanced),
+                expanded = advancedOpen,
+                onToggle = { advancedOpen = !advancedOpen },
+            ) {
+                Text(
+                    stringResource(R.string.cloud_provider_capabilities),
+                    style = IrisType.metaSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                val capabilities = mutableListOf<String>()
+                if (provider.supportsModelDiscovery) {
+                    capabilities += stringResource(R.string.cloud_provider_cap_model_discovery)
+                }
+                if (provider.supportsCustomHeaders) {
+                    capabilities += stringResource(R.string.cloud_provider_cap_custom_headers)
+                }
+                capabilities += stringResource(R.string.cloud_provider_cap_local_spend)
+                Text(
+                    capabilities.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (provider.supportsCustomHeaders) {
+                    IrisTextField(
+                        value = headersText,
+                        onValueChange = { headersText = it; saved = false; dirty = true },
+                        label = stringResource(R.string.cloud_provider_headers),
+                        supportingText = stringResource(R.string.cloud_provider_headers_hint),
+                        minLines = 2,
+                        maxLines = 6,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
             if (saved) {
                 Text(
                     stringResource(R.string.ai_saved),
@@ -271,3 +424,15 @@ fun CloudProviderSettingsScreen(
         }
     }
 }
+
+@Composable
+private fun capabilityLabel(tag: String): String = stringResource(
+    when (tag) {
+        CloudModelCapabilities.VIDEO -> R.string.cloud_cap_video
+        CloudModelCapabilities.EDIT -> R.string.cloud_cap_edit
+        CloudModelCapabilities.IMAGE_TO_VIDEO -> R.string.cloud_cap_i2v
+        CloudModelCapabilities.TEXT_TO_VIDEO -> R.string.cloud_cap_t2v
+        CloudModelCapabilities.AUDIO -> R.string.cloud_cap_audio
+        else -> R.string.cloud_cap_image
+    },
+)

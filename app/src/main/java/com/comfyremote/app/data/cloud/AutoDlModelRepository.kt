@@ -18,6 +18,8 @@ class AutoDlModelRepository(
     override val pathPrefix: String = PREFIX
     override val baseUrl: String = BASE
     override val defaultModels: List<String> get() = IMAGE_MODELS + VIDEO_MODELS
+    override val supportsModelDiscovery: Boolean = true
+    override val supportsCustomHeaders: Boolean = true
 
     private data class Pending(val family: String, val submitUrl: String)
     private val pending = ConcurrentHashMap<String, Pending>()
@@ -41,7 +43,7 @@ class AutoDlModelRepository(
 
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
         val images = imageApi.catalog(force).filter { familyOf(it.id) == "image" }
-        val videos = VIDEO_MODELS.map { model ->
+        val videos = settings.enabledModels(id, VIDEO_MODELS).map { model ->
             CloudWorkflowSummary(
                 id = model,
                 name = model,
@@ -70,7 +72,7 @@ class AutoDlModelRepository(
         if (family == "image") return imageApi.submit(workflowId, body)
         val account = account()
         if (account.token.isBlank()) throw ComfyException("Configure an AutoDL model API token first")
-        val headers = mapOf("Authorization" to "Bearer ${account.token}")
+        val headers = settings.mergeHeaders(id, mapOf("Authorization" to "Bearer ${account.token}"))
         val base = account.baseUrl.trimEnd('/')
         val (submitUrl, payload) = when (family) {
             "wan" -> "$base/ali/api/v1/services/aigc/video-generation/video-synthesis" to
@@ -103,7 +105,7 @@ class AutoDlModelRepository(
         val task = pending[taskId]
             ?: return imageApi.result(taskId)
         val account = account()
-        val headers = mapOf("Authorization" to "Bearer ${account.token}")
+        val headers = settings.mergeHeaders(id, mapOf("Authorization" to "Bearer ${account.token}"))
         val base = account.baseUrl.trimEnd('/')
         return when (task.family) {
             "wan" -> wanResult(base, taskId, headers)

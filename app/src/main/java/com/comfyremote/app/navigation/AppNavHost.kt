@@ -267,6 +267,10 @@ private fun AppNavHost(
                     onAi = { navController.navigate(Routes.AI_SETTINGS) },
                     onCloud = { navController.navigate(Routes.CLOUD_SERVICES) },
                     onUpdate = { navController.navigate(Routes.UPDATE) },
+                    cloudProviders = container.cloudProviders.info(),
+                    onOpenProvider = { providerId ->
+                        navController.navigate(Routes.cloudProvider(providerId))
+                    },
                 )
             }
             composable(Routes.APP_SETTINGS) {

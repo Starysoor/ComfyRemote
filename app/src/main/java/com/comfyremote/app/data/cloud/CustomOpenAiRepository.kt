@@ -17,6 +17,8 @@ class CustomOpenAiRepository(
     override val settingsSummary: String = "Bring your own OpenAI-compatible endpoint"
     override val pathPrefix: String = "custom:"
     override val baseUrl: String = ""
+    override val supportsModelDiscovery: Boolean = true
+    override val supportsCustomHeaders: Boolean = true
 
     private val results = ConcurrentHashMap<String, CloudTaskResult>()
 
@@ -29,7 +31,7 @@ class CustomOpenAiRepository(
         if (account.baseUrl.isBlank()) return emptyList()
         val root = CloudHttp.getJson(
             "${account.baseUrl.trimEnd('/')}/models",
-            if (account.token.isBlank()) emptyMap() else mapOf("Authorization" to "Bearer ${account.token}"),
+            auth(account),
         )
         return modelIdsFromResponse(root.optJSONArray("data"))
     }
@@ -37,17 +39,20 @@ class CustomOpenAiRepository(
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
         val account = account()
         if (account.baseUrl.isBlank()) return emptyList()
-        val configured = account.models
+        val configured = settings.enabledModels(id, account.models)
         if (configured.isNotEmpty()) return configured.map(::summary)
         return runCatching {
             val root = CloudHttp.getJson(
                 "${account.baseUrl.trimEnd('/')}/models",
-                if (account.token.isBlank()) emptyMap() else mapOf("Authorization" to "Bearer ${account.token}"),
+                auth(account),
             )
             val data = root.optJSONArray("data") ?: return@runCatching emptyList()
-            (0 until data.length()).mapNotNull { index ->
-                data.optJSONObject(index)?.optString("id")?.takeIf { it.isNotBlank() }?.let(::summary)
-            }
+            settings.enabledModels(
+                id,
+                (0 until data.length()).mapNotNull { index ->
+                    data.optJSONObject(index)?.optString("id")?.takeIf { it.isNotBlank() }
+                },
+            ).map(::summary)
         }.getOrDefault(emptyList())
     }
 
@@ -69,7 +74,7 @@ class CustomOpenAiRepository(
             body.optString(key).takeIf { it.isNotBlank() }?.let { payload.put(key, it) }
         }
         body.optInt("n", 1).takeIf { it > 0 }?.let { payload.put("n", it) }
-        val headers = if (account.token.isBlank()) emptyMap() else mapOf("Authorization" to "Bearer ${account.token}")
+        val headers = auth(account)
         val response = CloudHttp.postJson(
             "${account.baseUrl.trimEnd('/')}/images/generations",
             payload,
@@ -101,6 +106,13 @@ class CustomOpenAiRepository(
 
     override suspend fun result(taskId: String): CloudTaskResult =
         results[taskId] ?: CloudTaskResult(taskId, "FAILED", emptyList(), "Image result expired", 0)
+
+    private fun auth(account: CloudProviderAccount): Map<String, String> =
+        settings.mergeHeaders(
+            id,
+            if (account.token.isBlank()) emptyMap()
+            else mapOf("Authorization" to "Bearer ${account.token}"),
+        )
 
     override suspend fun download(url: String): ByteArray = CloudHttp.download(url)
 

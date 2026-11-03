@@ -16,6 +16,8 @@ class SiliconFlowRepository(
     override val pathPrefix: String = "siliconflow:"
     override val baseUrl: String = DEFAULT_BASE
     override val defaultModels: List<String> get() = MODELS
+    override val supportsModelDiscovery: Boolean = true
+    override val supportsCustomHeaders: Boolean = true
 
     private data class Pending(val model: String, val kind: String)
     private val imageResults = ConcurrentHashMap<String, CloudTaskResult>()
@@ -33,7 +35,7 @@ class SiliconFlowRepository(
     }
 
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> =
-        account().models.ifEmpty { MODELS }.map { model ->
+        settings.enabledModels(id, account().models.ifEmpty { MODELS }).map { model ->
             CloudWorkflowSummary(
                 id = model,
                 name = model.substringAfterLast('/'),
@@ -204,7 +206,8 @@ class SiliconFlowRepository(
     private fun extensionOf(url: String): String =
         url.substringBefore('?').substringAfterLast('.', "").lowercase().takeIf { it.length in 2..5 }.orEmpty()
 
-    private fun auth(account: CloudProviderAccount) = mapOf("Authorization" to "Bearer ${account.token}")
+    private fun auth(account: CloudProviderAccount) =
+        settings.mergeHeaders(id, mapOf("Authorization" to "Bearer ${account.token}"))
 
     companion object {
         const val PROVIDER = "siliconflow"

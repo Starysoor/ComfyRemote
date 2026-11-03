@@ -39,6 +39,7 @@ data class WorkflowsUiState(
     val error: String? = null,
     val recentPaths: List<String> = emptyList(),
     val favoritePaths: Set<String> = emptySet(),
+    val defaultPaths: Set<String> = emptySet(),
     val recentPresets: List<PromptPreset> = emptyList(),
     val recentResults: List<HistoryItem> = emptyList(),
     val session: ServerSession? = null,
@@ -61,6 +62,7 @@ data class WorkflowsUiState(
                 }
                 .sortedWith(
                     compareByDescending<WorkflowEntry> { it.path in favoritePaths }
+                        .thenByDescending { it.path in defaultPaths }
                         .thenBy { recentRank[it.path] ?: Int.MAX_VALUE }
                         .thenBy { it.name.lowercase() }
                 )
@@ -82,6 +84,7 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
         WorkflowsUiState(
             recentPaths = container.workflowUsageRepository.recentPaths(),
             favoritePaths = container.workflowUsageRepository.favorites(),
+            defaultPaths = defaultCloudPaths(),
             recentPresets = recentSetups(container.promptPresetRepository.load()),
             recentResults = recentResults(container.historyRepository.load()),
             session = container.serverSession.session.value,
@@ -215,6 +218,7 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                     cloudLoading = false,
                     cloudLoaded = true,
                     cloudWorkflows = entries,
+                    defaultPaths = defaultCloudPaths(),
                     cloudError = if (entries.isEmpty() && errors.isNotEmpty()) {
                         AppStrings.get(R.string.wf_err_cloud_load, errors.joinToString("; "))
                     } else null,
@@ -222,6 +226,18 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                 )
             }
         }
+    }
+
+    private fun defaultCloudPaths(): Set<String> {
+        val paths = container.cloudProviders.all.mapNotNull { provider ->
+            container.cloudProviderSettingsStore.defaultModel(provider.id)
+                .takeIf { it.isNotBlank() }
+                ?.let { provider.pathPrefix + it }
+        }.toMutableSet()
+        container.appSettingsStore.settings.value.defaultVideoWorkflowId
+            .takeIf { it.isNotBlank() }
+            ?.let { paths += com.comfyremote.app.data.cloud.AutoDlConfig.PATH_PREFIX + it }
+        return paths
     }
 
     fun refreshServerHealth() {

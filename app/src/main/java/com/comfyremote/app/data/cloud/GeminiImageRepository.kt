@@ -16,6 +16,8 @@ class GeminiImageRepository(
     override val defaultModels: List<String> get() = MODELS
     override val pathPrefix: String = "gemini:"
     override val baseUrl: String = DEFAULT_BASE
+    override val supportsModelDiscovery: Boolean = true
+    override val supportsCustomHeaders: Boolean = true
 
     private val results = ConcurrentHashMap<String, CloudTaskResult>()
 
@@ -28,7 +30,7 @@ class GeminiImageRepository(
         if (account.token.isBlank()) throw ComfyException("Configure a Gemini API key first")
         val root = CloudHttp.getJson(
             "${account.baseUrl.trimEnd('/')}/models",
-            mapOf("x-goog-api-key" to account.token),
+            auth(account),
         )
         return modelIdsFromResponse(root.optJSONArray("models"), idKey = "name")
             .map { it.removePrefix("models/") }
@@ -39,7 +41,7 @@ class GeminiImageRepository(
     }
 
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> =
-        account().models.ifEmpty { MODELS }.map { model ->
+        settings.enabledModels(id, account().models.ifEmpty { MODELS }).map { model ->
             CloudWorkflowSummary(
                 id = model,
                 name = displayName(model),
@@ -61,7 +63,7 @@ class GeminiImageRepository(
         val account = account()
         if (account.token.isBlank()) throw ComfyException("Configure a Gemini API key first")
         val base = account.baseUrl.trimEnd('/')
-        val headers = mapOf("x-goog-api-key" to account.token)
+        val headers = auth(account)
         val prompt = body.optString("prompt").trim()
         if (prompt.isBlank()) throw ComfyException("Prompt is required")
         val aspect = body.optString("aspect_ratio").ifBlank { "1:1" }
@@ -123,6 +125,9 @@ class GeminiImageRepository(
 
     override suspend fun result(taskId: String): CloudTaskResult =
         results[taskId] ?: CloudTaskResult(taskId, "FAILED", emptyList(), "Image result expired", 0)
+
+    private fun auth(account: CloudProviderAccount) =
+        settings.mergeHeaders(id, mapOf("x-goog-api-key" to account.token))
 
     override suspend fun download(url: String): ByteArray = CloudHttp.download(url)
 

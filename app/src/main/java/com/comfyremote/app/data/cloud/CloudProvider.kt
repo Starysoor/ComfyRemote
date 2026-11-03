@@ -16,6 +16,11 @@ interface CloudProvider {
     val settingsSummary: String get() = "Hosted workflow API"
     val defaultModels: List<String> get() = emptyList()
 
+    /** Settings can offer a "Refresh models" action when the provider enumerates models. */
+    val supportsModelDiscovery: Boolean get() = false
+    /** Settings can edit extra HTTP headers for this provider. */
+    val supportsCustomHeaders: Boolean get() = false
+
     fun configured(): Boolean
 
     suspend fun catalog(force: Boolean = false): List<CloudWorkflowSummary>

@@ -35,6 +35,7 @@ class CustomTemplateRepository(
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
         val config = config()
         if (config.submitUrl.isBlank()) return emptyList()
+        if (settings.enabledModels(id, listOf("template")).isEmpty()) return emptyList()
         return listOf(
             CloudWorkflowSummary(
                 id = "template",

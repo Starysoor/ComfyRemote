@@ -28,6 +28,8 @@ data class CloudServicesUiState(
     val spendToday: Int = 0,
     val spendMonth: Int = 0,
     val spendCount: Int = 0,
+    /** This month's local estimate, grouped by cloud provider id. */
+    val spendByProvider: Map<String, Int> = emptyMap(),
 )
 
 /** Cloud Services hub: per-provider health plus local spend summary. */
@@ -60,6 +62,10 @@ class CloudServicesViewModel(private val container: AppContainer) : ViewModel() 
                             if (entry.createdAt >= monthStart) entry.points ?: 0 else 0
                         },
                         spendCount = entries.size,
+                        spendByProvider = entries.asSequence()
+                            .filter { entry -> entry.createdAt >= monthStart && entry.providerId != null }
+                            .groupBy { entry -> entry.providerId.orEmpty() }
+                            .mapValues { (_, rows) -> rows.sumOf { row -> row.points ?: 0 } },
                     )
                 }
             }

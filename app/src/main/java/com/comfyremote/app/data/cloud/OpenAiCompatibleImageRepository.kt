@@ -16,6 +16,8 @@ class OpenAiCompatibleImageRepository(
     private val models: List<String> = MODELS,
 ) : CloudProvider {
     override val defaultModels: List<String> get() = models
+    override val supportsModelDiscovery: Boolean = true
+    override val supportsCustomHeaders: Boolean = true
 
     private val results = ConcurrentHashMap<String, CloudTaskResult>()
 
@@ -28,7 +30,7 @@ class OpenAiCompatibleImageRepository(
         if (account.token.isBlank()) throw ComfyException("Configure an API key first")
         val root = CloudHttp.getJson(
             "${account.baseUrl.trimEnd('/')}/models",
-            mapOf("Authorization" to "Bearer ${account.token}"),
+            settings.mergeHeaders(id, mapOf("Authorization" to "Bearer ${account.token}")),
         )
         val ids = modelIdsFromResponse(root.optJSONArray("data"))
         // The official OpenAI catalogue also lists text/audio models.
@@ -36,7 +38,7 @@ class OpenAiCompatibleImageRepository(
     }
 
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
-        val configuredModels = account().models.ifEmpty { MODELS }
+        val configuredModels = settings.enabledModels(id, account().models.ifEmpty { MODELS })
         return configuredModels.map { model ->
             CloudWorkflowSummary(
                 id = model,
@@ -70,7 +72,7 @@ class OpenAiCompatibleImageRepository(
         val response = CloudHttp.postJson(
             url = "${account.baseUrl.trimEnd('/')}/images/generations",
             body = payload,
-            headers = mapOf("Authorization" to "Bearer ${account.token}"),
+            headers = settings.mergeHeaders(id, mapOf("Authorization" to "Bearer ${account.token}")),
         )
         val data = response.optJSONArray("data")
             ?: throw ComfyException(CloudHttp.errorMessage(response, "OpenAI returned no image data"))

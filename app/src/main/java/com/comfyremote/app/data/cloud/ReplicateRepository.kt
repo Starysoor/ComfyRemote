@@ -16,6 +16,7 @@ class ReplicateRepository(
     override val defaultModels: List<String> get() = MODELS
     override val pathPrefix: String = "replicate:"
     override val baseUrl: String = DEFAULT_BASE
+    override val supportsCustomHeaders: Boolean = true
 
     private data class Pending(val model: String, val kind: String)
     private val pending = ConcurrentHashMap<String, Pending>()
@@ -45,7 +46,7 @@ class ReplicateRepository(
     }
 
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> =
-        account().models.ifEmpty { MODELS }.map { model ->
+        settings.enabledModels(id, account().models.ifEmpty { MODELS }).map { model ->
             CloudWorkflowSummary(
                 id = model,
                 name = model.substringAfterLast('/'),
@@ -155,7 +156,7 @@ class ReplicateRepository(
     )
 
     private fun auth(account: CloudProviderAccount): Map<String, String> =
-        mapOf("Authorization" to "Bearer ${account.token}")
+        settings.mergeHeaders(id, mapOf("Authorization" to "Bearer ${account.token}"))
 
     private fun kindOf(model: String): String {
         val lower = model.lowercase()

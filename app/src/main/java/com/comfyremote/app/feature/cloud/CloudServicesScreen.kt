@@ -113,6 +113,13 @@ fun CloudServicesScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                        state.spendByProvider[provider.id]?.takeIf { it > 0 }?.let { spend ->
+                            Text(
+                                stringResource(R.string.cloud_spend_units, spend),
+                                style = IrisType.metaSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     },
                     footer = {
                         val failure = provider.health

@@ -251,9 +251,10 @@ class GenerationManager(
         val firstCloudSubmit = updated.shouldRecordCloudSpend && spendRecordedIds.add(updated.taskId)
         if (firstCloudSubmit) {
             container.cloudSpendStore.record(
-                updated.request.workflowName,
-                updated.request.estimatedCloudCost,
-                updated.promptId,
+                workflowName = updated.request.workflowName,
+                points = updated.request.estimatedCloudCost,
+                remoteTaskId = updated.promptId,
+                providerId = updated.request.provider,
             )
         }
         patch(updated.taskId, allowTerminalExit) {
