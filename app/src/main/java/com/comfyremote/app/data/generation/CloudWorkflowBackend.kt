@@ -7,6 +7,8 @@ import com.comfyremote.app.WsEvent
 import android.util.Log
 import com.comfyremote.app.BuildConfig
 import com.comfyremote.app.data.cloud.CloudProvider
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import org.json.JSONArray
@@ -20,6 +22,9 @@ import org.json.JSONObject
 class CloudWorkflowBackend(
     private val repository: CloudProvider,
     private val workflowId: String,
+    /** Transient result-polling failures tolerated before the task fails. */
+    private val retryCount: Int = 0,
+    private val retryDelayMs: Long = 2_000L,
 ) : GenerationBackend {
 
     private var taskId: String? = null
@@ -48,15 +53,26 @@ class CloudWorkflowBackend(
     override fun wsEvents(clientId: String): Flow<WsEvent> = emptyFlow()
 
     override suspend fun historyEntry(promptId: String): JSONObject? {
-        val result = repository.result(promptId)
-        taskId = promptId
-        lastStatus = result.status
-        return when (result.status) {
-            "SUCCESS", "COMPLETED" -> successEntry(result)
-            "FAILED", "FAILURE", "ERROR", "CANCELLED", "CANCELED" -> errorEntry(
-                result.message.ifBlank { "AutoDL 任务失败（${result.status}）" }
-            )
-            else -> null
+        var attempt = 0
+        while (true) {
+            try {
+                val result = repository.result(promptId)
+                taskId = promptId
+                lastStatus = result.status
+                return when (result.status) {
+                    "SUCCESS", "COMPLETED" -> successEntry(result)
+                    "FAILED", "FAILURE", "ERROR", "CANCELLED", "CANCELED" -> errorEntry(
+                        result.message.ifBlank { "Cloud 任务失败（${result.status}）" }
+                    )
+                    else -> null
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                // Polling is idempotent; a transient network error must not fail the job.
+                if (attempt++ >= retryCount) throw error
+                delay(retryDelayMs)
+            }
         }
     }
 

@@ -65,6 +65,14 @@
     <string name="cloud_provider_headers">额外 HTTP 请求头（JSON）</string>
     <string name="cloud_provider_headers_hint">字符串键值对象，例如 {\"X-Project\": \"demo\"}</string>
     <string name="cloud_provider_headers_invalid">额外请求头必须是字符串键值 JSON 对象。</string>
+    <string name="cloud_provider_runtime">任务调度</string>
+    <string name="cloud_provider_poll_interval">轮询间隔（秒）</string>
+    <string name="cloud_provider_poll_hint">每 2–60 秒查询一次任务状态</string>
+    <string name="cloud_provider_task_timeout">任务超时（分钟）</string>
+    <string name="cloud_provider_timeout_hint">1–240 分钟</string>
+    <string name="cloud_provider_retry_count">轮询重试次数</string>
+    <string name="cloud_provider_retry_hint">瞬时轮询错误最多重试 0–5 次</string>
+    <string name="cloud_provider_runtime_invalid">轮询间隔需为 2–60 秒，超时 1–240 分钟，重试 0–5 次。</string>
     <string name="cloud_provider_insecure">该 Endpoint 未使用 HTTPS，密钥和提示词可能以明文传输。</string>
     <string name="cloud_provider_models_manage">模型管理</string>
     <string name="cloud_provider_models_manage_hint">修改即时生效；隐藏的模型不会出现在创作页和 Storyboard。默认模型会排在最前。</string>

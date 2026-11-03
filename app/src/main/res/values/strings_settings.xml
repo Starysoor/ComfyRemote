@@ -65,6 +65,14 @@
     <string name="cloud_provider_headers">Extra HTTP headers (JSON)</string>
     <string name="cloud_provider_headers_hint">JSON object of string values, e.g. {\"X-Project\": \"demo\"}</string>
     <string name="cloud_provider_headers_invalid">Extra headers must be a JSON object of string values.</string>
+    <string name="cloud_provider_runtime">Job scheduling</string>
+    <string name="cloud_provider_poll_interval">Poll interval (seconds)</string>
+    <string name="cloud_provider_poll_hint">2–60 seconds between status checks</string>
+    <string name="cloud_provider_task_timeout">Task timeout (minutes)</string>
+    <string name="cloud_provider_timeout_hint">1–240 minutes</string>
+    <string name="cloud_provider_retry_count">Poll retries</string>
+    <string name="cloud_provider_retry_hint">0–5 retries for transient polling errors</string>
+    <string name="cloud_provider_runtime_invalid">Poll interval must be 2–60s, timeout 1–240min, retries 0–5.</string>
     <string name="cloud_provider_insecure">This endpoint is not HTTPS. Credentials and prompts may be sent in plain text.</string>
     <string name="cloud_provider_models_manage">Model management</string>
     <string name="cloud_provider_models_manage_hint">Changes apply immediately; hidden models disappear from Create and Storyboard. The default model is listed first.</string>

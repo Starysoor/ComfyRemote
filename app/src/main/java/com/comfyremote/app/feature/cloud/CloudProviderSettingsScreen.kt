@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
@@ -23,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import com.comfyremote.app.R
@@ -83,8 +85,18 @@ fun CloudProviderSettingsScreen(
     var modelQuery by remember(provider.id) { mutableStateOf("") }
     var advancedOpen by remember(provider.id) { mutableStateOf(false) }
     var headersText by remember(provider.id) { mutableStateOf(settings.customHeadersRaw(provider.id)) }
+    var pollSecondsText by remember(provider.id) {
+        mutableStateOf(settings.pollIntervalSeconds(provider.id).toString())
+    }
+    var timeoutMinutesText by remember(provider.id) {
+        mutableStateOf(settings.taskTimeoutMinutes(provider.id).toString())
+    }
+    var retryCountText by remember(provider.id) {
+        mutableStateOf(settings.pollRetryCount(provider.id).toString())
+    }
     val saveBeforeTest = stringResource(R.string.cloud_status_save_before_test)
     val headersInvalid = stringResource(R.string.cloud_provider_headers_invalid)
+    val runtimeInvalid = stringResource(R.string.cloud_provider_runtime_invalid)
     val modelList = models.split(',', '\n').map(String::trim).filter(String::isNotBlank).distinct()
     val visibleModels = modelList.filter { modelQuery.isBlank() || it.contains(modelQuery, true) }
 
@@ -95,17 +107,29 @@ fun CloudProviderSettingsScreen(
                 IrisPrimaryButton(
                     text = stringResource(R.string.action_save),
                     onClick = {
+                        val pollSeconds = pollSecondsText.trim().toIntOrNull()
+                        val timeoutMinutes = timeoutMinutesText.trim().toIntOrNull()
+                        val retryCount = retryCountText.trim().toIntOrNull()
+                        val runtimeOk = pollSeconds != null && pollSeconds in 2..60 &&
+                            timeoutMinutes != null && timeoutMinutes in 1..240 &&
+                            retryCount != null && retryCount in 0..5
                         val headersOk = !provider.supportsCustomHeaders ||
                             settings.saveCustomHeaders(provider.id, headersText)
-                        if (!headersOk) {
+                        if (!runtimeOk || !headersOk) {
                             saved = false
-                            failure = headersInvalid
+                            failure = if (!headersOk) headersInvalid else runtimeInvalid
                         } else {
                             settings.save(
                                 provider.id,
                                 baseUrl,
                                 token,
                                 models.split(',', '\n').map(String::trim).filter(String::isNotBlank),
+                            )
+                            settings.saveRuntimeSettings(
+                                provider.id,
+                                pollSeconds,
+                                timeoutMinutes,
+                                retryCount,
                             )
                             if (isTemplate) settings.saveExtra(provider.id, configText)
                             headersText = settings.customHeadersRaw(provider.id)
@@ -413,6 +437,37 @@ fun CloudProviderSettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                Text(
+                    stringResource(R.string.cloud_provider_runtime),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                IrisTextField(
+                    value = pollSecondsText,
+                    onValueChange = { pollSecondsText = it; saved = false; dirty = true },
+                    label = stringResource(R.string.cloud_provider_poll_interval),
+                    supportingText = stringResource(R.string.cloud_provider_poll_hint),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                IrisTextField(
+                    value = timeoutMinutesText,
+                    onValueChange = { timeoutMinutesText = it; saved = false; dirty = true },
+                    label = stringResource(R.string.cloud_provider_task_timeout),
+                    supportingText = stringResource(R.string.cloud_provider_timeout_hint),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                IrisTextField(
+                    value = retryCountText,
+                    onValueChange = { retryCountText = it; saved = false; dirty = true },
+                    label = stringResource(R.string.cloud_provider_retry_count),
+                    supportingText = stringResource(R.string.cloud_provider_retry_hint),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
             if (saved) {
                 Text(

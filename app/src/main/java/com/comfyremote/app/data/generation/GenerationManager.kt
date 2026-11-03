@@ -342,10 +342,18 @@ class GenerationManager(
             val provider = container.cloudProviders.byId(request.provider)
                 ?: error("Unknown cloud provider ${request.provider}")
             val workflowId = request.workflowPath.removePrefix(provider.pathPrefix)
+            val settings = container.cloudProviderSettingsStore
+            val pollMs = settings.pollIntervalSeconds(provider.id) * 1_000L
             GenerationRunner(
-                backend = CloudWorkflowBackend(provider, workflowId),
+                backend = CloudWorkflowBackend(
+                    repository = provider,
+                    workflowId = workflowId,
+                    retryCount = settings.pollRetryCount(provider.id),
+                    retryDelayMs = pollMs,
+                ),
                 history = history,
-                timeoutMs = 60 * 60_000L,
+                pollDelayMs = pollMs,
+                timeoutMs = settings.taskTimeoutMinutes(provider.id) * 60_000L,
                 resolveCloudImage = resolver,
             )
         } else {
