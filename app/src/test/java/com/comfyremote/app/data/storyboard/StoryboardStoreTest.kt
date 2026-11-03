@@ -126,6 +126,29 @@ class StoryboardStoreTest {
     }
 
     @Test
+    fun projectSettingsUpdateAndResetShotWorkflowOverrides() {
+        val store = store()
+        val project = store.create("Board", "old-workflow")
+        val shot = store.addShot(project.id, "shot")!!
+        store.updateShot(project.id, shot.id) { it.copy(workflowId = "old-workflow") }
+
+        store.updateSettings(
+            projectId = project.id,
+            title = "New board",
+            workflowId = "new-workflow",
+            aspectRatio = "9:16",
+            defaultValues = mapOf("resolution" to "768p"),
+        )
+
+        val updated = store.project(project.id)!!
+        assertEquals("New board", updated.title)
+        assertEquals("new-workflow", updated.workflowId)
+        assertEquals("9:16", updated.aspectRatio)
+        assertEquals("768p", updated.defaultValues["resolution"])
+        assertNull(updated.shots.single().workflowId)
+    }
+
+    @Test
     fun projectAssetsPersistAndCountAsReferencedMedia() {
         val store = store()
         val project = store.create("Board", "wf")

@@ -47,6 +47,28 @@ class StoryboardStore internal constructor(private val file: File) {
         it.copy(aspectRatio = ratio.trim(), updatedAt = System.currentTimeMillis())
     }
 
+    fun updateSettings(
+        projectId: String,
+        title: String,
+        workflowId: String,
+        aspectRatio: String,
+        defaultValues: Map<String, String>,
+    ) = update(projectId) { project ->
+        val workflowChanged = project.workflowId != workflowId
+        project.copy(
+            title = title.trim().ifBlank { "Storyboard" },
+            workflowId = workflowId.trim(),
+            aspectRatio = aspectRatio.trim(),
+            defaultValues = defaultValues,
+            shots = if (workflowChanged) {
+                project.shots.map { it.copy(workflowId = null) }
+            } else {
+                project.shots
+            },
+            updatedAt = System.currentTimeMillis(),
+        )
+    }
+
     fun addShot(projectId: String, prompt: String): StoryboardShot? = synchronized(lock) {
         var created: StoryboardShot? = null
         updateLocked(projectId) { project ->

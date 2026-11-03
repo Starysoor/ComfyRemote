@@ -75,6 +75,16 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     fun setAspectRatio(projectId: String, ratio: String) =
         container.storyboardStore.setAspectRatio(projectId, ratio)
 
+    fun updateProjectSettings(
+        projectId: String,
+        title: String,
+        workflowId: String,
+        aspectRatio: String,
+        defaultValues: Map<String, String>,
+    ) = container.storyboardStore.updateSettings(
+        projectId, title, workflowId, aspectRatio, defaultValues,
+    )
+
     fun addShot(projectId: String, prompt: String) {
         if (prompt.isBlank()) {
             _message.value = AppStrings.get(R.string.board_err_empty_prompt)

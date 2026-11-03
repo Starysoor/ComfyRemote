@@ -3,6 +3,7 @@ package com.comfyremote.app.feature.storyboard
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +57,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
+import com.comfyremote.app.data.cloud.CloudWorkflowSummary
 import com.comfyremote.app.data.reference.ProjectAsset
 import com.comfyremote.app.data.reference.ReferenceRole
 import com.comfyremote.app.data.storyboard.StoryboardShot
@@ -97,6 +99,7 @@ fun StoryboardDetailScreen(
     var assetShotId by remember { mutableStateOf<String?>(null) }
     var selectedAssetIds by remember { mutableStateOf(setOf<String>()) }
     var menuOpen by remember { mutableStateOf(false) }
+    var projectSettings by remember { mutableStateOf(false) }
     val assetPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val role = pendingAssetRole
         if (uri != null && role != null) viewModel.addAsset(projectId, role, uri)
@@ -130,6 +133,13 @@ fun StoryboardDetailScreen(
                             Icon(Icons.Outlined.MoreVert, stringResource(R.string.action_more))
                         }
                         DropdownMenu(menuOpen, { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.board_project_settings)) },
+                                onClick = {
+                                    menuOpen = false
+                                    projectSettings = true
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.board_delete_project), color = MaterialTheme.colorScheme.error) },
                                 leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error) },
@@ -192,13 +202,23 @@ fun StoryboardDetailScreen(
                         maxLines = 4,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    IrisTextField(
-                        value = project.aspectRatio,
-                        onValueChange = { viewModel.setAspectRatio(project.id, it) },
-                        label = stringResource(R.string.board_aspect_ratio),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                }
+            }
+
+            item("overview") {
+                val chips = listOf(
+                    Triple(stringResource(R.string.board_status_running), project.shots.count { it.status == "running" }, ChipTone.Accent),
+                    Triple(stringResource(R.string.board_status_draft), project.shots.count { it.status != "running" && it.status != "done" && it.status != "failed" }, ChipTone.Neutral),
+                    Triple(stringResource(R.string.board_status_failed), project.shots.count { it.status == "failed" }, ChipTone.Error),
+                    Triple(stringResource(R.string.board_status_done), project.shots.count { it.status == "done" }, ChipTone.Success),
+                )
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    chips.filter { it.second > 0 }.forEach { (label, count, tone) ->
+                        StatusChip("$label $count", tone = tone)
+                    }
                 }
             }
 
@@ -273,6 +293,19 @@ fun StoryboardDetailScreen(
         }
     }
 
+    if (projectSettings && project != null) {
+        ProjectSettingsDialog(
+            project = project,
+            workflows = workflows,
+            onDismiss = { projectSettings = false },
+            onSave = { title, workflowId, aspect, defaults ->
+                viewModel.updateProjectSettings(
+                    project.id, title, workflowId, aspect, defaults,
+                )
+                projectSettings = false
+            },
+        )
+    }
     if (addingShot) {
         AddShotDialog(
             onDismiss = { addingShot = false },
@@ -361,6 +394,91 @@ fun StoryboardDetailScreen(
             },
         )
     }
+}
+
+@Composable
+private fun ProjectSettingsDialog(
+    project: com.comfyremote.app.data.storyboard.StoryboardProject,
+    workflows: List<CloudWorkflowSummary>,
+    onDismiss: () -> Unit,
+    onSave: (title: String, workflowId: String, aspectRatio: String, defaults: Map<String, String>) -> Unit,
+) {
+    var title by remember(project.title) { mutableStateOf(project.title) }
+    var workflowId by remember(project.workflowId) { mutableStateOf(project.workflowId) }
+    var aspectRatio by remember(project.aspectRatio) { mutableStateOf(project.aspectRatio) }
+    var defaultsText by remember(project.defaultValues) {
+        mutableStateOf(project.defaultValues.entries.joinToString("\n") { "${it.key}=${it.value}" })
+    }
+    var workflowMenu by remember { mutableStateOf(false) }
+    val workflowName = workflows.firstOrNull { it.id == workflowId }?.name ?: workflowId
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.board_project_settings)) },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+            ) {
+                IrisTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = stringResource(R.string.board_project_title),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Box {
+                    TextAction(
+                        text = workflowName.ifBlank { stringResource(R.string.board_project_workflow) },
+                        onClick = { workflowMenu = true },
+                    )
+                    DropdownMenu(workflowMenu, { workflowMenu = false }) {
+                        workflows.forEach { wf ->
+                            DropdownMenuItem(
+                                text = { Text(wf.name) },
+                                onClick = {
+                                    workflowId = wf.id
+                                    workflowMenu = false
+                                },
+                            )
+                        }
+                    }
+                }
+                IrisTextField(
+                    value = aspectRatio,
+                    onValueChange = { aspectRatio = it },
+                    label = stringResource(R.string.board_aspect_ratio),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                IrisTextField(
+                    value = defaultsText,
+                    onValueChange = { defaultsText = it },
+                    label = stringResource(R.string.board_default_params),
+                    supportingText = stringResource(R.string.board_default_params_hint),
+                    minLines = 3,
+                    maxLines = 8,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val defaults = defaultsText.lineSequence().mapNotNull { line ->
+                    val index = line.indexOf('=')
+                    if (index <= 0) null else {
+                        val key = line.substring(0, index).trim()
+                        val value = line.substring(index + 1).trim()
+                        if (key.isBlank()) null else key to value
+                    }
+                }.toMap()
+                onSave(title, workflowId, aspectRatio, defaults)
+            }) { Text(stringResource(R.string.board_save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
+    )
 }
 
 @Composable

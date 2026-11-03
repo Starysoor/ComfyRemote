@@ -16,6 +16,7 @@
 - Project workspace core: project-owned assets with semantic roles, durable copies, and role labels.
 - Shot reordering, duplication and insertion; project assets can become a shot's manual reference or be cleared.
 - Storyboard project/shot ids persist on generation tasks; Task Detail links back to the board.
+- Project settings dialog: rename, default workflow, aspect ratio, key=value default parameters, and a live shot status overview.
 - Project aspect-ratio/default-value model fields; per-shot workflow and portable parameter memory for Regenerate.
 - Shot multi-reference: select several project assets and fill consecutive image inputs in one Generate session.
 - History results can be added to a storyboard project with a chosen semantic role.
