@@ -1,0 +1,393 @@
+package com.comfyremote.app.data.cloud
+
+import com.comfyremote.app.ComfyException
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * AutoDL.Art model API (separate from ComfyUI workflow tokens).
+ * Image models use OpenAI Images; video models use the vendor protocol proxied by AutoDL.
+ */
+class AutoDlModelRepository(
+    private val settings: CloudProviderSettingsStore,
+) : CloudProvider {
+    override val id: String = PROVIDER
+    override val label: String = "AutoDL Models"
+    override val settingsSummary: String = "AutoDL model API · image and video models"
+    override val pathPrefix: String = PREFIX
+    override val baseUrl: String = BASE
+    override val defaultModels: List<String> get() = IMAGE_MODELS + VIDEO_MODELS
+
+    private data class Pending(val family: String, val submitUrl: String)
+    private val pending = ConcurrentHashMap<String, Pending>()
+    private val videoResults = ConcurrentHashMap<String, CloudTaskResult>()
+
+    private val imageApi = OpenAiCompatibleImageRepository(
+        settings = settings,
+        id = PROVIDER,
+        label = label,
+        settingsSummary = settingsSummary,
+        pathPrefix = PREFIX,
+        baseUrl = BASE,
+        models = IMAGE_MODELS,
+    )
+
+    private fun account() = settings.account(id, BASE, defaultModels)
+
+    override fun configured(): Boolean = account().token.isNotBlank()
+
+    override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
+        val images = imageApi.catalog(force).filter { familyOf(it.id) == "image" }
+        val videos = VIDEO_MODELS.map { model ->
+            CloudWorkflowSummary(
+                id = model,
+                name = model,
+                description = "AutoDL ${familyOf(model)} video model",
+                kind = "video",
+                priceType = "official_api",
+            )
+        }
+        return images + videos
+    }
+
+    override suspend fun detail(workflowId: String): CloudWorkflowSpec {
+        val family = familyOf(workflowId)
+        if (family == "image") return imageApi.detail(workflowId)
+        return CloudWorkflowSpec(
+            id = workflowId,
+            name = workflowId,
+            kind = "video",
+            description = "AutoDL model API video generation",
+            rules = videoRules(family, workflowId),
+        )
+    }
+
+    override suspend fun submit(workflowId: String, body: JSONObject): String {
+        val family = familyOf(workflowId)
+        if (family == "image") return imageApi.submit(workflowId, body)
+        val account = account()
+        if (account.token.isBlank()) throw ComfyException("Configure an AutoDL model API token first")
+        val headers = mapOf("Authorization" to "Bearer ${account.token}")
+        val base = account.baseUrl.trimEnd('/')
+        val (submitUrl, payload) = when (family) {
+            "wan" -> "$base/ali/api/v1/services/aigc/video-generation/video-synthesis" to
+                wanPayload(workflowId, body)
+            "h3" -> "$base/minimax/v2/video_generation" to miniMaxPayload(workflowId, body)
+            "minimax" -> "$base/minimax/v1/video_generation" to miniMaxPayload(workflowId, body)
+            "seedance" -> "$base/ark/v3/contents/generations/tasks" to seedancePayload(workflowId, body)
+            "kling" -> klingSubmit(workflowId, body, base)
+            else -> throw ComfyException("Unsupported AutoDL model $workflowId")
+        }
+        val response = CloudHttp.requestJson(
+            method = "POST",
+            url = submitUrl,
+            body = payload,
+            headers = if (family == "wan") headers + mapOf("X-DashScope-Async" to "enable") else headers,
+        )
+        val taskId = when (family) {
+            "wan" -> response.optJSONObject("output")?.optString("task_id")
+            "h3", "minimax" -> response.optString("task_id")
+            "seedance" -> response.optString("id")
+            "kling" -> response.optJSONObject("data")?.optString("task_id")
+            else -> null
+        }?.takeIf { it.isNotBlank() }
+            ?: throw ComfyException(CloudHttp.errorMessage(response, "AutoDL returned no task id"))
+        pending[taskId] = Pending(family, submitUrl)
+        return taskId
+    }
+
+    override suspend fun result(taskId: String): CloudTaskResult {
+        val task = pending[taskId]
+            ?: return imageApi.result(taskId)
+        val account = account()
+        val headers = mapOf("Authorization" to "Bearer ${account.token}")
+        val base = account.baseUrl.trimEnd('/')
+        return when (task.family) {
+            "wan" -> wanResult(base, taskId, headers)
+            "h3", "minimax" -> miniMaxResult(base, taskId, headers)
+            "seedance" -> seedanceResult(base, taskId, headers)
+            "kling" -> klingResult(task.submitUrl, taskId, headers)
+            else -> CloudTaskResult(taskId, "FAILED", emptyList(), "Unsupported task", 0)
+        }
+    }
+
+    override suspend fun download(url: String): ByteArray = CloudHttp.download(url)
+
+    override suspend fun downloadTo(url: String, target: java.io.File) {
+        CloudHttp.downloadTo(url, target)
+    }
+
+    private fun wanPayload(model: String, body: JSONObject): JSONObject {
+        val input = JSONObject()
+        body.optString("prompt").takeIf { it.isNotBlank() }?.let { input.put("prompt", it) }
+        val media = JSONArray()
+        body.optString("first_frame_image").takeIf { it.isNotBlank() }?.let {
+            media.put(JSONObject().put("type", "first_frame").put("url", it))
+        }
+        if (media.length() > 0) input.put("media", media)
+        val params = JSONObject()
+        body.optString("resolution").takeIf { it.isNotBlank() }?.let { params.put("resolution", it) }
+        body.opt("duration")?.toString()?.toIntOrNull()?.let { params.put("duration", it) }
+        return JSONObject().put("model", model).put("input", input).put("parameters", params)
+    }
+
+    private fun miniMaxPayload(model: String, body: JSONObject): JSONObject {
+        val payload = JSONObject().put("model", model).put("prompt", body.optString("prompt"))
+        body.optString("resolution").takeIf { it.isNotBlank() }?.let { payload.put("resolution", it) }
+        body.opt("duration")?.toString()?.toIntOrNull()?.let { payload.put("duration", it) }
+        body.optString("first_frame_image").takeIf { it.isNotBlank() }?.let {
+            payload.put("first_frame_image", it)
+        }
+        return payload
+    }
+
+    private fun seedancePayload(model: String, body: JSONObject): JSONObject {
+        val content = JSONArray()
+        body.optString("prompt").takeIf { it.isNotBlank() }?.let {
+            content.put(JSONObject().put("type", "text").put("text", it))
+        }
+        body.optString("first_frame_image").takeIf { it.isNotBlank() }?.let {
+            content.put(
+                JSONObject().put("type", "image_url")
+                    .put("image_url", JSONObject().put("url", it))
+                    .put("role", "first_frame")
+            )
+        }
+        val payload = JSONObject().put("model", model).put("content", content)
+        body.optString("ratio").takeIf { it.isNotBlank() }?.let { payload.put("ratio", it) }
+        body.optString("resolution").takeIf { it.isNotBlank() }?.let { payload.put("resolution", it) }
+        body.opt("duration")?.toString()?.toIntOrNull()?.let { payload.put("duration", it) }
+        if (body.has("generate_audio")) payload.put("generate_audio", body.optBoolean("generate_audio"))
+        if (body.has("watermark")) payload.put("watermark", body.optBoolean("watermark"))
+        body.opt("seed")?.let { payload.put("seed", it) }
+        return payload
+    }
+
+    private fun klingSubmit(model: String, body: JSONObject, base: String): Pair<String, JSONObject> {
+        val omni = model.contains("omni") || model.contains("o1")
+        val hasImage = body.optString("first_frame_image").isNotBlank()
+        val path = when {
+            omni -> "/kling/v1/videos/omni-video"
+            hasImage -> "/kling/v1/videos/image2video"
+            else -> "/kling/v1/videos/text2video"
+        }
+        val payload = JSONObject()
+            .put("model_name", model)
+            .put("prompt", body.optString("prompt"))
+        body.optString("mode").takeIf { it.isNotBlank() }?.let { payload.put("mode", it) }
+        body.optString("aspect_ratio").takeIf { it.isNotBlank() }?.let { payload.put("aspect_ratio", it) }
+        body.opt("duration")?.toString()?.takeIf { it.isNotBlank() }?.let { payload.put("duration", it) }
+        body.optString("first_frame_image").takeIf { it.isNotBlank() }?.let {
+            payload.put("image", it)
+        }
+        return "$base$path" to payload
+    }
+
+    private fun wanResult(base: String, taskId: String, headers: Map<String, String>): CloudTaskResult {
+        val response = CloudHttp.getJson("$base/ali/api/v1/tasks/$taskId", headers)
+        val output = response.optJSONObject("output") ?: response
+        val status = output.optString("task_status")
+        return when (status.uppercase()) {
+            "SUCCEEDED", "SUCCESS" -> {
+                val url = output.optString("video_url")
+                CloudTaskResult(taskId, "SUCCESS", videoResults(url), "", 0)
+            }
+            "FAILED", "CANCELED", "CANCELLED" -> CloudTaskResult(
+                taskId, "FAILED", emptyList(),
+                output.optString("message").ifBlank { "Wan video generation failed" }, 0,
+            )
+            else -> CloudTaskResult(taskId, "RUNNING", emptyList(), status, 0)
+        }
+    }
+
+    private fun miniMaxResult(base: String, taskId: String, headers: Map<String, String>): CloudTaskResult {
+        val response = CloudHttp.getJson("$base/minimax/v1/query/video_generation/$taskId", headers)
+        val status = response.optString("status").ifBlank { response.optString("task_status") }
+        return when (status.lowercase()) {
+            "success", "succeeded" -> {
+                val fileId = response.optString("file_id")
+                val file = if (fileId.isNotBlank()) {
+                    CloudHttp.getJson("$base/minimax/v1/files/retrieve?file_id=$fileId", headers)
+                } else response
+                val url = file.optJSONObject("file")?.optString("download_url")
+                    ?: file.optString("download_url")
+                CloudTaskResult(taskId, "SUCCESS", videoResults(url), "", 0)
+            }
+            "fail", "failed" -> CloudTaskResult(
+                taskId, "FAILED", emptyList(),
+                response.optString("status_msg").ifBlank { "MiniMax video generation failed" }, 0,
+            )
+            else -> CloudTaskResult(taskId, "RUNNING", emptyList(), status, 0)
+        }
+    }
+
+    private fun seedanceResult(base: String, taskId: String, headers: Map<String, String>): CloudTaskResult {
+        val response = CloudHttp.getJson("$base/ark/v3/contents/generations/tasks/$taskId", headers)
+        return when (response.optString("status").lowercase()) {
+            "succeeded", "success" -> {
+                val url = response.optJSONObject("content")?.optString("video_url")
+                CloudTaskResult(taskId, "SUCCESS", videoResults(url), "", 0)
+            }
+            "failed", "cancelled", "canceled", "expired" -> CloudTaskResult(
+                taskId, "FAILED", emptyList(),
+                response.optJSONObject("error")?.optString("message").orEmpty().ifBlank {
+                    "Seedance video generation failed"
+                }, 0,
+            )
+            else -> CloudTaskResult(taskId, "RUNNING", emptyList(), response.optString("status"), 0)
+        }
+    }
+
+    private fun klingResult(submitUrl: String, taskId: String, headers: Map<String, String>): CloudTaskResult {
+        val response = CloudHttp.getJson("$submitUrl/$taskId", headers)
+        val data = response.optJSONObject("data") ?: response
+        return when (data.optString("task_status").lowercase()) {
+            "succeed", "success", "succeeded" -> {
+                val videos = data.optJSONObject("task_result")?.optJSONArray("videos") ?: JSONArray()
+                val results = (0 until videos.length()).mapNotNull { index ->
+                    val url = videos.optJSONObject(index)?.optString("url")?.takeIf { it.isNotBlank() }
+                        ?: return@mapNotNull null
+                    CloudResult(url, "video", extensionOf(url).ifBlank { "mp4" }, "output")
+                }
+                CloudTaskResult(taskId, "SUCCESS", results, "", 0)
+            }
+            "failed" -> CloudTaskResult(
+                taskId, "FAILED", emptyList(),
+                data.optString("task_status_msg").ifBlank { "Kling video generation failed" }, 0,
+            )
+            else -> CloudTaskResult(taskId, "RUNNING", emptyList(), data.optString("task_status"), 0)
+        }
+    }
+
+    private fun videoResults(url: String?): List<CloudResult> {
+        if (url.isNullOrBlank()) return emptyList()
+        return listOf(
+            CloudResult(
+                url = url,
+                type = "video",
+                fileType = extensionOf(url).ifBlank { "mp4" },
+                outputType = "output",
+            )
+        )
+    }
+
+    private fun extensionOf(url: String): String =
+        url.substringBefore('?').substringAfterLast('.', "").lowercase().takeIf { it.length in 2..5 }.orEmpty()
+
+    private fun familyOf(model: String): String = when {
+        model.startsWith("wan3.0") -> "wan"
+        model.startsWith("MiniMax-H3") -> "h3"
+        model.startsWith("MiniMax-Hailuo") -> "minimax"
+        model.contains("seedance") -> "seedance"
+        model.startsWith("kling") -> "kling"
+        else -> "image"
+    }
+
+    private fun videoRules(family: String, model: String): List<CloudInputRule> {
+        val rules = mutableListOf(CloudInputRule("prompt", "prompt", required = true))
+        when (family) {
+            "wan" -> {
+                rules += CloudInputRule(
+                    "resolution", "enum", required = false, defaultValue = "720P",
+                    options = listOf("480P", "720P", "1080P"),
+                )
+                rules += CloudInputRule(
+                    "duration", "integer", required = false, defaultValue = "5",
+                    min = 1.0, max = 30.0,
+                )
+                rules += CloudInputRule("first_frame_image", "image", required = false)
+                rules += CloudInputRule("negative_prompt", "string", required = false)
+            }
+            "h3" -> {
+                rules += CloudInputRule(
+                    "resolution", "enum", required = false, defaultValue = "768P",
+                    options = listOf("768P", "2K"),
+                )
+                rules += CloudInputRule(
+                    "duration", "integer", required = false, defaultValue = "6",
+                    min = 6.0, max = 10.0,
+                )
+                rules += CloudInputRule("first_frame_image", "image", required = false)
+            }
+            "minimax" -> {
+                val durations = if (model.contains("2.3-Fast")) listOf("6") else listOf("6", "10")
+                rules += CloudInputRule(
+                    "resolution", "enum", required = false, defaultValue = "768P",
+                    options = if (durations == listOf("6")) listOf("768P") else listOf("768P", "1080P"),
+                )
+                rules += CloudInputRule(
+                    "duration", "enum", required = false, defaultValue = durations.first(), options = durations,
+                )
+                rules += CloudInputRule(
+                    "first_frame_image", "image",
+                    required = model.contains("2.3-Fast"),
+                )
+            }
+            "seedance" -> {
+                rules += CloudInputRule(
+                    "resolution", "enum", required = false, defaultValue = "720p",
+                    options = listOf("480p", "720p", "1080p"),
+                )
+                rules += CloudInputRule(
+                    "ratio", "enum", required = false, defaultValue = "adaptive",
+                    options = listOf("adaptive", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"),
+                )
+                rules += CloudInputRule(
+                    "duration", "integer", required = false, defaultValue = "5",
+                    min = 1.0, max = 15.0,
+                )
+                rules += CloudInputRule("first_frame_image", "image", required = false)
+                rules += CloudInputRule("generate_audio", "boolean", required = false, defaultValue = "true")
+                rules += CloudInputRule("watermark", "boolean", required = false, defaultValue = "false")
+                rules += CloudInputRule("seed", "integer", required = false)
+            }
+            "kling" -> {
+                rules += CloudInputRule(
+                    "mode", "enum", required = false, defaultValue = "std", options = listOf("std", "pro"),
+                )
+                rules += CloudInputRule(
+                    "duration", "enum", required = false, defaultValue = "5", options = listOf("5", "10"),
+                )
+                rules += CloudInputRule(
+                    "aspect_ratio", "enum", required = false, defaultValue = "16:9",
+                    options = listOf("16:9", "9:16", "1:1"),
+                )
+                rules += CloudInputRule("first_frame_image", "image", required = false)
+            }
+        }
+        return rules
+    }
+
+    companion object {
+        const val PROVIDER = "autodl_model"
+        const val BASE = "https://www.autodl.art/api/v1"
+        const val PREFIX = "autodl-model:"
+
+        val IMAGE_MODELS = listOf(
+            "gpt-image-2.5-flare",
+            "gpt-image-2.5-sunburst",
+            "gpt-image-2",
+            "Qwen-Image",
+            "Z-Image-Turbo",
+            "nano-banana-2",
+            "doubao-seedream-5-0-flash",
+        )
+        val VIDEO_MODELS = listOf(
+            "wan3.0-video-prime",
+            "wan3.0-video",
+            "MiniMax-H3",
+            "doubao-seedance-2-5-260628",
+            "doubao-seedance-2-0-mini-260615",
+            "doubao-seedance-2-0-260128",
+            "doubao-seedance-2-0-fast-260128",
+            "MiniMax-Hailuo-02",
+            "MiniMax-Hailuo-2.3",
+            "MiniMax-Hailuo-2.3-Fast",
+            "kling-v3-omni",
+            "kling-video-o1",
+            "kling-v2-5-turbo",
+            "kling-v2-6",
+        )
+    }
+}

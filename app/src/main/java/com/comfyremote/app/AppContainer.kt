@@ -2,6 +2,7 @@ package com.comfyremote.app
 
 import android.app.Application
 import android.content.SharedPreferences
+import com.comfyremote.app.data.cloud.AutoDlModelRepository
 import com.comfyremote.app.data.cloud.AutoDlRepository
 import com.comfyremote.app.data.cloud.AutoDlSettingsStore
 import com.comfyremote.app.data.cloud.CloudInputStore
@@ -53,22 +54,7 @@ class AppContainer(val app: Application) {
     val autoDlRepository = AutoDlRepository(autoDlSettingsStore)
     val cloudProviderSettingsStore = CloudProviderSettingsStore(prefs, secretStore)
     val openAiImageRepository = OpenAiCompatibleImageRepository(cloudProviderSettingsStore)
-    val autoDlModelRepository = OpenAiCompatibleImageRepository(
-        settings = cloudProviderSettingsStore,
-        id = "autodl_model",
-        label = "AutoDL Models",
-        settingsSummary = "AutoDL model API · GPT Image / Qwen-Image / Z-Image",
-        pathPrefix = "autodl-model:",
-        baseUrl = "https://www.autodl.art/api/v1",
-        models = listOf(
-            "gpt-image-2.5-flare",
-            "gpt-image-2.5-sunburst",
-            "gpt-image-2",
-            "Qwen-Image",
-            "Z-Image-Turbo",
-            "nano-banana-2",
-        ),
-    )
+    val autoDlModelRepository = AutoDlModelRepository(cloudProviderSettingsStore)
     val geminiImageRepository = GeminiImageRepository(cloudProviderSettingsStore)
     val replicateRepository = ReplicateRepository(cloudProviderSettingsStore)
     val siliconFlowRepository = SiliconFlowRepository(cloudProviderSettingsStore)
