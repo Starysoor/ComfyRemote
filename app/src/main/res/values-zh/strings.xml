@@ -1,4 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">灵瞳</string>
+
+    <!-- 通用操作 -->
+    <string name="action_back">返回</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_save">保存</string>
+    <string name="action_delete">删除</string>
+    <string name="action_retry">重试</string>
+    <string name="action_refresh">刷新</string>
+    <string name="action_settings">设置</string>
+    <string name="action_share">分享</string>
+    <string name="action_close">关闭</string>
+    <string name="action_clear">清除</string>
+    <string name="action_more">更多</string>
+    <string name="action_reuse">复用</string>
+    <string name="action_edit">编辑</string>
+
+    <!-- 导航 -->
+    <string name="nav_create">创作</string>
+    <string name="nav_tasks">任务</string>
+    <string name="nav_results">结果</string>
+    <string name="nav_board">分镜</string>
+
+    <!-- 生成阶段 -->
+    <string name="phase_local_pending">本地等待</string>
+    <string name="phase_ready">待生成</string>
+    <string name="phase_preparing">准备中</string>
+    <string name="phase_queued">排队中</string>
+    <string name="phase_running">生成中</string>
+    <string name="phase_cancelling">取消中</string>
+    <string name="phase_cancelled">已取消</string>
+    <string name="phase_succeeded">完成</string>
+    <string name="phase_failed">失败</string>
+
+    <!-- 错误类型 -->
+    <string name="error_execution">执行错误</string>
+    <string name="error_connection">连接错误</string>
+    <string name="error_validation">参数校验失败</string>
+    <string name="error_timeout">等待超时</string>
+    <string name="error_download">下载失败</string>
+    <string name="error_cancelled">已取消</string>
+    <string name="error_unknown">未知错误</string>
+
+    <!-- 相册 -->
+    <string name="gallery_saved">已保存到 相册/Iris</string>
+    <string name="gallery_save_failed">保存失败：%1$s</string>
+
+    <!-- 通知 -->
+    <string name="notif_channel_running">生成状态</string>
+    <string name="notif_channel_done">生成完成</string>
+    <string name="notif_queued">排队中…</string>
+    <string name="notif_cancelling">正在取消…</string>
+    <string name="notif_node">节点 %1$s</string>
+    <string name="notif_generating">灵瞳生成中</string>
+    <string name="notif_done_title">生成完成</string>
+    <plurals name="notif_done_text">
+        <item quantity="other">%1$s · %2$d 个结果</item>
+    </plurals>
+    <string name="notif_cancelled">已取消</string>
+    <string name="notif_failed">生成失败</string>
+
+    <!-- AutoDL 计价 -->
+    <string name="price_per_second">%1$s / 秒</string>
+    <string name="price_minimum">，最低 %1$s</string>
+    <string name="price_per_run">%1$s / 次</string>
+    <string name="price_range_per_run">%1$s–%2$s / 次</string>
+    <string name="price_platform">按平台计费</string>
 </resources>

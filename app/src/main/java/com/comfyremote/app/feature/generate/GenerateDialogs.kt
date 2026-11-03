@@ -1,6 +1,7 @@
 package com.comfyremote.app.feature.generate
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -8,31 +9,24 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import com.comfyremote.app.ui.components.IrisSwitch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,26 +35,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.comfyremote.app.PromptField
+import com.comfyremote.app.R
 import com.comfyremote.app.data.generation.ResultImage
 import com.comfyremote.app.data.media.decodeSampled
-import com.comfyremote.app.data.repository.PromptPreset
-import com.comfyremote.app.ui.L10n
-import com.comfyremote.app.ui.Mono
+import com.comfyremote.app.ui.IrisType
+import com.comfyremote.app.ui.Spacing
+import com.comfyremote.app.ui.components.BannerTone
+import com.comfyremote.app.ui.components.ChipTone
+import com.comfyremote.app.ui.components.InfoBanner
+import com.comfyremote.app.ui.components.IrisChip
+import com.comfyremote.app.ui.components.IrisTextField
 import com.comfyremote.app.ui.components.StatusChip
+import com.comfyremote.app.ui.components.TextAction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -71,48 +69,57 @@ data class VisionRequest(
     val label: String,
 )
 
+/** Neutral dismiss action for dialogs, so only the confirm action carries the accent. */
+@Composable
+internal fun DismissAction(text: String, onClick: () -> Unit) {
+    TextAction(text, onClick, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/** Cloud jobs keep running (and billing) on AutoDL; make the user acknowledge that before cancelling. */
+@Composable
+internal fun CancelCloudTaskDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.gen_cancel_cloud_title)) },
+        text = { Text(stringResource(R.string.gen_cancel_cloud_body)) },
+        confirmButton = {
+            TextAction(stringResource(R.string.gen_cancel_anyway), onConfirm, color = MaterialTheme.colorScheme.error)
+        },
+        dismissButton = { DismissAction(stringResource(R.string.gen_keep_waiting), onDismiss) },
+    )
+}
+
 @Composable
 fun VisionInstructionDialog(
     targetLabel: String,
     onDismiss: () -> Unit,
     onRun: (String) -> Unit,
 ) {
-    var instruction by remember {
-        mutableStateOf(
-            L10n.t(
-                "根据图片内容优化当前提示词，保留主体与风格，补充镜头、光影、动作和氛围细节",
-                "Refine the current prompt based on the image; keep the subject and style, add camera, light, motion and mood",
-            )
-        )
-    }
+    val defaultInstruction = stringResource(R.string.gen_vision_default_instruction)
+    var instruction by remember { mutableStateOf(defaultInstruction) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(L10n.t("AI 看图改写", "AI vision rewrite")) },
+        title = { Text(stringResource(R.string.gen_vision_rewrite)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(targetLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                OutlinedTextField(
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                StatusChip(targetLabel, tone = ChipTone.Accent)
+                IrisTextField(
                     value = instruction,
                     onValueChange = { instruction = it },
-                    label = { Text(L10n.t("修改要求", "Requested change")) },
+                    label = stringResource(R.string.gen_vision_instruction_label),
                     minLines = 3,
                     maxLines = 7,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    L10n.t(
-                        "模型会真正读取这张图片，再结合要求改写提示词。",
-                        "The model will actually view this image before rewriting the prompt.",
-                    ),
+                    stringResource(R.string.gen_vision_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
-        confirmButton = {
-            TextButton(onClick = { onRun(instruction) }) { Text(L10n.t("改写", "Rewrite")) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(L10n.t("取消", "Cancel")) } },
+        confirmButton = { TextAction(stringResource(R.string.gen_rewrite), { onRun(instruction) }) },
+        dismissButton = { DismissAction(stringResource(R.string.action_cancel), onDismiss) },
     )
 }
 
@@ -124,49 +131,31 @@ fun CloudConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(L10n.t("确认云端提交", "Confirm cloud submission")) },
+        title = { Text(stringResource(R.string.gen_cloud_confirm_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(confirmation.workflowName, fontWeight = FontWeight.SemiBold)
+                Text(confirmation.workflowName, style = MaterialTheme.typography.titleSmall)
                 Text(
-                    L10n.t("平台计价：", "Platform price: ") + confirmation.priceLabel,
+                    stringResource(R.string.gen_cloud_price, confirmation.priceLabel),
                     color = MaterialTheme.colorScheme.primary,
-                    fontFamily = Mono,
-                    fontSize = 12.sp,
+                    style = IrisType.meta,
                 )
                 confirmation.estimatedCost?.let {
-                    Text(
-                        L10n.t("本次预计：$it（平台单位）", "Estimated this run: $it (platform units)"),
-                        fontFamily = Mono,
-                        fontSize = 12.sp,
-                    )
+                    Text(stringResource(R.string.gen_cloud_estimate, it), style = IrisType.meta)
                 }
                 if (confirmation.duration.isNotBlank() || confirmation.resolution.isNotBlank()) {
+                    val duration = confirmation.duration.takeIf { it.isNotBlank() }?.let { stringResource(R.string.gen_cloud_duration, it) }
                     Text(
-                        listOf(
-                            confirmation.duration.takeIf { it.isNotBlank() }?.let { L10n.t("时长 ${it}s", "duration ${it}s") },
-                            confirmation.resolution.takeIf { it.isNotBlank() },
-                        ).filterNotNull().joinToString(" · "),
+                        listOfNotNull(duration, confirmation.resolution.takeIf { it.isNotBlank() }).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(
-                    L10n.t(
-                        "实际扣费以 AutoDL 账单为准。提交后取消不一定停止平台侧执行，仍可能计费。",
-                        "Actual billing is determined by AutoDL. Cancelling locally may not stop the remote job, which can still be billed.",
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+                InfoBanner(text = stringResource(R.string.gen_cloud_billing_note), tone = BannerTone.Warning)
             }
         },
-        confirmButton = {
-            TextButton(onClick = onConfirm) { Text(L10n.t("确认提交", "Submit")) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(L10n.t("取消", "Cancel")) }
-        },
+        confirmButton = { TextAction(stringResource(R.string.gen_submit), onConfirm) },
+        dismissButton = { DismissAction(stringResource(R.string.action_cancel), onDismiss) },
     )
 }
 
@@ -180,166 +169,20 @@ fun AiResultDialog(
     var text by remember(initial) { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(L10n.t("AI 生成结果", "AI result")) },
+        title = { Text(stringResource(R.string.gen_ai_result_title)) },
         text = {
-            Column {
-                OutlinedTextField(text, { text = it }, minLines = 4, maxLines = 12, modifier = Modifier.fillMaxWidth())
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                IrisTextField(text, { text = it }, minLines = 4, maxLines = 12, modifier = Modifier.fillMaxWidth())
                 Text(
-                    L10n.t("可修改后替换或追加到原提示词", "Edit before replacing or appending"),
+                    stringResource(R.string.gen_ai_result_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onReplace(text) }) { Text(L10n.t("替换", "Replace")) } },
-        dismissButton = { TextButton(onClick = { onAppend(text) }) { Text(L10n.t("追加", "Append")) } },
+        confirmButton = { TextAction(stringResource(R.string.gen_replace), { onReplace(text) }) },
+        dismissButton = { TextAction(stringResource(R.string.gen_append), { onAppend(text) }) },
     )
-}
-
-@Composable
-fun PromptLibrarySheetContent(
-    presets: List<PromptPreset>,
-    query: String,
-    onQuery: (String) -> Unit,
-    onApply: (PromptPreset, PresetApplyMode) -> Unit,
-    onDelete: (String) -> Unit,
-    onToggleFavorite: (String) -> Unit,
-    onUpdateMeta: (String, String, String, String) -> Unit,
-    onSaveCurrent: () -> Unit,
-    onSaveWorkflow: () -> Unit,
-    onExport: () -> String,
-    onImport: (String) -> Unit,
-) {
-    val clipboard = LocalClipboardManager.current
-    var applyMode by remember { mutableStateOf(PresetApplyMode.ALL) }
-    var editing by remember { mutableStateOf<PromptPreset?>(null) }
-    var importing by remember { mutableStateOf(false) }
-
-    Column(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(L10n.t("预设库", "Preset Library"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = onSaveCurrent) { Text(L10n.t("存提示词", "Save prompt")) }
-            TextButton(onClick = onSaveWorkflow) { Text(L10n.t("存整套", "Save setup")) }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            PresetModeButton(L10n.t("整套", "All"), applyMode == PresetApplyMode.ALL) { applyMode = PresetApplyMode.ALL }
-            PresetModeButton(L10n.t("仅提示词", "Prompts"), applyMode == PresetApplyMode.PROMPTS) { applyMode = PresetApplyMode.PROMPTS }
-            PresetModeButton(L10n.t("仅参数", "Params"), applyMode == PresetApplyMode.PARAMETERS) { applyMode = PresetApplyMode.PARAMETERS }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            TextButton(onClick = { clipboard.setText(AnnotatedString(onExport())) }) { Text(L10n.t("复制导出 JSON", "Copy export JSON")) }
-            TextButton(onClick = { importing = true }) { Text(L10n.t("导入 JSON", "Import JSON")) }
-        }
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQuery,
-            label = { Text(L10n.t("搜索标题、文件夹、标签、参数", "Search title, folder, tags, values")) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        if (presets.isEmpty()) {
-            Text(
-                L10n.t("还没有匹配的预设", "No matching presets"),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 18.dp),
-            )
-        } else {
-            LazyColumn(Modifier.heightIn(max = 440.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(presets, key = { it.id }) { preset ->
-                    Surface(
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.fillMaxWidth().clickable { onApply(preset, applyMode) },
-                    ) {
-                        Row(Modifier.padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(preset.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                    StatusChip(if (preset.isWorkflowPreset) L10n.t("整套", "SETUP") else L10n.t("提示词", "PROMPT"))
-                                }
-                                if (preset.folder.isNotBlank()) {
-                                    Text("⌂ ${preset.folder}", fontFamily = Mono, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                }
-                                Text(
-                                    preset.prompts.firstOrNull()?.value ?: preset.values.values.firstOrNull().orEmpty(),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                if (preset.tags.isNotEmpty()) {
-                                    Text(preset.tags.joinToString(" · "), fontFamily = Mono, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                preset.lastUsedAt?.let {
-                                    Text(L10n.t("最近使用", "RECENT"), fontFamily = Mono, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                }
-                            }
-                            TextButton(onClick = { editing = preset }) { Text(L10n.t("编辑", "Edit")) }
-                            TextButton(onClick = { onToggleFavorite(preset.id) }) {
-                                Text(if (preset.favorite) "★" else "☆", color = if (preset.favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            IconButton(onClick = { onDelete(preset.id) }) {
-                                Icon(Icons.Default.Delete, L10n.t("删除", "Delete"), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    editing?.let { preset ->
-        var title by remember(preset.id) { mutableStateOf(preset.title) }
-        var tags by remember(preset.id) { mutableStateOf(preset.tags.joinToString(", ")) }
-        var folder by remember(preset.id) { mutableStateOf(preset.folder) }
-        AlertDialog(
-            onDismissRequest = { editing = null },
-            title = { Text(L10n.t("编辑预设", "Edit preset")) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(title, { title = it }, label = { Text(L10n.t("名称", "Title")) }, singleLine = true)
-                    OutlinedTextField(folder, { folder = it }, label = { Text(L10n.t("文件夹 / 分类", "Folder / category")) }, singleLine = true)
-                    OutlinedTextField(tags, { tags = it }, label = { Text(L10n.t("标签，用逗号分隔", "Tags, comma separated")) }, singleLine = true)
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onUpdateMeta(preset.id, title, tags, folder)
-                    editing = null
-                }) { Text(L10n.t("保存", "Save")) }
-            },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text(L10n.t("取消", "Cancel")) } },
-        )
-    }
-
-    if (importing) {
-        var raw by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { importing = false },
-            title = { Text(L10n.t("导入预设 JSON", "Import preset JSON")) },
-            text = { OutlinedTextField(raw, { raw = it }, minLines = 8, maxLines = 14, modifier = Modifier.fillMaxWidth()) },
-            confirmButton = {
-                TextButton(onClick = { onImport(raw); importing = false }, enabled = raw.isNotBlank()) { Text(L10n.t("导入", "Import")) }
-            },
-            dismissButton = { TextButton(onClick = { importing = false }) { Text(L10n.t("取消", "Cancel")) } },
-        )
-    }
-}
-
-@Composable
-private fun PresetModeButton(text: String, selected: Boolean, onClick: () -> Unit) {
-    if (selected) {
-        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.primaryContainer) {
-            Text(text, modifier = Modifier.clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.onPrimaryContainer)
-        }
-    } else {
-        OutlinedButton(onClick = onClick) { Text(text) }
-    }
 }
 
 @Composable
@@ -347,26 +190,33 @@ private fun CompareImage(result: ResultImage, modifier: Modifier) {
     val bitmap by produceState<Bitmap?>(null, result.localPath) {
         value = withContext(Dispatchers.IO) { decodeSampled(result.localPath, 1600) }
     }
-    if (bitmap != null) Image(bitmap!!.asImageBitmap(), null, modifier, contentScale = ContentScale.Fit)
+    val loaded = bitmap
+    if (loaded != null) Image(loaded.asImageBitmap(), null, modifier, contentScale = ContentScale.Fit)
     else Box(modifier, contentAlignment = Alignment.Center) { CircularProgressIndicator() }
 }
 
+/** Full-screen side-by-side comparison. Black backdrop like the media viewer. */
 @Composable
 fun CompareDialog(results: List<ResultImage>, onDismiss: () -> Unit) {
     if (results.size < 2) return
     var a by remember { mutableStateOf(0) }
     var b by remember { mutableStateOf(1) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxSize().background(Color(0xFF0A0A0C))) {
-            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(L10n.t("A/B 对比", "A/B Compare"), color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, L10n.t("关闭", "Close"), tint = Color.White) }
+        Column(Modifier.fillMaxSize().background(Color.Black)) {
+            Row(Modifier.fillMaxWidth().padding(start = Spacing.gutter, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.gen_compare_title),
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, stringResource(R.string.action_close), tint = Color.White) }
             }
             Row(Modifier.weight(1f).fillMaxWidth()) {
                 CompareImage(results[a.coerceIn(results.indices)], Modifier.weight(1f).fillMaxSize().padding(2.dp))
                 CompareImage(results[b.coerceIn(results.indices)], Modifier.weight(1f).fillMaxSize().padding(2.dp))
             }
-            Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(Modifier.fillMaxWidth().padding(Spacing.md), horizontalArrangement = Arrangement.spacedBy(Spacing.lg)) {
                 ResultPicker("A", a, results.indices) { a = it }
                 ResultPicker("B", b, results.indices) { b = it }
             }
@@ -378,7 +228,7 @@ fun CompareDialog(results: List<ResultImage>, onDismiss: () -> Unit) {
 private fun ResultPicker(label: String, value: Int, indices: IntRange, onChange: (Int) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton(onClick = { expanded = true }) { Text("$label: ${value + 1}") }
+        IrisChip(label = "$label: ${value + 1}", selected = false, onClick = { expanded = true }, leadingIcon = Icons.Outlined.ExpandMore)
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             indices.forEach { index ->
                 DropdownMenuItem(text = { Text("${index + 1}") }, onClick = { onChange(index); expanded = false })
@@ -390,48 +240,65 @@ private fun ResultPicker(label: String, value: Int, indices: IntRange, onChange:
 @Composable
 fun ParamField(field: PromptField, value: String, onChange: (String) -> Unit) {
     when (field.ptype) {
-        "bool" -> Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(value.equals("true", true), { onChange(if (it) "true" else "false") })
-            Text(field.label)
+        "bool" -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(field.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            IrisSwitch(checked = value.equals("true", true), onCheckedChange = { onChange(if (it) "true" else "false") })
         }
         "combo" -> {
             var expanded by remember { mutableStateOf(false) }
-            Box {
-                OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text(value.ifBlank { L10n.t("选择…", "Choose…") }, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
-                    Text("▾")
-                }
-                DropdownMenu(expanded, { expanded = false }) {
-                    field.options.forEach { option ->
-                        DropdownMenuItem(text = { Text(option) }, onClick = { onChange(option); expanded = false })
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(field.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Box {
+                    val shape = MaterialTheme.shapes.medium
+                    Surface(
+                        shape = shape,
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier.fillMaxWidth().clip(shape).clickable(role = Role.Button) { expanded = true },
+                    ) {
+                        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                value.ifBlank { stringResource(R.string.gen_choose) },
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (value.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Icon(Icons.Outlined.ExpandMore, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    DropdownMenu(expanded, { expanded = false }) {
+                        field.options.forEach { option ->
+                            DropdownMenuItem(text = { Text(option) }, onClick = { onChange(option); expanded = false })
+                        }
                     }
                 }
             }
-            Text(field.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        else -> OutlinedTextField(
-            value = value,
-            onValueChange = {
-                when (field.ptype) {
-                    "int" -> onChange(it.filter { c -> c.isDigit() || c == '-' })
-                    "float" -> onChange(it.filter { c -> c.isDigit() || c == '-' || c == '.' })
-                    else -> onChange(it)
-                }
-            },
-            label = { Text(field.label) },
-            supportingText = {
-                val range = listOfNotNull(field.min, field.max)
-                if (range.isNotEmpty()) Text(range.joinToString(" – "))
-            },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = when (field.ptype) {
-                    "int" -> KeyboardType.Number
-                    "float" -> KeyboardType.Decimal
-                    else -> KeyboardType.Text
-                }
-            ),
-            modifier = Modifier.fillMaxWidth(),
-        )
+        else -> {
+            val range = listOfNotNull(field.min, field.max)
+            IrisTextField(
+                value = value,
+                onValueChange = {
+                    when (field.ptype) {
+                        "int" -> onChange(it.filter { c -> c.isDigit() || c == '-' })
+                        "float" -> onChange(it.filter { c -> c.isDigit() || c == '-' || c == '.' })
+                        else -> onChange(it)
+                    }
+                },
+                label = field.label,
+                supportingText = range.takeIf { it.isNotEmpty() }?.joinToString(" – "),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = when (field.ptype) {
+                        "int" -> KeyboardType.Number
+                        "float" -> KeyboardType.Decimal
+                        else -> KeyboardType.Text
+                    }
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }

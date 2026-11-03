@@ -5,7 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.comfyremote.app.AiSkillDef
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.data.repository.AiSettings
-import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.R
+import com.comfyremote.app.ui.AppStrings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -68,21 +69,21 @@ class AiSettingsViewModel(private val container: AppContainer) : ViewModel() {
             model = _state.value.settings.model.trim(),
         )
         container.aiSettingsStore.save(s)
-        _state.update { it.copy(settings = s, message = L10n.t("AI 设置已保存", "AI settings saved")) }
+        _state.update { it.copy(settings = s, message = AppStrings.get(R.string.ai_saved)) }
     }
 
     fun test() {
         if (_state.value.testing) return
         val settings = _state.value.settings
         if (!settings.configured) {
-            _state.update { it.copy(testResult = L10n.t("请先填写 Base URL、API Key 和模型", "Fill Base URL, API Key and model first")) }
+            _state.update { it.copy(testResult = AppStrings.get(R.string.ai_fill_first)) }
             return
         }
         _state.update { it.copy(testing = true, testResult = null) }
         viewModelScope.launch {
             runCatching { container.aiRepository.test(settings) }
-                .onSuccess { reply -> _state.update { it.copy(testing = false, testResult = L10n.t("成功：", "OK: ") + reply.take(80)) } }
-                .onFailure { e -> _state.update { it.copy(testing = false, testResult = L10n.t("失败：", "Failed: ") + (e.message ?: "error").take(200)) } }
+                .onSuccess { reply -> _state.update { it.copy(testing = false, testResult = AppStrings.get(R.string.ai_test_ok, reply.take(80))) } }
+                .onFailure { e -> _state.update { it.copy(testing = false, testResult = AppStrings.get(R.string.ai_test_failed, (e.message ?: "error").take(200))) } }
         }
     }
 

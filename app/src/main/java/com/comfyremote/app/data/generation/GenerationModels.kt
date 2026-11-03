@@ -2,6 +2,8 @@ package com.comfyremote.app.data.generation
 
 import android.graphics.Bitmap
 import com.comfyremote.app.ComfyException
+import com.comfyremote.app.R
+import com.comfyremote.app.ui.AppStrings
 import com.comfyremote.app.PromptField
 import org.json.JSONObject
 import java.util.UUID
@@ -95,24 +97,24 @@ data class GenerationTask(
 }
 
 fun GenerationTask.label(): String {
-    if (localPending) return com.comfyremote.app.ui.L10n.t("本地等待", "Local queue")
+    if (localPending) return AppStrings.get(R.string.phase_local_pending)
     return when (phase) {
-        GenerationPhase.PREPARING -> com.comfyremote.app.ui.L10n.t("准备中", "Preparing")
-        GenerationPhase.QUEUEING, GenerationPhase.QUEUED -> com.comfyremote.app.ui.L10n.t("排队中", "Queued")
-        GenerationPhase.RUNNING -> com.comfyremote.app.ui.L10n.t("生成中", "Running")
-        GenerationPhase.CANCELLING -> com.comfyremote.app.ui.L10n.t("取消中", "Cancelling")
-        GenerationPhase.CANCELLED -> com.comfyremote.app.ui.L10n.t("已取消", "Cancelled")
-        GenerationPhase.SUCCEEDED -> com.comfyremote.app.ui.L10n.t("完成", "Done")
-        GenerationPhase.FAILED -> com.comfyremote.app.ui.L10n.t("失败", "Failed")
+        GenerationPhase.PREPARING -> AppStrings.get(R.string.phase_preparing)
+        GenerationPhase.QUEUEING, GenerationPhase.QUEUED -> AppStrings.get(R.string.phase_queued)
+        GenerationPhase.RUNNING -> AppStrings.get(R.string.phase_running)
+        GenerationPhase.CANCELLING -> AppStrings.get(R.string.phase_cancelling)
+        GenerationPhase.CANCELLED -> AppStrings.get(R.string.phase_cancelled)
+        GenerationPhase.SUCCEEDED -> AppStrings.get(R.string.phase_succeeded)
+        GenerationPhase.FAILED -> AppStrings.get(R.string.phase_failed)
     }
 }
 
 fun GenerationError.uiLabel(): String = when (kind) {
-    ErrorKind.EXECUTION -> com.comfyremote.app.ui.L10n.t("执行错误", "Execution error")
-    ErrorKind.CONNECTION -> com.comfyremote.app.ui.L10n.t("连接错误", "Connection error")
-    ErrorKind.PROMPT_VALIDATION -> com.comfyremote.app.ui.L10n.t("参数校验失败", "Validation failed")
-    ErrorKind.TIMEOUT -> com.comfyremote.app.ui.L10n.t("等待超时", "Timed out")
-    ErrorKind.DOWNLOAD -> com.comfyremote.app.ui.L10n.t("下载失败", "Download failed")
-    ErrorKind.CANCELLED -> com.comfyremote.app.ui.L10n.t("已取消", "Cancelled")
-    ErrorKind.UNKNOWN -> com.comfyremote.app.ui.L10n.t("未知错误", "Unknown error")
+    ErrorKind.EXECUTION -> AppStrings.get(R.string.error_execution)
+    ErrorKind.CONNECTION -> AppStrings.get(R.string.error_connection)
+    ErrorKind.PROMPT_VALIDATION -> AppStrings.get(R.string.error_validation)
+    ErrorKind.TIMEOUT -> AppStrings.get(R.string.error_timeout)
+    ErrorKind.DOWNLOAD -> AppStrings.get(R.string.error_download)
+    ErrorKind.CANCELLED -> AppStrings.get(R.string.error_cancelled)
+    ErrorKind.UNKNOWN -> AppStrings.get(R.string.error_unknown)
 }

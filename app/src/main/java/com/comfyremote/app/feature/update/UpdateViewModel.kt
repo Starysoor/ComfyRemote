@@ -4,7 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.GhRelease
-import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.R
+import com.comfyremote.app.ui.AppStrings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,7 +38,7 @@ class UpdateViewModel(private val container: AppContainer) : ViewModel() {
         if (_state.value.checking || _state.value.downloading) return
         val token = _state.value.token.trim().ifBlank { null }
         container.updateSettingsStore.saveGhToken(token)
-        _state.update { it.copy(checking = true, status = L10n.t("正在检查…", "Checking…"), isError = false) }
+        _state.update { it.copy(checking = true, status = AppStrings.get(R.string.update_status_checking), isError = false) }
         viewModelScope.launch {
             runCatching { container.updateRepository.latest(token) }
                 .onSuccess { release ->
@@ -49,7 +50,7 @@ class UpdateViewModel(private val container: AppContainer) : ViewModel() {
                             it.copy(
                                 checking = false,
                                 release = null,
-                                status = L10n.t("已是最新版本", "Already up to date"),
+                                status = AppStrings.get(R.string.update_up_to_date),
                             )
                         }
                     }
@@ -58,7 +59,7 @@ class UpdateViewModel(private val container: AppContainer) : ViewModel() {
                     _state.update {
                         it.copy(
                             checking = false,
-                            status = L10n.t("检查失败：", "Check failed: ") + (e.message ?: "error").take(200),
+                            status = AppStrings.get(R.string.update_check_failed, (e.message ?: "error").take(200)),
                             isError = true,
                         )
                     }
@@ -83,7 +84,7 @@ class UpdateViewModel(private val container: AppContainer) : ViewModel() {
                 _state.update {
                     it.copy(
                         downloading = false,
-                        status = L10n.t("下载失败：", "Download failed: ") + (e.message ?: "error").take(200),
+                        status = AppStrings.get(R.string.update_download_failed, (e.message ?: "error").take(200)),
                         isError = true,
                     )
                 }

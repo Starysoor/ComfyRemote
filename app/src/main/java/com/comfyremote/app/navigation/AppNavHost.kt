@@ -1,20 +1,40 @@
 package com.comfyremote.app.navigation
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Pending
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.material.icons.outlined.Pending
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import com.comfyremote.app.R
+import com.comfyremote.app.ui.components.IrisDivider
+import com.comfyremote.app.ui.components.LocalShellOwnsBottomInset
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -57,7 +77,6 @@ import com.comfyremote.app.feature.update.UpdateScreen
 import com.comfyremote.app.feature.update.UpdateViewModel
 import com.comfyremote.app.feature.workflows.WorkflowsScreen
 import com.comfyremote.app.feature.workflows.WorkflowsViewModel
-import com.comfyremote.app.ui.L10n
 import kotlinx.coroutines.launch
 
 @Composable
@@ -66,7 +85,10 @@ fun ComfyRemoteRoot(container: AppContainer) {
     val appViewModel: AppViewModel = viewModel(factory = factory)
     val appState by appViewModel.state.collectAsState()
     if (!appState.ready) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        Box(
+            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+            contentAlignment = Alignment.Center,
+        ) { CircularProgressIndicator(color = MaterialTheme.colorScheme.primary) }
         return
     }
     AppNavHost(
@@ -118,11 +140,20 @@ private fun AppNavHost(
         }
     }
 
-    Scaffold(bottomBar = { if (showBottom) MainBottomBar(navController, route) }) { outerPadding ->
+    // The shell draws edge-to-edge; each screen's IrisScaffold handles the status
+    // bar, and the bottom inset belongs to whichever bar is at the bottom.
+    Scaffold(
+        bottomBar = { if (showBottom) MainBottomBar(navController, route) },
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0),
+    ) { outerPadding ->
+        CompositionLocalProvider(LocalShellOwnsBottomInset provides showBottom) {
         NavHost(
             navController = navController,
             startDestination = startDestination,
-            modifier = Modifier.padding(outerPadding),
+            modifier = Modifier.padding(outerPadding).consumeWindowInsets(outerPadding),
+            enterTransition = { fadeIn(tween(180)) },
+            exitTransition = { fadeOut(tween(120)) },
         ) {
             composable(Routes.CONNECT) {
                 val vm: ConnectViewModel = viewModel(factory = factory)
@@ -237,36 +268,47 @@ private fun AppNavHost(
                 UpdateScreen(vm) { navController.popBackStack() }
             }
         }
+        }
     }
 }
 
+private data class TopLevelDestination(
+    val route: String,
+    val label: Int,
+    val icon: ImageVector,
+    val selectedIcon: ImageVector,
+)
+
+private val TopLevelDestinations = listOf(
+    TopLevelDestination(Routes.CREATE, R.string.nav_create, Icons.Outlined.AutoAwesome, Icons.Filled.AutoAwesome),
+    TopLevelDestination(Routes.TASKS, R.string.nav_tasks, Icons.Outlined.Pending, Icons.Filled.Pending),
+    TopLevelDestination(Routes.HISTORY, R.string.nav_results, Icons.Outlined.PhotoLibrary, Icons.Filled.PhotoLibrary),
+    TopLevelDestination(Routes.STORYBOARD, R.string.nav_board, Icons.Outlined.Movie, Icons.Filled.Movie),
+)
+
 @Composable
 private fun MainBottomBar(navController: NavHostController, current: String?) {
-    NavigationBar {
-        NavigationBarItem(
-            selected = current == Routes.CREATE,
-            onClick = { navigateTopLevel(navController, Routes.CREATE) },
-            icon = { Icon(Icons.Default.Add, null) },
-            label = { Text(L10n.t("创作", "Create")) },
-        )
-        NavigationBarItem(
-            selected = current == Routes.TASKS,
-            onClick = { navigateTopLevel(navController, Routes.TASKS) },
-            icon = { Icon(Icons.Default.Done, null) },
-            label = { Text(L10n.t("任务", "Tasks")) },
-        )
-        NavigationBarItem(
-            selected = current == Routes.HISTORY,
-            onClick = { navigateTopLevel(navController, Routes.HISTORY) },
-            icon = { Icon(Icons.AutoMirrored.Filled.List, null) },
-            label = { Text(L10n.t("结果", "Results")) },
-        )
-        NavigationBarItem(
-            selected = current == Routes.STORYBOARD,
-            onClick = { navigateTopLevel(navController, Routes.STORYBOARD) },
-            icon = { Icon(Icons.Default.PlayArrow, null) },
-            label = { Text(L10n.t("分镜", "Board")) },
-        )
+    val scheme = MaterialTheme.colorScheme
+    Column {
+        IrisDivider()
+        NavigationBar(containerColor = scheme.surfaceContainerLow, tonalElevation = 0.dp) {
+            TopLevelDestinations.forEach { dest ->
+                val selected = current == dest.route
+                NavigationBarItem(
+                    selected = selected,
+                    onClick = { navigateTopLevel(navController, dest.route) },
+                    icon = { Icon(if (selected) dest.selectedIcon else dest.icon, null) },
+                    label = { Text(stringResource(dest.label), style = MaterialTheme.typography.labelMedium) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = scheme.onPrimaryContainer,
+                        selectedTextColor = scheme.onSurface,
+                        indicatorColor = scheme.primaryContainer,
+                        unselectedIconColor = scheme.onSurfaceVariant,
+                        unselectedTextColor = scheme.onSurfaceVariant,
+                    ),
+                )
+            }
+        }
     }
 }
 

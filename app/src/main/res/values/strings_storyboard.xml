@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Board list -->
+    <string name="board_title">Storyboard</string>
+    <string name="board_subtitle">Multi-shot cloud video projects · %1$d</string>
+    <string name="board_new">New storyboard</string>
+    <string name="board_empty_title">No storyboards yet</string>
+    <string name="board_empty_detail">Chain cloud video shots; the previous last frame becomes the next reference</string>
+
+    <!-- Board detail -->
+    <string name="board_not_found">Storyboard not found</string>
+    <string name="board_delete_project">Delete project</string>
+    <plurals name="board_progress">
+        <item quantity="one">%1$d / %2$d shot done</item>
+        <item quantity="other">%1$d / %2$d shots done</item>
+    </plurals>
+    <string name="board_style_prompt">Shared style prompt (prefixed to every shot)</string>
+    <string name="board_all_done">All shots are done</string>
+    <string name="board_next_shot">Generate next shot</string>
+    <string name="board_add_shot">Add shot</string>
+    <string name="board_shots">Shots</string>
+    <string name="board_no_shots">No shots yet</string>
+    <string name="board_no_shots_detail">Add the first shot prompt</string>
+    <string name="board_shot_number">SHOT %1$d</string>
+    <string name="board_empty_shot">(empty shot)</string>
+    <string name="board_regenerate">Regenerate</string>
+    <string name="board_prepare">Prepare</string>
+    <string name="board_reference">Reference</string>
+    <string name="board_result">Result</string>
+    <string name="board_reference_from_previous">Previous shot\'s last frame</string>
+    <string name="board_chain_next">Last frame → reference for shot %1$d</string>
+
+    <!-- Shot status -->
+    <string name="board_status_done">DONE</string>
+    <string name="board_status_running">RUNNING</string>
+    <string name="board_status_failed">FAILED</string>
+    <string name="board_status_draft">DRAFT</string>
+
+    <!-- Dialogs -->
+    <string name="board_field_title">Title</string>
+    <string name="board_field_style_optional">Shared style prompt (optional)</string>
+    <string name="board_choose_workflow">Choose cloud video workflow</string>
+    <string name="board_create">Create</string>
+    <string name="board_shot_prompt">Shot prompt</string>
+    <string name="board_add">Add</string>
+
+    <!-- ViewModel messages -->
+    <string name="board_err_choose_workflow">Choose a cloud video workflow</string>
+    <string name="board_err_empty_prompt">Shot prompt cannot be empty</string>
+    <string name="board_err_no_result">Task finished without a result</string>
+    <string name="board_err_generation_failed">Generation failed</string>
+</resources>

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Result library -->
+    <plurals name="history_count">
+        <item quantity="one">%1$d result</item>
+        <item quantity="other">%1$d results</item>
+    </plurals>
+    <string name="history_selected">Selected %1$d</string>
+    <string name="history_select_all">All</string>
+    <string name="history_select">Select</string>
+    <string name="history_search">Search results, prompts, tags, seed</string>
+    <string name="history_favorites">Favorites</string>
+    <string name="history_empty">No generations yet</string>
+    <string name="history_no_match">No matching results</string>
+    <string name="history_favorite">Favorite</string>
+    <string name="history_unfavorite">Unfavorite</string>
+    <string name="history_video">VIDEO</string>
+    <string name="history_audio">AUDIO</string>
+
+    <!-- Detail -->
+    <string name="history_copied">Copied</string>
+    <string name="history_continue_ref">Continue as reference</string>
+    <string name="history_make_video">Make video</string>
+    <string name="history_prompts">Prompts</string>
+    <string name="history_copy_all">Copy all</string>
+    <string name="history_copy_seed">Copy seed</string>
+    <string name="history_tags_hint">Tags, comma separated</string>
+    <string name="history_reuse_params">Reuse parameters</string>
+    <string name="history_save_prompt">Save prompt</string>
+    <string name="history_save_tags">Save tags</string>
+
+    <!-- Messages -->
+    <string name="history_msg_saved_preset">Saved to preset library</string>
+    <string name="history_msg_need_video_wf">Set a default cloud video workflow in Settings</string>
+    <string name="history_cloud_video">Cloud video</string>
+</resources>

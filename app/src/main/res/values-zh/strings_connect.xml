@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 连接 / 服务器管理 -->
+    <string name="connect_tagline">灵瞳 · 一眸万象</string>
+    <string name="connect_tagline_detail">本地 ComfyUI · 云端模型 · 图像与视频</string>
+    <string name="connect_servers">服务器</string>
+    <string name="connect_server_address">服务器地址</string>
+    <string name="connect_server_address_hint">局域网 / Tailscale 地址，ComfyUI 需允许远程监听</string>
+    <string name="connect_connect">连接</string>
+    <string name="connect_connecting">连接中…</string>
+    <string name="connect_saved">已保存</string>
+    <string name="connect_cloud_only">跳过本地连接，仅使用云端模型</string>
+    <string name="connect_find_nearby">查找附近的 ComfyUI</string>
+    <string name="connect_scanning">扫描局域网…</string>
+    <string name="connect_found">发现 ComfyUI</string>
+    <string name="connect_manage_server">管理服务器</string>
+    <string name="connect_alias">别名</string>
+
+    <!-- 消息 -->
+    <string name="connect_failed">连接失败：%1$s</string>
+    <string name="connect_scan_none">未发现 ComfyUI（确认手机与电脑在同一 Wi-Fi）</string>
+    <string name="connect_not_on_wifi">无法确定 Wi-Fi 网段（未连接或使用流量）</string>
+</resources>

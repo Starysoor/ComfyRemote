@@ -6,7 +6,8 @@ import com.comfyremote.app.AppContainer
 import com.comfyremote.app.ServerEntry
 import com.comfyremote.app.data.discovery.DiscoveryEvent
 import com.comfyremote.app.data.repository.ServerSession
-import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.R
+import com.comfyremote.app.ui.AppStrings
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -75,7 +76,7 @@ class ConnectViewModel(private val container: AppContainer) : ViewModel() {
                 _state.update {
                     it.copy(
                         connecting = false,
-                        error = L10n.t("连接失败：", "Connection failed: ") + (e.message ?: "error")
+                        error = AppStrings.get(R.string.connect_failed, e.message ?: "error")
                     )
                 }
             }
@@ -104,10 +105,7 @@ class ConnectViewModel(private val container: AppContainer) : ViewModel() {
                         it.copy(
                             scanning = false,
                             scanError = it.scanError ?: if (it.scanFound.isEmpty()) {
-                                L10n.t(
-                                    "未发现 ComfyUI（确认手机与电脑在同一 Wi-Fi）",
-                                    "No ComfyUI found - check that both devices are on the same Wi-Fi"
-                                )
+                                AppStrings.get(R.string.connect_scan_none)
                             } else null
                         )
                     }
@@ -123,10 +121,7 @@ class ConnectViewModel(private val container: AppContainer) : ViewModel() {
     fun removeServer(url: String) = container.serverRepository.remove(url)
 
     private fun discoveryError(code: String): String = when (code) {
-        "not-on-wifi" -> L10n.t(
-            "无法确定 Wi-Fi 网段（未连接或使用流量）",
-            "Unknown subnet - not on Wi-Fi"
-        )
+        "not-on-wifi" -> AppStrings.get(R.string.connect_not_on_wifi)
         else -> code
     }
 }

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ai_title">AI settings</string>
+    <string name="ai_intro">Works with OpenAI-compatible /chat/completions endpoints</string>
+    <string name="ai_quick_providers">Quick providers</string>
+    <string name="ai_group_endpoint">Endpoint</string>
+    <string name="ai_base_url">Base URL</string>
+    <string name="ai_api_key">API Key</string>
+    <string name="ai_model">Model</string>
+    <string name="ai_vision_model">Vision model (image rewrite)</string>
+    <string name="ai_vision_model_hint">Blank reuses the model above; must accept image_url input</string>
+    <string name="ai_advanced">Advanced</string>
+    <string name="ai_temperature">Temperature</string>
+    <string name="ai_max_tokens">Max tokens</string>
+    <string name="ai_thinking">Thinking mode</string>
+    <string name="ai_extra_json">Extra JSON</string>
+    <string name="ai_thinking_default">Model default</string>
+    <string name="ai_thinking_glm_off">GLM · thinking off</string>
+    <string name="ai_thinking_glm_on">GLM · thinking on</string>
+    <string name="ai_thinking_reasoning">reasoning: %1$s</string>
+
+    <!-- Skills -->
+    <string name="ai_skills_title">Prompt skills (%1$d)</string>
+    <string name="ai_skill_new">New</string>
+    <string name="ai_skills_hint">Skills can be bound to workflow name/path keywords; blank means available everywhere.</string>
+    <string name="ai_builtin">BUILT-IN</string>
+    <string name="ai_all_workflows">All workflows</string>
+    <string name="ai_skill_new_title">New skill</string>
+    <string name="ai_skill_edit_title">Edit skill</string>
+    <string name="ai_skill_label">Label</string>
+    <string name="ai_skill_patterns">Workflow keywords (comma separated)</string>
+    <string name="ai_skill_patterns_hint">Blank = all workflows</string>
+    <string name="ai_skill_prompt">System prompt</string>
+    <string name="ai_reset">Reset</string>
+
+    <!-- Test / save -->
+    <string name="ai_test">Test</string>
+    <string name="ai_testing">Testing…</string>
+    <string name="ai_saved">AI settings saved</string>
+    <string name="ai_fill_first">Fill Base URL, API Key and model first</string>
+    <string name="ai_test_ok">OK: %1$s</string>
+    <string name="ai_test_failed">Failed: %1$s</string>
+</resources>

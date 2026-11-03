@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 设置首页 -->
+    <string name="settings_app">应用与界面</string>
+    <string name="settings_app_detail">主题、紧凑布局、最近结果数量、创作默认值</string>
+    <string name="settings_servers">服务器</string>
+    <string name="settings_servers_detail">连接、保存地址、局域网发现</string>
+    <string name="settings_ai">AI 提示词</string>
+    <string name="settings_ai_detail">模型、看图改写、API Key、Skills</string>
+    <string name="settings_cloud">云端服务</string>
+    <string name="settings_cloud_detail">AutoDL Token、默认视频工作流</string>
+    <string name="settings_update">软件更新</string>
+    <string name="settings_update_detail">检查并安装 GitHub Release</string>
+    <string name="settings_version">版本</string>
+    <string name="settings_version_value">Iris · v%1$s</string>
+
+    <!-- 应用与界面 -->
+    <string name="settings_group_appearance">外观</string>
+    <string name="settings_theme">主题</string>
+    <string name="settings_theme_detail">浅色、深色或跟随系统</string>
+    <string name="settings_theme_system">跟随系统</string>
+    <string name="settings_theme_light">浅色</string>
+    <string name="settings_theme_dark">深色</string>
+    <string name="settings_compact">紧凑界面</string>
+    <string name="settings_compact_detail">减少卡片留白，让列表显示更多内容</string>
+    <string name="settings_recent_results">最近结果数量</string>
+    <string name="settings_recent_results_detail">创作页显示最近结果的数量（0–4）</string>
+    <string name="settings_recent_presets">最近预设数量</string>
+    <string name="settings_recent_presets_detail">创作页显示最近整套预设的数量（0–4）</string>
+    <string name="settings_server_workspace">显示服务器工作台</string>
+    <string name="settings_server_workspace_detail">在创作页顶部显示服务器切换条</string>
+    <string name="settings_group_detail_sections">详情页折叠状态</string>
+    <string name="settings_notes_expanded">默认展开工作流说明</string>
+    <string name="settings_notes_expanded_detail">MarkdownNote 说明是否默认展开</string>
+    <string name="settings_advanced_expanded">默认展开高级参数</string>
+    <string name="settings_advanced_expanded_detail">步数、CFG、采样器等高级参数是否默认展开</string>
+    <string name="settings_group_creation">创作默认值</string>
+    <string name="settings_batch_count">默认批量数量</string>
+    <string name="settings_batch_count_detail">新工作流默认生成几张（1–16）</string>
+    <string name="settings_local_queue">默认使用本地队列</string>
+    <string name="settings_local_queue_detail">批量任务逐个发送，避免塞满服务器</string>
+    <string name="settings_random_seed">默认随机种子</string>
+    <string name="settings_random_seed_detail">关闭后保留工作流内的 seed</string>
+    <string name="settings_auto_save">自动保存草稿</string>
+    <string name="settings_auto_save_detail">按工作流与服务器记住上次填写的参数</string>
+    <string name="settings_max_upload">上传图片最大边长</string>
+    <string name="settings_max_upload_detail">大于该边长的参考图会等比压缩</string>
+    <string name="settings_px">%1$s px</string>
+    <string name="settings_group_cloud_submit">云端提交</string>
+    <string name="settings_confirm_cloud">提交前确认费用</string>
+    <string name="settings_confirm_cloud_detail">显示预计平台计价并二次确认，避免误扣费</string>
+    <string name="settings_group_tasks">任务与通知</string>
+    <string name="settings_notify">完成后通知</string>
+    <string name="settings_notify_detail">生成完成、失败或取消时发系统通知</string>
+    <string name="settings_group_storage">存储</string>
+    <string name="settings_cloud_input_cache">云端输入图片缓存</string>
+    <string name="settings_cloud_input_cache_detail">清除云端工作流使用的参考图副本</string>
+    <string name="settings_apply_immediately">IRIS · 设置即时生效</string>
+
+    <!-- 云端服务 -->
+    <string name="settings_cloud_autodl">AutoDL.Art</string>
+    <string name="settings_cloud_hosted">托管 ComfyUI 工作流</string>
+    <string name="settings_cloud_ready">已配置</string>
+    <string name="settings_cloud_no_token">未配置</string>
+    <string name="settings_cloud_token_hint">Token 在 autodl.art/large-model/tokens 创建，分组必须选择 ComfyUI。调用按次计费。</string>
+    <string name="settings_cloud_token_label">AutoDL Token</string>
+    <string name="settings_cloud_save_token">保存 Token</string>
+    <string name="settings_cloud_refresh">刷新目录</string>
+    <plurals name="settings_cloud_found">
+        <item quantity="other">已发现 %1$d 个视频工作流</item>
+    </plurals>
+    <string name="settings_cloud_audio_note">云端目录同时包含音频/TTS 工作流，可在创作页切换</string>
+    <string name="settings_cloud_default_video">默认视频工作流</string>
+    <string name="settings_cloud_default_video_detail">在结果页点“生成视频”时使用。输入图片会自动作为首帧/参考图传给云端。</string>
+    <string name="settings_cloud_choose_workflow">选择工作流</string>
+    <string name="settings_cloud_spend">本地预估消耗</string>
+    <string name="settings_cloud_spend_units">累计平台单位</string>
+    <string name="settings_cloud_spend_count">提交次数</string>
+    <string name="settings_cloud_spend_note">仅本地预估，不是账单；实际扣费以 AutoDL 为准。</string>
+    <string name="settings_cloud_spend_clear">清除预估</string>
+    <string name="settings_cloud_cache">缓存</string>
+    <string name="settings_cloud_clear_refs">清除云端参考图副本</string>
+    <string name="settings_cloud_token_saved">AutoDL Token 已保存</string>
+    <string name="settings_cloud_catalog_failed">读取云端目录失败：%1$s</string>
+    <string name="settings_cloud_inputs_cleared">云端输入缓存已清除</string>
+    <string name="settings_cloud_spend_cleared">本地预估消耗已清除</string>
+</resources>

@@ -10,7 +10,8 @@ import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.repository.PromptPreset
 import com.comfyremote.app.data.repository.ServerHealth
 import com.comfyremote.app.data.repository.ServerSession
-import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.R
+import com.comfyremote.app.ui.AppStrings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -163,7 +164,7 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                     _state.update {
                         it.copy(
                             cloudLoading = false,
-                            cloudError = L10n.t("获取云端工作流失败：", "Failed to load cloud workflows: ") + (e.message ?: "error"),
+                            cloudError = AppStrings.get(R.string.wf_err_cloud_load, e.message ?: "error"),
                             autoDlConfigured = container.autoDlRepository.configured(),
                         )
                     }
@@ -191,7 +192,7 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                     container.serverRepository.remember(url)
                     container.serverRepository.saveLastUrl(url)
                     _state.update { state ->
-                        state.copy(source = WorkflowSource.LOCAL, message = L10n.t("已切换服务器", "Server switched"))
+                        state.copy(source = WorkflowSource.LOCAL, message = AppStrings.get(R.string.wf_server_switched))
                     }
                     refreshServerHealth()
                 }
@@ -199,7 +200,7 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                     _state.update {
                         it.copy(
                             switchingServer = null,
-                            message = L10n.t("切换服务器失败：", "Failed to switch server: ") + (error.message ?: "error"),
+                            message = AppStrings.get(R.string.wf_switch_failed, error.message ?: "error"),
                         )
                     }
                 }
@@ -212,7 +213,7 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
             .minWithOrNull(compareBy<ServerHealth> { it.loadScore + (_state.value.appActiveByServer[it.url] ?: 0) * 100 }
                 .thenBy { it.latencyMs ?: Long.MAX_VALUE })
         if (candidate == null) {
-            _state.update { it.copy(message = L10n.t("没有检测到在线服务器", "No online server detected")) }
+            _state.update { it.copy(message = AppStrings.get(R.string.wf_no_online_server)) }
         } else switchServer(candidate.url)
     }
 
@@ -238,7 +239,7 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                     _state.update {
                         it.copy(
                             loading = false,
-                            error = L10n.t("获取工作流失败：", "Failed to list workflows: ") + (e.message ?: "error")
+                            error = AppStrings.get(R.string.wf_err_list, e.message ?: "error")
                         )
                     }
                 }

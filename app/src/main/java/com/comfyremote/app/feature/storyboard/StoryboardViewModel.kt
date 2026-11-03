@@ -13,7 +13,8 @@ import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.storyboard.StoryboardProject
 import com.comfyremote.app.data.storyboard.StoryboardShot
 import com.comfyremote.app.feature.generate.isVideoPath
-import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.R
+import com.comfyremote.app.ui.AppStrings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,7 +52,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     fun createProject(title: String, workflowId: String, stylePrompt: String): StoryboardProject? {
         val id = workflowId.trim()
         if (id.isBlank()) {
-            _message.value = L10n.t("请选择云端视频工作流", "Choose a cloud video workflow")
+            _message.value = AppStrings.get(R.string.board_err_choose_workflow)
             return null
         }
         return container.storyboardStore.create(title, id, stylePrompt)
@@ -63,7 +64,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
 
     fun addShot(projectId: String, prompt: String) {
         if (prompt.isBlank()) {
-            _message.value = L10n.t("镜头描述不能为空", "Shot prompt cannot be empty")
+            _message.value = AppStrings.get(R.string.board_err_empty_prompt)
             return
         }
         container.storyboardStore.addShot(projectId, prompt)
@@ -143,7 +144,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                     }
                     val resultPath = task.results.firstOrNull()?.localPath
                     if (resultPath == null) {
-                        container.storyboardStore.markFailed(project.id, shot.id, L10n.t("任务完成但没有结果", "Task finished without a result"))
+                        container.storyboardStore.markFailed(project.id, shot.id, AppStrings.get(R.string.board_err_no_result))
                         return@forEach
                     }
                     if (!syncing.add(shot.id)) return@forEach
@@ -160,11 +161,11 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                     container.storyboardStore.markFailed(
                         project.id,
                         shot.id,
-                        task.error?.message ?: L10n.t("生成失败", "Generation failed"),
+                        task.error?.message ?: AppStrings.get(R.string.board_err_generation_failed),
                     )
                 } else if (task.phase == GenerationPhase.CANCELLED) {
                     container.storyboardStore.updateShot(project.id, shot.id) {
-                        it.copy(status = "draft", error = L10n.t("已取消", "Cancelled"))
+                        it.copy(status = "draft", error = AppStrings.get(R.string.phase_cancelled))
                     }
                 }
             }

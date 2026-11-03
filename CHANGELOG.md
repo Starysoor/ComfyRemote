@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.2.0 — 2026-11-03
+
+### Added
+
+- Iris design system: light/dark palettes, typography, surfaces, buttons, chips, inputs, progress and settings components.
+- Edge-to-edge layout with theme-aware system bar contrast.
+- Resource-based localization (`values` + `values-zh`, 452 keys) with plurals for count strings.
+- Redesigned Create, Generate, Tasks, History, Settings, Cloud Settings, AI Settings, Update and Board screens.
+- Verification screenshots under `docs/verification/redesign/`.
+
+### Changed
+
+- Screen code split into focused sections/components; removed the old inline `L10n` helper.
+- `AppStrings` now resolves through application resources (no static Activity/Context).
+- Version `2.2.0` (versionCode 21).
+
+### Fixed
+
+- Count strings now use Android plurals.
+- Removed unused action strings and launcher color resource.
+- Compose modifier parameter/extension warnings.
+- Replaced platform `ExifInterface` with AndroidX, explicit locales for formatted sizes, and removed an obsolete SDK check.
+
 ## 2.1.0 — 2026-11-02
 
 ### Added

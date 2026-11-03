@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_title">软件更新</string>
+    <string name="update_current">当前版本</string>
+    <string name="update_version">v%1$s</string>
+    <string name="update_token">GitHub Token（可选）</string>
+    <string name="update_token_hint">公开仓库无需填写</string>
+    <string name="update_check">检查更新</string>
+    <string name="update_checking">检查中…</string>
+    <string name="update_new_version">新版本</string>
+    <string name="update_release_notes">更新说明</string>
+    <string name="update_download_install">下载并安装</string>
+    <string name="update_copy_link">复制下载链接</string>
+    <string name="update_percent">%1$d%%</string>
+    <string name="update_unknown_apps_note">Android 首次覆盖安装时可能请求“允许安装未知应用”。</string>
+
+    <!-- ViewModel 状态 -->
+    <string name="update_status_checking">正在检查…</string>
+    <string name="update_up_to_date">已是最新版本</string>
+    <string name="update_check_failed">检查失败：%1$s</string>
+    <string name="update_download_failed">下载失败：%1$s</string>
+</resources>

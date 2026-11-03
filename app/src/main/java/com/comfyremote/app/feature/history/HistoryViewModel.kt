@@ -8,7 +8,8 @@ import com.comfyremote.app.HistoryItem
 import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.repository.PromptPreset
-import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.R
+import com.comfyremote.app.ui.AppStrings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -63,7 +64,7 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
                 folder = item.wfName,
             )
         )
-        _message.value = com.comfyremote.app.ui.L10n.t("已加入预设库", "Saved to preset library")
+        _message.value = AppStrings.get(R.string.history_msg_saved_preset)
     }
 
     fun prepareReuse(item: HistoryItem): DraftTransfer? = prepareTransfer(item, null, reproduceSeed = true)
@@ -73,12 +74,12 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
     fun prepareVideo(item: HistoryItem, localPath: String): DraftTransfer? {
         val workflowId = container.appSettingsStore.settings.value.defaultVideoWorkflowId.trim()
         if (workflowId.isBlank()) {
-            _message.value = L10n.t("请先在设置中配置默认云端视频工作流", "Set a default cloud video workflow in Settings")
+            _message.value = AppStrings.get(R.string.history_msg_need_video_wf)
             return null
         }
         val transfer = DraftTransfer(
             workflowPath = AutoDlConfig.PATH_PREFIX + workflowId,
-            workflowName = L10n.t("云端视频", "Cloud video"),
+            workflowName = AppStrings.get(R.string.history_cloud_video),
             values = emptyMap(),
             randomSeed = true,
             serverUrl = null,

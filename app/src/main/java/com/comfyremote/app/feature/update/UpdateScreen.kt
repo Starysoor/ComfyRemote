@@ -3,42 +3,45 @@ package com.comfyremote.app.feature.update
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.R
+import com.comfyremote.app.ui.IrisType
 import com.comfyremote.app.ui.Mono
+import com.comfyremote.app.ui.Spacing
+import com.comfyremote.app.ui.components.BannerTone
+import com.comfyremote.app.ui.components.BottomActionBar
+import com.comfyremote.app.ui.components.DetailTopBar
+import com.comfyremote.app.ui.components.InfoBanner
+import com.comfyremote.app.ui.components.IrisCard
+import com.comfyremote.app.ui.components.IrisDivider
+import com.comfyremote.app.ui.components.IrisPrimaryButton
+import com.comfyremote.app.ui.components.IrisProgressBar
+import com.comfyremote.app.ui.components.IrisScaffold
+import com.comfyremote.app.ui.components.IrisSecondaryButton
+import com.comfyremote.app.ui.components.IrisTextField
+import com.comfyremote.app.ui.components.ScreenContentPadding
+import com.comfyremote.app.ui.components.TextAction
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UpdateScreen(
     viewModel: UpdateViewModel,
@@ -46,59 +49,110 @@ fun UpdateScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val clipboard = LocalClipboardManager.current
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(L10n.t("软件更新", "Software update"), fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back")) } },
-            )
-        }
+    val release = state.release
+
+    IrisScaffold(
+        topBar = { DetailTopBar(title = stringResource(R.string.update_title), onBack = onBack) },
+        bottomBar = if (release == null) null else ({
+            BottomActionBar {
+                IrisPrimaryButton(
+                    text = stringResource(R.string.update_download_install),
+                    onClick = viewModel::downloadAndInstall,
+                    loading = state.downloading,
+                    icon = Icons.Outlined.Download,
+                )
+            }
+        }),
     ) { pad ->
         Column(
-            Modifier.padding(pad).fillMaxSize().imePadding().padding(20.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier
+                .padding(pad)
+                .fillMaxSize()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(ScreenContentPadding),
+            verticalArrangement = Arrangement.spacedBy(Spacing.md),
         ) {
-            Text(L10n.t("当前版本 v", "Current version v") + state.currentVersion, fontFamily = Mono, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedTextField(
-                state.token,
-                viewModel::updateToken,
-                label = { Text(L10n.t("GitHub Token（可选）", "GitHub Token (optional)")) },
-                supportingText = { Text(L10n.t("公开仓库无需填写", "Not needed for a public repository")) },
+            IrisCard {
+                Text(
+                    stringResource(R.string.update_current).uppercase(),
+                    style = IrisType.overline,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    stringResource(R.string.update_version, state.currentVersion),
+                    style = MaterialTheme.typography.headlineSmall.copy(fontFamily = Mono),
+                )
+            }
+
+            IrisTextField(
+                value = state.token,
+                onValueChange = viewModel::updateToken,
+                label = stringResource(R.string.update_token),
+                supportingText = stringResource(R.string.update_token_hint),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedButton(
+            IrisSecondaryButton(
+                text = if (state.checking) stringResource(R.string.update_checking) else stringResource(R.string.update_check),
                 onClick = viewModel::check,
                 enabled = !state.checking && !state.downloading,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-            ) { Text(if (state.checking) L10n.t("检查中…", "Checking…") else L10n.t("检查更新", "Check updates")) }
+                icon = Icons.Outlined.Refresh,
+                height = 48.dp,
+            )
 
-            state.release?.let { release ->
-                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(release.name.ifBlank { release.tag }, fontWeight = FontWeight.Bold)
-                        Text(release.tag, fontFamily = Mono, color = MaterialTheme.colorScheme.primary)
-                        release.notes.takeIf(String::isNotBlank)?.let {
-                            Text(it.take(1600), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()))
+            release?.let { rel ->
+                IrisCard(highlighted = true) {
+                    Text(
+                        stringResource(R.string.update_new_version).uppercase(),
+                        style = IrisType.overline,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(rel.name.ifBlank { rel.tag }, style = MaterialTheme.typography.titleLarge)
+                    Text(rel.tag, style = IrisType.meta, color = MaterialTheme.colorScheme.primary)
+                    rel.notes.takeIf(String::isNotBlank)?.let { notes ->
+                        IrisDivider(Modifier.padding(vertical = Spacing.xs))
+                        Text(
+                            stringResource(R.string.update_release_notes),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            notes.take(1600),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
+                        )
+                    }
+                    if (state.downloading) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                            modifier = Modifier.padding(top = Spacing.xs),
+                        ) {
+                            IrisProgressBar(progress = state.progress ?: 0f, modifier = Modifier.weight(1f))
+                            Text(
+                                stringResource(R.string.update_percent, ((state.progress ?: 0f) * 100).toInt()),
+                                style = IrisType.meta,
+                            )
                         }
-                        if (state.downloading) {
-                            LinearProgressIndicator(progress = { state.progress ?: 0f }, modifier = Modifier.fillMaxWidth())
-                            Text("${((state.progress ?: 0f) * 100).toInt()}%", fontFamily = Mono, style = MaterialTheme.typography.bodySmall)
-                        } else {
-                            Button(onClick = viewModel::downloadAndInstall, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text(L10n.t("下载并安装", "Download & install")) }
-                            TextButton(onClick = { clipboard.setText(AnnotatedString(release.browserUrl)) }) { Text(L10n.t("复制下载链接", "Copy download link")) }
-                        }
+                    } else {
+                        TextAction(
+                            text = stringResource(R.string.update_copy_link),
+                            onClick = { clipboard.setText(AnnotatedString(rel.browserUrl)) },
+                        )
                     }
                 }
             }
+
             state.status?.let {
-                Text(it, color = if (state.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                InfoBanner(text = it, tone = if (state.isError) BannerTone.Error else BannerTone.Info)
             }
-            Spacer(Modifier.height(16.dp))
+
             Text(
-                L10n.t("Android 首次覆盖安装时可能请求“允许安装未知应用”。", "Android may request permission to install unknown apps on the first in-app update."),
+                stringResource(R.string.update_unknown_apps_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Spacing.sm),
             )
         }
     }

@@ -7,7 +7,8 @@ import com.comfyremote.app.AppContainer
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.repository.DraftTransfer
-import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.R
+import com.comfyremote.app.ui.AppStrings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -78,14 +79,14 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
     fun cancelQueued() {
         viewModelScope.launch {
             container.generationManager.cancelQueued(_serverUrl.value)
-            _message.value = L10n.t("已取消当前范围内的排队任务", "Queued tasks cancelled")
+            _message.value = AppStrings.get(R.string.tasks_msg_queued_cancelled)
         }
     }
 
     fun retryFailed() {
         val ids = container.generationManager.retryFailed(_serverUrl.value)
-        _message.value = if (ids.isEmpty()) L10n.t("没有可重试的失败任务", "No failed tasks to retry")
-        else L10n.t("已加入 ${ids.size} 个重试任务", "Queued ${ids.size} retries")
+        _message.value = if (ids.isEmpty()) AppStrings.get(R.string.tasks_msg_no_failed)
+        else AppStrings.plural(R.plurals.tasks_msg_retries_queued, ids.size, ids.size)
     }
 
     fun retry(id: String): String? = container.generationManager.retry(id)
@@ -93,8 +94,8 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
 
     fun recover(id: String): Boolean {
         val ok = container.generationManager.recoverExisting(id)
-        _message.value = if (ok) L10n.t("正在重新连接原任务", "Reconnecting to original task")
-        else L10n.t("这个任务无法恢复", "This task cannot be recovered")
+        _message.value = if (ok) AppStrings.get(R.string.tasks_msg_reconnecting)
+        else AppStrings.get(R.string.tasks_msg_cannot_recover)
         return ok
     }
 

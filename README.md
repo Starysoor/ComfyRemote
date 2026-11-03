@@ -7,12 +7,12 @@
 
 One lens, every model. Android client for local ComfyUI **and** hosted cloud workflows — pick a model, write a prompt, generate images, video or audio.
 
-**v2.1.0** · [AutoDL cloud guide](docs/AutoDL.md) · [Screenshots](docs/verification)
+**v2.2.0** · [AutoDL cloud guide](docs/AutoDL.md) · [Screenshots](docs/verification)
 
-<a href="docs/verification/iris-local.png"><img src="docs/verification/iris-local.png" width="200"/></a>
-<a href="docs/verification/iris-result2.png"><img src="docs/verification/iris-result2.png" width="200"/></a>
-<a href="docs/verification/iris-storyboard-done.png"><img src="docs/verification/iris-storyboard-done.png" width="200"/></a>
-<a href="docs/verification/iris-real-video-player.png"><img src="docs/verification/iris-real-video-player.png" width="200"/></a>
+<a href="docs/verification/redesign/light-create.png"><img src="docs/verification/redesign/light-create.png" width="200"/></a>
+<a href="docs/verification/redesign/light-generate.png"><img src="docs/verification/redesign/light-generate.png" width="200"/></a>
+<a href="docs/verification/redesign/dark-board.png"><img src="docs/verification/redesign/dark-board.png" width="200"/></a>
+<a href="docs/verification/redesign/dark-cloud-settings.png"><img src="docs/verification/redesign/dark-cloud-settings.png" width="200"/></a>
 
 ## English
 
@@ -29,6 +29,7 @@ One lens, every model. Android client for local ComfyUI **and** hosted cloud wor
 - **History** — full prompts + seeds, image/video/audio thumbnails and playback, one-tap reuse, A/B comparison for images, image → video handoff
 - **Multi-server** — saved servers, LAN discovery, health/queue probing, least-busy switching
 - **Configurable UI** — compact layout, recent-result count, theme, default batch/seed/queue, upload size and more in Settings
+- **Iris design system** — purpose-built light/dark palettes, typography, surfaces, chips, inputs and edge-to-edge navigation
 - **Encrypted secrets** — AI keys, AutoDL token and GitHub token are stored with an Android Keystore-backed AES/GCM key
 
 ## 中文
@@ -47,6 +48,7 @@ One lens, every model. Android client for local ComfyUI **and** hosted cloud wor
 - **结果库**：完整提示词 + 实际 seed、图片/视频/音频缩略图与播放、一键复用、图片 A/B 对比、图片一键转云端视频
 - **多服务器**：保存地址、局域网发现、健康/队列探测、最空闲切换
 - **可定制界面**：紧凑布局、最近结果数量、主题、默认批量/种子/队列、上传尺寸等，全部集中在设置页
+- **Iris 设计系统**：自建浅色/深色配色、字体、卡片、Chip、输入框和 edge-to-edge 导航
 - **密钥加密**：AI Key、AutoDL Token、GitHub Token 使用 Android Keystore 的 AES/GCM 加密存储
 
 ### 连接方式
@@ -85,6 +87,7 @@ Release builds are produced by GitHub Actions on `v*` tags (signing key provided
 
 - [AutoDL cloud workflows, parameters and billing](docs/AutoDL.md)
 - [Verification screenshots](docs/verification)
+- [v2.2 redesign screenshots](docs/verification/redesign)
 - [Changelog](CHANGELOG.md)
 
 The repository was renamed from `Starysoor/ComfyRemote` to `Starysoor/Iris`; GitHub redirects old URLs, and the in-app updater points at the new repository.

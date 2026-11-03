@@ -1,38 +1,25 @@
 package com.comfyremote.app.feature.settings
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.outlined.ArrowDropDown
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -42,17 +29,31 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.comfyremote.app.R
 import com.comfyremote.app.data.cloud.AutoDlConfig
-import com.comfyremote.app.ui.L10n
-import com.comfyremote.app.ui.Mono
-import com.comfyremote.app.ui.components.SectionHeader
+import com.comfyremote.app.ui.IrisType
+import com.comfyremote.app.ui.Spacing
+import com.comfyremote.app.ui.components.BannerTone
+import com.comfyremote.app.ui.components.BottomActionBar
+import com.comfyremote.app.ui.components.ChipTone
+import com.comfyremote.app.ui.components.DetailTopBar
+import com.comfyremote.app.ui.components.InfoBanner
+import com.comfyremote.app.ui.components.IrisDivider
+import com.comfyremote.app.ui.components.IrisPrimaryButton
+import com.comfyremote.app.ui.components.IrisProgressBar
+import com.comfyremote.app.ui.components.IrisScaffold
+import com.comfyremote.app.ui.components.IrisSecondaryButton
+import com.comfyremote.app.ui.components.IrisTextField
+import com.comfyremote.app.ui.components.IrisTonalButton
+import com.comfyremote.app.ui.components.ScreenContentPadding
+import com.comfyremote.app.ui.components.SettingRow
+import com.comfyremote.app.ui.components.SettingsGroup
 import com.comfyremote.app.ui.components.StatusChip
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CloudSettingsScreen(
     viewModel: CloudSettingsViewModel,
@@ -66,170 +67,158 @@ fun CloudSettingsScreen(
         state.message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        topBar = {
-            TopAppBar(
-                title = { Text(L10n.t("云端服务", "Cloud services"), fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, L10n.t("返回", "Back"))
-                    }
-                },
-            )
-        }
+    IrisScaffold(
+        snackbarHostState = snackbar,
+        topBar = { DetailTopBar(title = stringResource(R.string.settings_cloud), onBack = onBack) },
+        bottomBar = {
+            BottomActionBar {
+                IrisPrimaryButton(
+                    text = stringResource(R.string.settings_cloud_save_token),
+                    onClick = viewModel::saveToken,
+                )
+            }
+        },
     ) { pad ->
         Column(
-            Modifier.padding(pad).fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier
+                .padding(pad)
+                .fillMaxSize()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(ScreenContentPadding),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xl),
         ) {
-            SectionHeader(L10n.t("AutoDL.Art", "AutoDL.Art"))
-            Surface(
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                modifier = Modifier.fillMaxWidth(),
+            // AutoDL.Art account: token, catalogue refresh.
+            SettingsGroup(
+                title = stringResource(R.string.settings_cloud_autodl),
+                footer = stringResource(R.string.settings_cloud_token_hint),
             ) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(L10n.t("托管 ComfyUI 工作流", "Hosted ComfyUI workflows"), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                SettingRow(
+                    title = stringResource(R.string.settings_cloud_hosted),
+                    trailing = {
                         StatusChip(
-                            if (state.configured) L10n.t("已配置", "READY") else L10n.t("未配置", "TOKEN"),
-                            active = state.configured,
+                            if (state.configured) stringResource(R.string.settings_cloud_ready)
+                            else stringResource(R.string.settings_cloud_no_token),
+                            tone = if (state.configured) ChipTone.Success else ChipTone.Warning,
                         )
-                    }
-                    Text(
-                        L10n.t(
-                            "Token 在 autodl.art/large-model/tokens 创建，分组必须选择 ComfyUI。调用按次计费。",
-                            "Create a token at autodl.art/large-model/tokens with the ComfyUI group. Calls are billed per run.",
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    OutlinedTextField(
+                    },
+                )
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                ) {
+                    IrisTextField(
                         value = state.token,
                         onValueChange = viewModel::updateToken,
-                        label = { Text("AutoDL Token") },
+                        label = stringResource(R.string.settings_cloud_token_label),
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = viewModel::saveToken, modifier = Modifier.weight(1f)) {
-                            Text(L10n.t("保存 Token", "Save token"))
-                        }
-                        OutlinedButton(onClick = viewModel::refresh, enabled = !state.loading, modifier = Modifier.weight(1f)) {
-                            if (state.loading) {
-                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                                Spacer(Modifier.size(6.dp))
-                            }
-                            Text(L10n.t("刷新目录", "Refresh catalogue"))
-                        }
-                    }
-                    state.error?.let {
-                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Text(
-                        L10n.t("已发现 ${state.workflows.size} 个视频工作流", "${state.workflows.size} video workflows found"),
-                        fontFamily = Mono,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        L10n.t("云端目录同时包含音频/TTS 工作流，可在创作页切换", "The cloud catalogue also includes audio/TTS workflows"),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            SectionHeader(L10n.t("默认视频工作流", "Default video workflow"))
-            Text(
-                L10n.t(
-                    "在结果页点“生成视频”时使用。输入图片会自动作为首帧/参考图传给云端。",
-                    "Used by the result page's “Make video” action. The image is passed as the first frame/reference.",
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Box {
-                OutlinedButton(
-                    onClick = { videoMenu = true },
-                    enabled = state.workflows.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        state.workflows.firstOrNull { it.id == state.defaultVideoId }?.name
-                            ?: state.defaultVideoId.ifBlank { L10n.t("选择工作流", "Choose a workflow") },
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text("▾")
-                }
-                DropdownMenu(videoMenu, { videoMenu = false }) {
-                    state.workflows.forEach { workflow ->
-                        DropdownMenuItem(
-                            text = { Text(workflow.name) },
-                            onClick = {
-                                viewModel.setDefaultVideo(workflow.id)
-                                videoMenu = false
-                            },
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                        IrisTonalButton(
+                            text = stringResource(R.string.settings_cloud_refresh),
+                            onClick = viewModel::refresh,
+                            enabled = !state.loading,
+                            icon = Icons.Outlined.Refresh,
                         )
-                    }
-                }
-            }
-            Text(
-                "${AutoDlConfig.PATH_PREFIX}${state.defaultVideoId}",
-                fontFamily = Mono,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            SectionHeader(L10n.t("本地预估消耗", "Local spend estimate"))
-            Surface(
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            L10n.t(
-                                "累计 ${state.spendTotal} 平台单位 · ${state.spendCount} 次提交",
-                                "${state.spendTotal} platform units · ${state.spendCount} submissions",
-                            ),
-                            fontFamily = Mono,
+                            pluralStringResource(R.plurals.settings_cloud_found, state.workflows.size, state.workflows.size),
+                            style = IrisType.meta,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f),
                         )
-                        TextButton(onClick = viewModel::clearSpend) { Text(L10n.t("清除", "Clear")) }
                     }
+                    if (state.loading) IrisProgressBar(progress = null)
+                    state.error?.let { InfoBanner(text = it, tone = BannerTone.Error) }
                     Text(
-                        L10n.t(
-                            "仅本地预估，不是账单；实际扣费以 AutoDL 为准。",
-                            "Local estimate only, not a bill; AutoDL is authoritative.",
-                        ),
+                        stringResource(R.string.settings_cloud_audio_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
 
-            SectionHeader(L10n.t("缓存", "Cache"))
-            Surface(
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth().clickable { viewModel.clearCloudInputs() },
+            // Default video workflow used by "Make video".
+            SettingsGroup(
+                title = stringResource(R.string.settings_cloud_default_video),
+                footer = stringResource(R.string.settings_cloud_default_video_detail),
             ) {
-                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        L10n.t("清除云端参考图副本", "Clear cloud reference copies"),
-                        modifier = Modifier.weight(1f),
+                Box {
+                    SettingRow(
+                        title = state.workflows.firstOrNull { it.id == state.defaultVideoId }?.name
+                            ?: state.defaultVideoId.ifBlank { stringResource(R.string.settings_cloud_choose_workflow) },
+                        onClick = if (state.workflows.isNotEmpty()) ({ videoMenu = true }) else null,
+                        trailing = {
+                            Icon(
+                                Icons.Outlined.ArrowDropDown,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                    alpha = if (state.workflows.isNotEmpty()) 1f else 0.4f,
+                                ),
+                            )
+                        },
+                        divider = false,
                     )
-                    Text(L10n.t("清除", "Clear"), color = MaterialTheme.colorScheme.primary)
+                    DropdownMenu(videoMenu, { videoMenu = false }) {
+                        state.workflows.forEach { workflow ->
+                            DropdownMenuItem(
+                                text = { Text(workflow.name) },
+                                onClick = {
+                                    viewModel.setDefaultVideo(workflow.id)
+                                    videoMenu = false
+                                },
+                            )
+                        }
+                    }
                 }
+                IrisDivider(Modifier.padding(start = Spacing.lg))
+                Text(
+                    "${AutoDlConfig.PATH_PREFIX}${state.defaultVideoId}",
+                    style = IrisType.meta,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md),
+                )
             }
-            Spacer(Modifier.size(12.dp))
+
+            // Local spend estimate.
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                SettingsGroup(title = stringResource(R.string.settings_cloud_spend)) {
+                    SettingRow(
+                        title = stringResource(R.string.settings_cloud_spend_units),
+                        value = state.spendTotal.toString(),
+                    )
+                    SettingRow(
+                        title = stringResource(R.string.settings_cloud_spend_count),
+                        value = state.spendCount.toString(),
+                        divider = false,
+                    )
+                }
+                InfoBanner(text = stringResource(R.string.settings_cloud_spend_note), tone = BannerTone.Warning)
+                IrisSecondaryButton(
+                    text = stringResource(R.string.settings_cloud_spend_clear),
+                    onClick = viewModel::clearSpend,
+                    destructive = true,
+                    icon = Icons.Outlined.DeleteOutline,
+                    height = 48.dp,
+                )
+            }
+
+            // Cache.
+            SettingsGroup(title = stringResource(R.string.settings_cloud_cache)) {
+                SettingRow(
+                    title = stringResource(R.string.settings_cloud_clear_refs),
+                    onClick = { viewModel.clearCloudInputs() },
+                    trailing = {
+                        Text(
+                            stringResource(R.string.action_clear),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    divider = false,
+                )
+            }
         }
     }
 }

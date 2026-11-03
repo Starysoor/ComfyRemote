@@ -5,7 +5,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Environment
 import android.provider.MediaStore
-import com.comfyremote.app.ui.L10n
+import com.comfyremote.app.R
 import java.io.File
 
 /** Saves generated images into the phone gallery (Pictures/ComfyRemote). */
@@ -75,8 +75,8 @@ class GalleryExporter(private val context: Context) {
         return uri
     }
 
-    fun savedMessage(): String = L10n.t("已保存到 相册/Iris", "Saved to Gallery/Iris")
-    fun failMessage(error: Throwable): String = L10n.t("保存失败：", "Save failed: ") + (error.message ?: "error")
+    fun savedMessage(): String = context.getString(R.string.gallery_saved)
+    fun failMessage(error: Throwable): String = context.getString(R.string.gallery_save_failed, error.message ?: "error")
 
     companion object {
         fun shareFile(context: Context, path: String): File? {

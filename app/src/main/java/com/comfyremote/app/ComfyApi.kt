@@ -21,6 +21,7 @@ import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 open class ComfyException(message: String) : IOException(message)
@@ -110,7 +111,7 @@ class ComfyApi(base: String) {
             val d = devs.optJSONObject(0)
             if (d != null) {
                 device = d.optString("name").substringAfter("cuda:0 ").ifEmpty { d.optString("name") }
-                vram = String.format("%.1fGB", d.optLong("vram_total") / 1e9)
+                vram = String.format(Locale.US, "%.1fGB", d.optLong("vram_total") / 1e9)
             }
         }
         return SysInfo(sys?.optString("comfyui_version") ?: "?", device, vram)
@@ -127,7 +128,7 @@ class ComfyApi(base: String) {
                     WorkflowEntry(
                         p,
                         p.removeSuffix(".json").substringAfterLast('/'),
-                        String.format("%.1f KB", o.optLong("size") / 1024.0)
+                        String.format(Locale.US, "%.1f KB", o.optLong("size") / 1024.0)
                     )
                 )
             }
