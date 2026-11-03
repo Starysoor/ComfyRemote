@@ -195,9 +195,9 @@ class SiliconFlowRepository(
     private fun looksLikeMediaModel(model: String): Boolean {
         val lower = model.lowercase()
         return listOf(
-            "image", "kolors", "flux", "stable", "sd3", "sdxl", "wan", "video",
-            "seedance", "seedream", "kling", "hailuo", "minimax", "hunyuan",
-            "cogvideo", "z-image",
+            "image", "kolors", "flux", "stable", "sd3", "sdxl", "wan2", "video",
+            "seedance", "seedream", "kling", "hailuo", "cogvideo", "z-image",
+            "hunyuanvideo", "hunyuan-video", "hunyuanimage", "hunyuan-image",
         ).any { it in lower }
     }
 
