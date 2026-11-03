@@ -10,8 +10,6 @@ import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.cloud.CloudWorkflowSummary
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
-import com.comfyremote.app.data.media.ImagePreprocessor
-import com.comfyremote.app.data.reference.ProjectAsset
 import com.comfyremote.app.data.reference.ReferenceRole
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.storyboard.StoryboardProject
@@ -26,7 +24,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.UUID
 
 class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     val projects: StateFlow<List<StoryboardProject>> = container.storyboardStore.projects
@@ -74,6 +71,9 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun setStyle(projectId: String, style: String) = container.storyboardStore.setStyle(projectId, style)
+
+    fun setAspectRatio(projectId: String, ratio: String) =
+        container.storyboardStore.setAspectRatio(projectId, ratio)
 
     fun addShot(projectId: String, prompt: String) {
         if (prompt.isBlank()) {
@@ -132,28 +132,11 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     /** Copies a picked image into project-owned storage so it survives gallery changes. */
     fun addAsset(projectId: String, role: ReferenceRole, uri: Uri) {
         viewModelScope.launch {
-            runCatching {
-                val bytes = withContext(Dispatchers.IO) {
-                    container.app.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                } ?: throw IllegalStateException("Cannot read image")
-                val (prepared, ext) = withContext(Dispatchers.IO) {
-                    ImagePreprocessor.prepare(
-                        bytes,
-                        container.app.contentResolver.getType(uri),
-                        1536,
-                        88,
-                        forceJpeg = true,
-                    )
+            runCatching { container.storyboardAssetStore.importUri(uri, role) }
+                .onSuccess { asset -> container.storyboardStore.addAsset(projectId, asset) }
+                .onFailure { e ->
+                    _message.value = AppStrings.get(R.string.board_err_add_asset, e.message ?: "error")
                 }
-                val dir = File(container.app.filesDir, "storyboards/assets").apply { mkdirs() }
-                val file = File(dir, "asset_${UUID.randomUUID()}.$ext")
-                withContext(Dispatchers.IO) { file.writeBytes(prepared) }
-                ProjectAsset(role = role, path = file.absolutePath, label = role.name)
-            }.onSuccess { asset ->
-                container.storyboardStore.addAsset(projectId, asset)
-            }.onFailure { e ->
-                _message.value = AppStrings.get(R.string.board_err_add_asset, e.message ?: "error")
-            }
         }
     }
 
@@ -184,14 +167,17 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
             .filter { it.isNotBlank() }
             .joinToString(", ")
         val name = "${project.title} · ${index + 1}"
+        val workflowId = shot.workflowId?.takeIf { it.isNotBlank() } ?: project.workflowId
+        val values = project.defaultValues + shot.values +
+            (if (prompt.isBlank()) emptyMap() else mapOf("prompt" to prompt))
         container.storyboardStore.updateShot(projectId, shotId) {
             it.copy(status = if (it.status == "running") it.status else "draft", error = null)
         }
         container.draftTransferRepository.put(
             DraftTransfer(
-                workflowPath = AutoDlConfig.PATH_PREFIX + project.workflowId,
+                workflowPath = AutoDlConfig.PATH_PREFIX + workflowId,
                 workflowName = name,
-                values = if (prompt.isBlank()) emptyMap() else mapOf("prompt" to prompt),
+                values = values,
                 randomSeed = true,
                 serverUrl = null,
                 referenceLocalPath = reference,
@@ -199,7 +185,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                 storyboardShotId = shot.id,
             )
         )
-        return AutoDlConfig.PATH_PREFIX + project.workflowId to name
+        return AutoDlConfig.PATH_PREFIX + workflowId to name
     }
 
     fun nextShot(projectId: String): StoryboardShot? = container.storyboardStore.nextShot(projectId)

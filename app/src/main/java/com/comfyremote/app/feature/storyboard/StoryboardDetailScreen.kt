@@ -189,6 +189,13 @@ fun StoryboardDetailScreen(
                         maxLines = 4,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    IrisTextField(
+                        value = project.aspectRatio,
+                        onValueChange = { viewModel.setAspectRatio(project.id, it) },
+                        label = stringResource(R.string.board_aspect_ratio),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
 
@@ -360,7 +367,7 @@ private fun AssetCard(asset: ProjectAsset, onDelete: () -> Unit) {
 }
 
 @Composable
-private fun referenceRoleLabel(role: ReferenceRole): String = when (role) {
+internal fun referenceRoleLabel(role: ReferenceRole): String = when (role) {
     ReferenceRole.AUTO -> stringResource(R.string.reference_role_auto)
     ReferenceRole.START_FRAME -> stringResource(R.string.reference_role_start)
     ReferenceRole.END_FRAME -> stringResource(R.string.reference_role_end)

@@ -371,6 +371,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 return
             }
             syncStoryboardReference(projectId, shotId, draft)
+            syncStoryboardValues(projectId, shotId, draft)
         }
 
         persistDraftNow(draft)
@@ -391,6 +392,17 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                     message = if (ids.size > 1) AppStrings.plural(R.plurals.gen_vm_batch_created, ids.size, ids.size) else null,
                 )
             }
+        }
+    }
+
+    /** Remembers the shot's workflow and portable params for the next Regenerate. */
+    private fun syncStoryboardValues(projectId: String, shotId: String, draft: WorkflowDraft) {
+        val values = draft.fields
+            .filter { it.kind == FieldKind.TEXT || it.kind == FieldKind.PARAM || it.kind == FieldKind.SEED }
+            .associate { field -> field.key to (draft.values[field.key] ?: field.value) }
+        val workflowId = if (draft.isCloud) draft.workflowPath.removePrefix(AutoDlConfig.PATH_PREFIX) else null
+        container.storyboardStore.updateShot(projectId, shotId) {
+            it.copy(values = values, workflowId = workflowId)
         }
     }
 

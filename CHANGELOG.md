@@ -16,6 +16,8 @@
 - Project workspace core: project-owned assets with semantic roles, durable copies, and role labels.
 - Shot reordering, duplication and insertion; project assets can become a shot's manual reference or be cleared.
 - Storyboard project/shot ids persist on generation tasks; Task Detail links back to the board.
+- Project aspect-ratio/default-value model fields; per-shot workflow and portable parameter memory for Regenerate.
+- History results can be added to a storyboard project with a chosen semantic role.
 - Cloud provider registry metadata for the upcoming multi-provider settings page.
 - Version `2.3.0` (versionCode 26).
 

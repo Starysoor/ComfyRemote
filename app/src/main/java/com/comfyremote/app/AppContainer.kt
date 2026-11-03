@@ -32,6 +32,7 @@ import com.comfyremote.app.data.repository.WorkflowDraftStore
 import com.comfyremote.app.data.repository.WorkflowRepository
 import com.comfyremote.app.data.repository.WorkflowUsageRepository
 import com.comfyremote.app.data.security.SecretStore
+import com.comfyremote.app.data.storyboard.StoryboardAssetStore
 import com.comfyremote.app.data.storyboard.StoryboardStore
 
 /** Lightweight application-scoped dependency container. */
@@ -47,6 +48,7 @@ class AppContainer(val app: Application) {
     val cloudInputStore = CloudInputStore(app)
     val cloudSpendStore = CloudSpendStore(prefs)
     val storyboardStore = StoryboardStore(app)
+    val storyboardAssetStore = StoryboardAssetStore(app)
 
     val aiSettingsStore = AiSettingsStore(prefs, secretStore)
     val aiSkillStore = AiSkillStore(prefs)

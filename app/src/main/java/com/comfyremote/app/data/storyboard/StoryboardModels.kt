@@ -16,6 +16,10 @@ data class StoryboardShot(
     val referenceManual: Boolean = false,
     /** Semantic purpose of this shot's reference image. */
     val referenceRole: ReferenceRole = ReferenceRole.AUTO,
+    /** Per-shot workflow override; null uses the project workflow. */
+    val workflowId: String? = null,
+    /** Last used non-media field values for this shot. */
+    val values: Map<String, String> = emptyMap(),
     /** Last frame extracted from a successful result; feeds the next shot. */
     val lastFramePath: String? = null,
     val status: String = "draft", // draft | running | done | failed
@@ -30,6 +34,8 @@ data class StoryboardProject(
     val title: String,
     val workflowId: String,
     val stylePrompt: String = "",
+    val aspectRatio: String = "",
+    val defaultValues: Map<String, String> = emptyMap(),
     val shots: List<StoryboardShot> = emptyList(),
     val assets: List<ProjectAsset> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
@@ -54,6 +60,8 @@ object StoryboardCodec {
         .put("title", project.title)
         .put("workflowId", project.workflowId)
         .put("stylePrompt", project.stylePrompt)
+        .put("aspectRatio", project.aspectRatio)
+        .put("defaultValues", JSONObject(project.defaultValues))
         .put("createdAt", project.createdAt)
         .put("updatedAt", project.updatedAt)
         .put("shots", JSONArray().apply { project.shots.forEach { put(shotToJson(it)) } })
@@ -77,6 +85,8 @@ object StoryboardCodec {
             title = o.optString("title", "Storyboard"),
             workflowId = o.optString("workflowId"),
             stylePrompt = o.optString("stylePrompt"),
+            aspectRatio = o.optString("aspectRatio"),
+            defaultValues = stringMap(o.optJSONObject("defaultValues")),
             shots = shots,
             assets = assets,
             createdAt = o.optLong("createdAt"),
@@ -90,6 +100,8 @@ object StoryboardCodec {
         .put("referencePath", shot.referencePath ?: JSONObject.NULL)
         .put("referenceManual", shot.referenceManual)
         .put("referenceRole", shot.referenceRole.name)
+        .put("workflowId", shot.workflowId ?: JSONObject.NULL)
+        .put("values", JSONObject(shot.values))
         .put("lastFramePath", shot.lastFramePath ?: JSONObject.NULL)
         .put("status", shot.status)
         .put("taskId", shot.taskId ?: JSONObject.NULL)
@@ -102,6 +114,8 @@ object StoryboardCodec {
         referencePath = nullableString(o, "referencePath"),
         referenceManual = o.optBoolean("referenceManual", false),
         referenceRole = ReferenceRole.fromStorage(o.optString("referenceRole")),
+        workflowId = nullableString(o, "workflowId"),
+        values = stringMap(o.optJSONObject("values")),
         lastFramePath = nullableString(o, "lastFramePath"),
         status = o.optString("status", "draft"),
         taskId = nullableString(o, "taskId"),
@@ -125,6 +139,13 @@ object StoryboardCodec {
         order = o.optInt("order", 0),
         createdAt = o.optLong("createdAt", System.currentTimeMillis()),
     )
+
+    private fun stringMap(o: JSONObject?): Map<String, String> {
+        if (o == null) return emptyMap()
+        val out = linkedMapOf<String, String>()
+        o.keys().forEach { key -> out[key] = o.optString(key) }
+        return out
+    }
 
     private fun nullableString(o: JSONObject, key: String): String? =
         if (!o.has(key) || o.isNull(key)) null else o.optString(key).takeIf { it.isNotBlank() }

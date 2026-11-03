@@ -27,6 +27,7 @@
     <string name="board_prepare">Prepare</string>
     <string name="board_err_delete_running_shot">Wait for this shot to finish before deleting it</string>
     <string name="board_err_delete_running_project">This project has a running shot; wait for it to finish before deleting</string>
+    <string name="board_aspect_ratio">Aspect ratio (e.g. 9:16)</string>
     <string name="board_assets">Project assets</string>
     <string name="board_add_asset">Add asset</string>
     <string name="board_assets_empty">No project assets yet</string>

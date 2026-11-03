@@ -43,6 +43,10 @@ class StoryboardStore internal constructor(private val file: File) {
         it.copy(stylePrompt = style.trim(), updatedAt = System.currentTimeMillis())
     }
 
+    fun setAspectRatio(projectId: String, ratio: String) = update(projectId) {
+        it.copy(aspectRatio = ratio.trim(), updatedAt = System.currentTimeMillis())
+    }
+
     fun addShot(projectId: String, prompt: String): StoryboardShot? = synchronized(lock) {
         var created: StoryboardShot? = null
         updateLocked(projectId) { project ->

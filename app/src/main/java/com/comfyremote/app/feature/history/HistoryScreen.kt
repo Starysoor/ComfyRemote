@@ -2,6 +2,7 @@ package com.comfyremote.app.feature.history
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +12,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Close
@@ -18,10 +21,13 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -34,10 +40,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.comfyremote.app.HistoryItem
 import com.comfyremote.app.R
+import com.comfyremote.app.data.reference.ReferenceRole
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.feature.generate.MediaViewerDialog
 import com.comfyremote.app.feature.generate.shareMedia
+import com.comfyremote.app.feature.storyboard.referenceRoleLabel
 import com.comfyremote.app.ui.Spacing
 import com.comfyremote.app.ui.components.EmptyState
 import com.comfyremote.app.ui.components.IrisChip
@@ -55,11 +64,14 @@ fun HistoryScreen(
     val query by viewModel.query.collectAsState()
     val favoritesOnly by viewModel.favoritesOnly.collectAsState()
     val message by viewModel.message.collectAsState()
+    val storyboardProjects by viewModel.storyboardProjects.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     var selecting by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(setOf<String>()) }
     var viewingId by remember { mutableStateOf<String?>(null) }
     var viewingMediaPath by remember { mutableStateOf<String?>(null) }
+    var projectPicker by remember { mutableStateOf<Pair<HistoryItem, String>?>(null) }
+    var rolePicker by remember { mutableStateOf<Triple<HistoryItem, String, String>?>(null) }
     val context = LocalContext.current
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() } }
@@ -174,6 +186,60 @@ fun HistoryScreen(
             onReuse = { viewModel.prepareReuse(item)?.let(onReuse); viewingId = null },
             onFavorite = { viewModel.toggleFavorite(item.id) },
             onSetTags = { viewModel.setTags(item.id, it) },
+            onAddToProject = { path ->
+                projectPicker = item to path
+                viewingId = null
+            },
+        )
+    }
+
+    projectPicker?.let { (item, path) ->
+        AlertDialog(
+            onDismissRequest = { projectPicker = null },
+            title = { Text(stringResource(R.string.history_choose_project)) },
+            text = {
+                if (storyboardProjects.isEmpty()) {
+                    Text(stringResource(R.string.history_no_projects))
+                } else {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        storyboardProjects.forEach { project ->
+                            TextButton(onClick = {
+                                rolePicker = Triple(item, path, project.id)
+                                projectPicker = null
+                            }) { Text(project.title) }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { projectPicker = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+
+    rolePicker?.let { (item, path, projectId) ->
+        AlertDialog(
+            onDismissRequest = { rolePicker = null },
+            title = { Text(stringResource(R.string.history_choose_role)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ReferenceRole.entries.forEach { role ->
+                        TextButton(onClick = {
+                            viewModel.addToProject(projectId, role, path, item.wfName)
+                            rolePicker = null
+                        }) { Text(referenceRoleLabel(role)) }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { rolePicker = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
         )
     }
 

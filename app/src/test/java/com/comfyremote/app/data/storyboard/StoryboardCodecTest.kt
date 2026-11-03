@@ -22,12 +22,16 @@ class StoryboardCodecTest {
             referencePath = "/files/last.png",
             referenceManual = true,
             referenceRole = com.comfyremote.app.data.reference.ReferenceRole.START_FRAME,
+            workflowId = "minimax_h3_lightx2v_v5",
+            values = mapOf("prompt" to "close-up", "duration" to "5"),
         )
         val project = StoryboardProject(
             id = "project-1",
             title = "Sakura",
             workflowId = "minimax_h3_lightx2v_v5",
             stylePrompt = "cinematic",
+            aspectRatio = "9:16",
+            defaultValues = mapOf("resolution" to "768p竖"),
             shots = listOf(shot1, shot2),
             assets = listOf(
                 com.comfyremote.app.data.reference.ProjectAsset(
@@ -56,6 +60,10 @@ class StoryboardCodecTest {
             com.comfyremote.app.data.reference.ReferenceRole.START_FRAME,
             restored.shots[1].referenceRole,
         )
+        assertEquals("9:16", restored.aspectRatio)
+        assertEquals("768p竖", restored.defaultValues["resolution"])
+        assertEquals("minimax_h3_lightx2v_v5", restored.shots[1].workflowId)
+        assertEquals("5", restored.shots[1].values["duration"])
         assertEquals(1, restored.assets.size)
         assertEquals("hero", restored.assets.single().label)
         assertNull(restored.shots[1].taskId)
