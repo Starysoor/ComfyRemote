@@ -304,6 +304,7 @@ internal fun SeedBatchCard(
     batchCount: Int,
     batchLocalQueue: Boolean,
     running: Boolean,
+    batchEnabled: Boolean = true,
     onToggleRandomSeed: () -> Unit,
     onSeedChange: (key: String, value: String) -> Unit,
     onBatchCount: (Int) -> Unit,
@@ -326,22 +327,24 @@ internal fun SeedBatchCard(
             }
             IrisDivider(Modifier.padding(vertical = 2.dp))
         }
-        ControlRow(stringResource(R.string.gen_batch)) {
-            Stepper(value = batchCount, onChange = onBatchCount, range = 1..16, enabled = !running)
-        }
-        ControlRow(stringResource(R.string.gen_local_queue)) {
-            IrisSwitch(
-                checked = batchLocalQueue,
-                onCheckedChange = { onToggleLocalQueue() },
-                enabled = batchCount > 1 && !running,
-            )
-        }
-        if (batchCount > 1 && !randomSeed) {
-            Text(
-                stringResource(R.string.gen_batch_seed_hint),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        if (batchEnabled) {
+            ControlRow(stringResource(R.string.gen_batch)) {
+                Stepper(value = batchCount, onChange = onBatchCount, range = 1..16, enabled = !running)
+            }
+            ControlRow(stringResource(R.string.gen_local_queue)) {
+                IrisSwitch(
+                    checked = batchLocalQueue,
+                    onCheckedChange = { onToggleLocalQueue() },
+                    enabled = batchCount > 1 && !running,
+                )
+            }
+            if (batchCount > 1 && !randomSeed) {
+                Text(
+                    stringResource(R.string.gen_batch_seed_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

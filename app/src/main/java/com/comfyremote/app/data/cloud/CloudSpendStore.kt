@@ -14,6 +14,8 @@ data class CloudSpendEntry(
     /** Null when the provider did not expose a price for the selected options. */
     val points: Int?,
     val estimated: Boolean = true,
+    /** Provider task id, used to avoid double-counting after recovery. */
+    val remoteTaskId: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
 )
 
@@ -25,9 +27,16 @@ class CloudSpendStore(private val prefs: SharedPreferences) {
 
     fun total(): Int = _entries.value.sumOf { it.points ?: 0 }
 
-    fun record(workflowName: String, points: Int?) = synchronized(lock) {
-        val list = (listOf(CloudSpendEntry(workflowName = workflowName, points = points)) + _entries.value)
-            .take(MAX_ENTRIES)
+    fun record(workflowName: String, points: Int?, remoteTaskId: String? = null) = synchronized(lock) {
+        if (remoteTaskId != null && _entries.value.any { it.remoteTaskId == remoteTaskId }) {
+            return@synchronized
+        }
+        val entry = CloudSpendEntry(
+            workflowName = workflowName,
+            points = points,
+            remoteTaskId = remoteTaskId,
+        )
+        val list = (listOf(entry) + _entries.value).take(MAX_ENTRIES)
         write(list)
         _entries.value = list
     }
@@ -46,6 +55,7 @@ class CloudSpendStore(private val prefs: SharedPreferences) {
                 workflowName = o.optString("workflow"),
                 points = if (o.has("points") && !o.isNull("points")) o.optInt("points") else null,
                 estimated = o.optBoolean("estimated", true),
+                remoteTaskId = o.optString("remoteTaskId").ifEmpty { null },
                 createdAt = o.optLong("at"),
             )
         }
@@ -60,6 +70,7 @@ class CloudSpendStore(private val prefs: SharedPreferences) {
                     .put("workflow", entry.workflowName)
                     .put("points", entry.points ?: JSONObject.NULL)
                     .put("estimated", entry.estimated)
+                    .put("remoteTaskId", entry.remoteTaskId ?: "")
                     .put("at", entry.createdAt)
             )
         }

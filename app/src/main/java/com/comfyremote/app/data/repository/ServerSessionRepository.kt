@@ -27,11 +27,16 @@ class ServerSessionRepository {
     val device: String get() = _session.value?.device.orEmpty()
     val url: String get() = _session.value?.url.orEmpty()
 
-    suspend fun connect(url: String): SysInfo {
+    suspend fun connect(url: String, auto: Boolean = false): SysInfo {
         val clean = url.trim().removeSuffix("/")
-        val a = ComfyApi(clean)
-        val info = a.systemStats()
-        api = a
+        // Auto-recovery must not block the UI on a hung /system_stats request.
+        val info = if (auto) {
+            ComfyApi(clean, ComfyApi.probeClient).systemStats()
+        } else {
+            ComfyApi(clean).systemStats()
+        }
+        // Callers that generate need the long-timeout client even when the probe was short.
+        api = ComfyApi(clean)
         _session.value = ServerSession(
             url = clean,
             version = info.version,

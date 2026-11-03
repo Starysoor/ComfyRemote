@@ -37,8 +37,12 @@ class ServerRepository(private val prefs: SharedPreferences) {
     }
 
     fun remove(url: String): List<ServerEntry> {
-        val list = _servers.value.filter { it.url != url }
+        val target = url.trim().removeSuffix("/")
+        val list = _servers.value.filter { it.url.trim().removeSuffix("/") != target }
         save(list)
+        if (savedLastUrl()?.trim()?.removeSuffix("/") == target) {
+            prefs.edit().remove("url").apply()
+        }
         return list
     }
 

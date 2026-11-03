@@ -20,6 +20,7 @@ class StoryboardCodecTest {
             id = "shot-2",
             prompt = "close-up",
             referencePath = "/files/last.png",
+            referenceManual = true,
         )
         val project = StoryboardProject(
             id = "project-1",
@@ -40,6 +41,7 @@ class StoryboardCodecTest {
         assertEquals("done", restored.shots[0].status)
         assertEquals("/files/result.mp4", restored.shots[0].resultPath)
         assertEquals("/files/last.png", restored.shots[1].referencePath)
+        assertTrue(restored.shots[1].referenceManual)
         assertNull(restored.shots[1].taskId)
     }
 

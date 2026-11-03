@@ -6,6 +6,7 @@
     <string name="ai_group_endpoint">接口</string>
     <string name="ai_base_url">Base URL</string>
     <string name="ai_api_key">API Key</string>
+    <string name="ai_insecure_http_warning">非本机 HTTP 端点：API Key 与提示词内容会以明文传输</string>
     <string name="ai_model">模型</string>
     <string name="ai_vision_model">视觉模型（看图改写）</string>
     <string name="ai_vision_model_hint">留空则复用上方模型；需支持 image_url 输入</string>

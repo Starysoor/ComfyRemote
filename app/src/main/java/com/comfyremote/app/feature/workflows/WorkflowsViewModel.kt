@@ -13,6 +13,9 @@ import com.comfyremote.app.data.repository.ServerHealth
 import com.comfyremote.app.data.repository.ServerSession
 import com.comfyremote.app.R
 import com.comfyremote.app.ui.AppStrings
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -209,8 +212,17 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
         if (servers.isEmpty() || _state.value.probingServers) return
         _state.update { it.copy(probingServers = true) }
         viewModelScope.launch {
-            val health = container.serverHealthRepository.probeAll(servers)
-            _state.update { it.copy(serverHealth = health, probingServers = false) }
+            coroutineScope {
+                servers.distinctBy { it.url }.map { server ->
+                    async {
+                        val health = container.serverHealthRepository.probe(server.url)
+                        _state.update { state ->
+                            state.copy(serverHealth = state.serverHealth + (server.url to health))
+                        }
+                    }
+                }.awaitAll()
+            }
+            _state.update { it.copy(probingServers = false) }
         }
     }
 
@@ -301,10 +313,18 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
         return workflowEntryFor(path)
     }
 
-    fun prepareResult(item: HistoryItem): WorkflowEntry? {
+    fun prepareResult(item: HistoryItem): DraftTransfer? {
         if (item.wfPath.isBlank()) return null
-        container.draftTransferRepository.put(DraftTransfer(item.wfPath, item.wfName, item.values, item.randomSeed))
-        return workflowEntryFor(item.wfPath, item.wfName)
+        val transfer = DraftTransfer(
+            workflowPath = item.wfPath,
+            workflowName = item.wfName,
+            values = item.values,
+            randomSeed = item.randomSeed,
+            sourceFields = item.fields,
+            serverUrl = item.serverUrl.takeIf(String::isNotBlank),
+        )
+        container.draftTransferRepository.put(transfer)
+        return transfer
     }
 
     private fun workflowEntryFor(path: String, fallbackName: String = workflowNameFor(path)): WorkflowEntry =

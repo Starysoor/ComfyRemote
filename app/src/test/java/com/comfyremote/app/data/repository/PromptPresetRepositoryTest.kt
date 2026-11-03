@@ -47,6 +47,27 @@ class PromptPresetRepositoryTest {
     }
 
     @Test
+    fun workflowPresetKeepsItsOriginalServer() {
+        val prefs = FakePreferences()
+        val repo = PromptPresetRepository(prefs)
+        repo.add(
+            PromptPreset(
+                id = "scoped",
+                title = "scoped",
+                prompts = listOf(LabeledText("Prompt", "x")),
+                workflowPath = "a.json",
+                createdAt = 100L,
+                serverUrl = "http://192.168.1.20:8188",
+                values = mapOf("1:image" to "iris_ref.png"),
+            )
+        )
+
+        val loaded = PromptPresetRepository(prefs).load().single()
+        assertEquals("http://192.168.1.20:8188", loaded.serverUrl)
+        assertEquals("iris_ref.png", loaded.values["1:image"])
+    }
+
+    @Test
     fun markUsedMovesPresetAheadOfOlderItems() {
         val prefs = FakePreferences()
         val repo = PromptPresetRepository(prefs)

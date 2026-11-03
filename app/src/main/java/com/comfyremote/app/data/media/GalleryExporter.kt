@@ -19,60 +19,60 @@ class GalleryExporter(private val context: Context) {
         }
         val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
             ?: throw IllegalStateException("Could not create media file")
-        context.contentResolver.openOutputStream(uri)?.use {
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+        return try {
+            val output = context.contentResolver.openOutputStream(uri)
+                ?: throw IllegalStateException("Could not open media output")
+            output.use {
+                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) {
+                    throw IllegalStateException("Could not encode image")
+                }
+            }
+            uri
+        } catch (t: Throwable) {
+            deleteQuietly(uri)
+            throw t
         }
-        return uri
     }
 
     /** Copies a generated image/video file into the phone gallery. */
     fun saveMediaFile(path: String): android.net.Uri {
         val file = File(path)
         if (!file.isFile) throw IllegalStateException("Media file does not exist")
-        val ext = file.extension.lowercase().ifBlank { "png" }
-        val video = ext in setOf("mp4", "webm", "mov", "m4v", "mkv")
-        val audio = ext in setOf("wav", "mp3", "m4a", "ogg", "flac", "aac")
-        val mime = when (ext) {
-            "mp4", "m4v" -> "video/mp4"
-            "webm" -> "video/webm"
-            "mov" -> "video/quicktime"
-            "wav" -> "audio/wav"
-            "mp3" -> "audio/mpeg"
-            "m4a" -> "audio/mp4"
-            "ogg" -> "audio/ogg"
-            "flac" -> "audio/flac"
-            "aac" -> "audio/aac"
-            "png" -> "image/png"
-            "webp" -> "image/webp"
-            "gif" -> "image/gif"
-            "jpg", "jpeg" -> "image/jpeg"
-            else -> when {
-                video -> "video/*"
-                audio -> "audio/*"
-                else -> "image/*"
-            }
-        }
-        val collection = when {
-            video -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-            audio -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-            else -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val ext = MediaTypeResolver.extension(path)
+        val kind = MediaTypeResolver.kind(path)
+        val mime = MediaTypeResolver.mimeType(path)
+        val collection = when (kind) {
+            MediaKind.VIDEO -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            MediaKind.AUDIO -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+            MediaKind.IMAGE -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         }
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, "iris_${System.currentTimeMillis()}.$ext")
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
             put(
                 MediaStore.MediaColumns.RELATIVE_PATH,
-                when {
-                    video -> Environment.DIRECTORY_MOVIES
-                    audio -> Environment.DIRECTORY_MUSIC
-                    else -> Environment.DIRECTORY_PICTURES
+                when (kind) {
+                    MediaKind.VIDEO -> Environment.DIRECTORY_MOVIES
+                    MediaKind.AUDIO -> Environment.DIRECTORY_MUSIC
+                    MediaKind.IMAGE -> Environment.DIRECTORY_PICTURES
                 } + "/Iris",
             )
         }
         val uri = context.contentResolver.insert(collection, values)
             ?: throw IllegalStateException("Could not create media file")
-        context.contentResolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } }
-        return uri
+        return try {
+            val out = context.contentResolver.openOutputStream(uri)
+                ?: throw IllegalStateException("Could not open media output")
+            out.use { target -> file.inputStream().use { it.copyTo(target) } }
+            uri
+        } catch (t: Throwable) {
+            deleteQuietly(uri)
+            throw t
+        }
+    }
+
+    private fun deleteQuietly(uri: android.net.Uri) {
+        runCatching { context.contentResolver.delete(uri, null, null) }
     }
 
     fun savedMessage(): String = context.getString(R.string.gallery_saved)

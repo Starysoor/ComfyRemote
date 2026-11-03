@@ -130,6 +130,7 @@
     <string name="gen_vm_storyboard_running">This storyboard shot is already running; wait for it to finish</string>
     <string name="gen_vm_reuse_partial">Reused %1$d of %2$d values; unmatched values were skipped</string>
     <string name="gen_vm_reuse_none">No saved values matched this workflow</string>
+    <string name="gen_vm_preset_media_skipped">%1$d server-side media value(s) were skipped because this preset belongs to another server</string>
     <string name="gen_vm_no_reference_input">This workflow has no reference-image input</string>
     <string name="gen_vm_result_as_reference">Result set as reference image</string>
     <string name="gen_vm_no_video_workflow">Set a default cloud video workflow in Settings</string>

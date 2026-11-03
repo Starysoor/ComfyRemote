@@ -113,6 +113,7 @@ class PromptPresetRepository(private val prefs: SharedPreferences) {
             title = o.optString("title").ifBlank { "Preset" },
             prompts = prompts,
             workflowPath = o.optString("workflowPath").ifEmpty { null },
+            serverUrl = o.optString("serverUrl").ifEmpty { null },
             createdAt = o.optLong("time", o.optLong("createdAt", System.currentTimeMillis())),
             lastUsedAt = o.optLong("lastUsedAt").takeIf { it > 0 },
             values = strMap(o.optJSONObject("values")),
@@ -130,6 +131,7 @@ class PromptPresetRepository(private val prefs: SharedPreferences) {
                 .put("title", preset.title)
                 .put("time", preset.createdAt)
                 .put("workflowPath", preset.workflowPath ?: "")
+                .put("serverUrl", preset.serverUrl ?: "")
                 .put("lastUsedAt", preset.lastUsedAt ?: 0L)
                 .put("values", JSONObject(preset.values))
                 .put("randomSeed", preset.randomSeed ?: JSONObject.NULL)
@@ -171,6 +173,8 @@ data class PromptPreset(
     val prompts: List<LabeledText>,
     val workflowPath: String? = null,
     val createdAt: Long,
+    /** Original ComfyUI/cloud server for full workflow presets; null for legacy/prompt-only. */
+    val serverUrl: String? = null,
     val lastUsedAt: Long? = null,
     /** Full field snapshot for workflow presets. Empty means prompt-only legacy/prompt preset. */
     val values: Map<String, String> = emptyMap(),

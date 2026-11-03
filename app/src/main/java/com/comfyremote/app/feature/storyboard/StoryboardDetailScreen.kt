@@ -113,8 +113,7 @@ fun StoryboardDetailScreen(
                                 leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error) },
                                 onClick = {
                                     menuOpen = false
-                                    viewModel.deleteProject(projectId)
-                                    onBack()
+                                    if (viewModel.deleteProject(projectId)) onBack()
                                 },
                             )
                         }
@@ -197,7 +196,7 @@ fun StoryboardDetailScreen(
                     ShotTimelineItem(
                         index = index,
                         shot = shot,
-                        referenceFromPrevious = shot.referencePath != null &&
+                        referenceFromPrevious = !shot.referenceManual && shot.referencePath != null &&
                             shot.referencePath == previous?.lastFramePath,
                         feedsNext = shot.lastFramePath != null && index < project.shots.lastIndex,
                         onOpen = {
@@ -296,7 +295,12 @@ private fun ShotTimelineItem(
                             onClick = onOpen,
                             enabled = !running,
                         )
-                        TextAction(stringResource(R.string.action_delete), onClick = onDelete, color = MaterialTheme.colorScheme.error)
+                        TextAction(
+                            stringResource(R.string.action_delete),
+                            onClick = onDelete,
+                            enabled = !running,
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     }
                 }
             }

@@ -35,6 +35,7 @@ class StoryboardStore internal constructor(private val file: File) {
 
     fun delete(projectId: String) = synchronized(lock) {
         write(_projects.value.filterNot { it.id == projectId })
+        gcOrphanMediaLocked()
     }
 
     fun setStyle(projectId: String, style: String) = update(projectId) {
@@ -70,13 +71,13 @@ class StoryboardStore internal constructor(private val file: File) {
             val stale = listOfNotNull(removed.lastFramePath, removed.resultPath).toSet()
             if (stale.isNotEmpty()) {
                 remaining.indices.forEach { i ->
-                    if (remaining[i].referencePath in stale) {
+                    if (!remaining[i].referenceManual && remaining[i].referencePath in stale) {
                         remaining[i] = remaining[i].copy(referencePath = remaining.getOrNull(i - 1)?.lastFramePath)
                     }
                 }
             }
             project.copy(shots = remaining, updatedAt = System.currentTimeMillis())
-        }
+        }.also { gcOrphanMediaLocked() }
     }
 
     fun attachTask(projectId: String, shotId: String, taskId: String): Boolean {
@@ -106,9 +107,10 @@ class StoryboardStore internal constructor(private val file: File) {
         it.copy(status = "failed", error = message)
     }
 
-    fun setReference(projectId: String, shotId: String, path: String?) = updateShot(projectId, shotId) {
-        it.copy(referencePath = path)
-    }
+    fun setReference(projectId: String, shotId: String, path: String?, manual: Boolean = true) =
+        updateShot(projectId, shotId) {
+            it.copy(referencePath = path, referenceManual = manual)
+        }
 
     fun nextShot(projectId: String): StoryboardShot? {
         val project = _projects.value.firstOrNull { it.id == projectId } ?: return null
@@ -148,5 +150,21 @@ class StoryboardStore internal constructor(private val file: File) {
                 tmp.delete()
             }
         }.onFailure { tmp.delete() }
+    }
+
+    /** Deletes app-owned storyboard frames that no shot references anymore. */
+    private fun gcOrphanMediaLocked() {
+        val mediaDir = File(file.parentFile, "storyboards")
+        val referenced = referencedMediaPaths()
+        val cutoff = System.currentTimeMillis() - MEDIA_GC_GRACE_MS
+        mediaDir.listFiles()?.forEach { candidate ->
+            if (candidate.isFile && candidate.absolutePath !in referenced && candidate.lastModified() < cutoff) {
+                runCatching { candidate.delete() }
+            }
+        }
+    }
+
+    companion object {
+        private const val MEDIA_GC_GRACE_MS = 10 * 60_000L
     }
 }

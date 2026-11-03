@@ -10,6 +10,8 @@ data class StoryboardShot(
     val prompt: String = "",
     /** Reference image for this shot, already copied to app storage when set. */
     val referencePath: String? = null,
+    /** True when the user picked the reference manually; auto updates must not overwrite it. */
+    val referenceManual: Boolean = false,
     /** Last frame extracted from a successful result; feeds the next shot. */
     val lastFramePath: String? = null,
     val status: String = "draft", // draft | running | done | failed
@@ -73,6 +75,7 @@ object StoryboardCodec {
         .put("id", shot.id)
         .put("prompt", shot.prompt)
         .put("referencePath", shot.referencePath ?: JSONObject.NULL)
+        .put("referenceManual", shot.referenceManual)
         .put("lastFramePath", shot.lastFramePath ?: JSONObject.NULL)
         .put("status", shot.status)
         .put("taskId", shot.taskId ?: JSONObject.NULL)
@@ -83,6 +86,7 @@ object StoryboardCodec {
         id = o.optString("id", UUID.randomUUID().toString()),
         prompt = o.optString("prompt"),
         referencePath = nullableString(o, "referencePath"),
+        referenceManual = o.optBoolean("referenceManual", false),
         lastFramePath = nullableString(o, "lastFramePath"),
         status = o.optString("status", "draft"),
         taskId = nullableString(o, "taskId"),

@@ -70,6 +70,18 @@ class CloudSubmissionPolicyTest {
     }
 
     @Test
+    fun spendIsRecordedOnlyAfterTheRemoteTaskIdExists() {
+        val task = GenerationTask(taskId = "local", request = request(), promptId = null)
+        assertFalse(task.shouldRecordCloudSpend)
+        assertTrue(task.copy(promptId = "remote-id").shouldRecordCloudSpend)
+        assertFalse(task.copy(promptId = "remote-id", spendRecorded = true).shouldRecordCloudSpend)
+        assertFalse(
+            task.copy(promptId = "remote-id", request = request(provider = "comfyui"))
+                .shouldRecordCloudSpend
+        )
+    }
+
+    @Test
     fun durationAndResolutionComeFromTheCloudFields() {
         val duration = PromptField(
             key = "duration",

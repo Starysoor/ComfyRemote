@@ -25,7 +25,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        handleEntryIntent(intent)
+        // A recreated Activity still carries the launch Intent; consume it only once.
+        if (savedInstanceState == null) handleEntryIntent(intent)
         setContent {
             val settings by container.appSettingsStore.settings.collectAsState()
             val dark = isIrisDark(settings.themeMode)
@@ -59,7 +60,8 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra(GenerationNotificationController.EXTRA_TASK_ID)?.let { taskId ->
             container.navigationRequests.request(Routes.task(taskId))
         }
-        if (container.incomingMedia.handleIntent(intent) && container.serverSession.connected) {
+        if (container.incomingMedia.handleIntent(intent)) {
+            // Cloud workflows can consume shared media without a local ComfyUI session.
             container.navigationRequests.request(Routes.CREATE)
         }
     }

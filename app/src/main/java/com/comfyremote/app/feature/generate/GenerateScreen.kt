@@ -288,6 +288,7 @@ fun GenerateScreen(
                             batchCount = state.batchCount,
                             batchLocalQueue = state.batchLocalQueue,
                             running = running,
+                            batchEnabled = !state.storyboardShot,
                             onToggleRandomSeed = viewModel::toggleRandomSeed,
                             onSeedChange = viewModel::updateValue,
                             onBatchCount = viewModel::setBatchCount,

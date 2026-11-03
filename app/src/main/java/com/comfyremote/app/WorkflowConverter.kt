@@ -290,14 +290,53 @@ object WorkflowConverter {
                 val cfg = (if (spec.length() > 1 && spec.opt(1) is JSONObject) spec.optJSONObject(1) else null)
                     ?: JSONObject()
                 val v = ins.opt(name)
+                // API prompts store links as ["nodeId", slot]; they are not editable widgets.
+                if (v is JSONArray && v.length() == 2 && v.opt(1) is Number &&
+                    (v.opt(0) is String || v.opt(0) is Number)
+                ) {
+                    return@forEach
+                }
                 val required = def.optJSONObject("input")?.optJSONObject("required")?.has(name) == true
+                val type = t?.toString()?.uppercase().orEmpty()
+                val options = if (t is JSONArray) (0 until t.length()).mapNotNull { t.opt(it)?.toString() } else emptyList()
+                val ptype = when {
+                    t is JSONArray -> "combo"
+                    type == "INT" -> "int"
+                    type == "FLOAT" -> "float"
+                    type == "BOOLEAN" || type == "BOOL" -> "bool"
+                    else -> ""
+                }
+                val key = "$id:$name"
+                val label = "$title · $name"
                 when {
                     cfg.has("control_after_generate") ->
-                        fields.add(PromptField("$id:$name", id, name, "$title · $name", FieldKind.SEED, v?.toString() ?: "0", required = required))
-                    t == "STRING" ->
-                        fields.add(PromptField("$id:$name", id, name, "$title · $name", FieldKind.TEXT, v?.toString() ?: "", cfg.optBoolean("multiline", false), required = required))
-                    (t is JSONArray || t == "COMBO") && cfg.optBoolean("image_upload", false) ->
-                        fields.add(PromptField("$id:$name", id, name, "$title · $name", FieldKind.IMAGE, v?.toString() ?: "", required = required))
+                        fields.add(PromptField(key, id, name, label, FieldKind.SEED, v?.toString() ?: "0", required = required))
+                    cfg.optBoolean("image_upload", false) || cfg.optBoolean("audio_upload", false) ->
+                        fields.add(
+                            PromptField(
+                                key, id, name, label,
+                                if (cfg.optBoolean("audio_upload", false)) FieldKind.AUDIO else FieldKind.IMAGE,
+                                v?.toString() ?: "", required = required,
+                            )
+                        )
+                    type == "STRING" ->
+                        fields.add(PromptField(key, id, name, label, FieldKind.TEXT, v?.toString() ?: "", cfg.optBoolean("multiline", false), required = required))
+                    ptype.isNotEmpty() ->
+                        fields.add(
+                            PromptField(
+                                key = key,
+                                nodeId = id,
+                                input = name,
+                                label = label,
+                                kind = FieldKind.PARAM,
+                                value = v?.toString() ?: "",
+                                ptype = ptype,
+                                options = options,
+                                min = cfg.opt("min")?.toString(),
+                                max = cfg.opt("max")?.toString(),
+                                required = required,
+                            )
+                        )
                 }
             }
         }

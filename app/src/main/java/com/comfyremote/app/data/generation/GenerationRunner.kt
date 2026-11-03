@@ -288,14 +288,26 @@ class GenerationRunner(
 
         val outputImages = parseImages(entry)
         val results = mutableListOf<ResultImage>()
+        var failedDownloads = 0
         outputImages.forEachIndexed { index, image ->
             runCatching {
                 val file = history.newMediaFile(promptId, index, extensionFor(image))
                 if (!file.isFile || file.length() == 0L) {
-                    backend.downloadTo(image, file)
+                    // Write to .tmp and rename so a crash cannot leave a half file as a result.
+                    val temp = java.io.File(file.parentFile, file.name + ".tmp")
+                    try {
+                        backend.downloadTo(image, temp)
+                        if (!temp.renameTo(file)) {
+                            temp.copyTo(file, overwrite = true)
+                            temp.delete()
+                        }
+                    } catch (t: Throwable) {
+                        temp.delete()
+                        throw t
+                    }
                 }
                 results += ResultImage(id = "$promptId:$index", localPath = file.absolutePath)
-            }
+            }.onFailure { failedDownloads++ }
         }
         if (outputImages.isNotEmpty() && results.isEmpty()) {
             return task.copy(
@@ -341,7 +353,11 @@ class GenerationRunner(
             seedInfo = seedInfo,
             seedValues = seedsUsed,
             queuePosition = null,
-            recoveryNote = if (task.recovered) "Recovered from ComfyUI" else task.recoveryNote,
+            recoveryNote = when {
+                failedDownloads > 0 -> "Partial result: $failedDownloads file(s) failed to download"
+                task.recovered -> "Recovered from ComfyUI"
+                else -> task.recoveryNote
+            },
         ).also(onUpdate)
     }
 

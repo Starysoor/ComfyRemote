@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.2.4 — 2026-11-03
+
+### Added
+
+- App shell starts immediately; ComfyUI auto-recovery runs in the background with a short-timeout probe, and health checks update per server.
+- VPN/Tailscale-aware discovery hint and CGNAT subnet handling.
+- Workflow presets remember their original server and skip non-portable image/audio references on other servers.
+- Storyboard shots lock batch size to 1 and can record manual vs automatic reference images.
+
+### Fixed
+
+- Cloud spend is recorded only after the provider returns a remote task id, with recovery deduplication.
+- Local ComfyUI video/audio downloads stream to disk; partial result downloads are reported.
+- Result viewer, gallery save and share use one media-type resolver (AVI/3GP/MKV included); failed writes clean up their MediaStore entry.
+- API-format workflows expose INT/FLOAT/BOOLEAN/COMBO parameters and skip linked inputs.
+- Deleting a server clears its saved last URL; deleting a running storyboard shot/project is blocked and orphan frame files are collected.
+- External notification/share intents are consumed once per Activity creation, and sharing no longer requires a local ComfyUI session.
+- AI API keys and GitHub tokens are masked; non-local HTTP AI endpoints show a clear warning.
+- Recent-result reuse keeps the original server and source field metadata.
+- Version `2.2.4` (versionCode 25).
+
 ## 2.2.3 — 2026-11-03
 
 ### Changed

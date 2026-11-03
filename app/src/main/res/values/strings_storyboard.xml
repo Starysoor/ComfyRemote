@@ -25,6 +25,8 @@
     <string name="board_empty_shot">(empty shot)</string>
     <string name="board_regenerate">Regenerate</string>
     <string name="board_prepare">Prepare</string>
+    <string name="board_err_delete_running_shot">Wait for this shot to finish before deleting it</string>
+    <string name="board_err_delete_running_project">This project has a running shot; wait for it to finish before deleting</string>
     <string name="board_reference">Reference</string>
     <string name="board_result">Result</string>
     <string name="board_reference_from_previous">Previous shot\'s last frame</string>

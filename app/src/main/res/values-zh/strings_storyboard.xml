@@ -24,6 +24,8 @@
     <string name="board_empty_shot">（空镜头）</string>
     <string name="board_regenerate">重新生成</string>
     <string name="board_prepare">准备生成</string>
+    <string name="board_err_delete_running_shot">该分镜正在生成中，请等待完成后再删除</string>
+    <string name="board_err_delete_running_project">项目中有正在生成的分镜，请等待完成后再删除</string>
     <string name="board_reference">参考图</string>
     <string name="board_result">结果</string>
     <string name="board_reference_from_previous">上一镜尾帧</string>

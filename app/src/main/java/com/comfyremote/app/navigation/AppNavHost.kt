@@ -96,7 +96,11 @@ fun ComfyRemoteRoot(container: AppContainer) {
     AppNavHost(
         container = container,
         factory = factory,
-        startDestination = if (appState.session != null) Routes.CREATE else Routes.CONNECT,
+        startDestination = if (appState.session != null || container.autoDlRepository.configured()) {
+            Routes.CREATE
+        } else {
+            Routes.CONNECT
+        },
     )
     val cloudPending by container.cloudSubmissionGate.pending.collectAsState()
     cloudPending?.let { pending ->
@@ -185,6 +189,7 @@ private fun AppNavHost(
                 WorkflowsScreen(
                     viewModel = vm,
                     onOpenWorkflow = { navController.navigate(Routes.generate(it.path, it.name)) },
+                    onOpenTransfer = ::openTransfer,
                     onServers = { navController.navigate(Routes.SERVERS) },
                     onSettings = { navController.navigate(Routes.SETTINGS) },
                 )

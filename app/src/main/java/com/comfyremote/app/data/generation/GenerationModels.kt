@@ -73,6 +73,8 @@ data class GenerationTask(
     val recoveryNote: String? = null,
     /** True while the request is intentionally waiting in the app-side queue and has not reached ComfyUI yet. */
     val localPending: Boolean = false,
+    /** True once this task produced a cloud provider task id and was counted in the local spend ledger. */
+    val spendRecorded: Boolean = false,
     /** Optional batch identity shared by variation jobs created together. */
     val batchId: String? = null,
     /** 1-based position within a batch. */
@@ -88,6 +90,10 @@ data class GenerationTask(
 
     val isRemoteQueued: Boolean
         get() = !localPending && (phase == GenerationPhase.QUEUEING || phase == GenerationPhase.QUEUED)
+
+    /** A cloud job is billable only after the provider returned a remote task id. */
+    val shouldRecordCloudSpend: Boolean
+        get() = request.provider != "comfyui" && !spendRecorded && !promptId.isNullOrBlank()
 
     fun elapsedMs(now: Long = System.currentTimeMillis()): Long {
         val start = startedAt ?: createdAt

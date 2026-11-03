@@ -74,6 +74,47 @@ class WorkflowConverterTest {
     }
 
     @Test
+    fun apiFormatExposesWidgetParamsAndSkipsLinks() {
+        fun spec(type: Any, cfg: JSONObject? = null): org.json.JSONArray =
+            org.json.JSONArray().put(type).put(cfg ?: JSONObject())
+        val required = JSONObject()
+            .put("seed", spec("INT", JSONObject().put("control_after_generate", true)))
+            .put("steps", spec("INT", JSONObject().put("min", 1).put("max", 100)))
+            .put("cfg", spec("FLOAT", JSONObject().put("min", 0.0).put("max", 20.0)))
+            .put("denoise", spec("FLOAT"))
+            .put("sampler_name", org.json.JSONArray().put(org.json.JSONArray().put("euler").put("dpmpp_2m")))
+            .put("text", spec("STRING"))
+            .put("image", spec("STRING", JSONObject().put("image_upload", true)))
+        val info = JSONObject().put("KSampler", JSONObject().put("input", JSONObject().put("required", required)))
+        val api = JSONObject().put(
+            "5",
+            JSONObject().put("class_type", "KSampler").put(
+                "inputs",
+                JSONObject()
+                    .put("seed", 42)
+                    .put("steps", 20)
+                    .put("cfg", 7.5)
+                    .put("denoise", 0.5)
+                    .put("sampler_name", "euler")
+                    .put("text", org.json.JSONArray().put("12").put(0))
+                    .put("image", "ref.png"),
+            ),
+        )
+
+        val fields = WorkflowConverter.convert(api.toString(), info).fields
+
+        assertEquals(FieldKind.SEED, fields.first { it.input == "seed" }.kind)
+        assertEquals("int", fields.first { it.input == "steps" }.ptype)
+        assertEquals("float", fields.first { it.input == "cfg" }.ptype)
+        assertEquals("float", fields.first { it.input == "denoise" }.ptype)
+        val sampler = fields.first { it.input == "sampler_name" }
+        assertEquals("combo", sampler.ptype)
+        assertTrue(sampler.options.contains("euler"))
+        assertEquals(FieldKind.IMAGE, fields.first { it.input == "image" }.kind)
+        assertTrue("linked text input must not become a widget", fields.none { it.input == "text" })
+    }
+
+    @Test
     fun hiresFixHasTwoSeeds() {
         val conv = WorkflowConverter.convert(readRes("fixtures/sdxl_hires.json"), info())
         assertEquals(2, conv.fields.count { it.kind == FieldKind.SEED })

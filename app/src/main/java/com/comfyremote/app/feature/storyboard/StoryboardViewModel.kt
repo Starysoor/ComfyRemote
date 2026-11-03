@@ -58,7 +58,15 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         return container.storyboardStore.create(title, id, stylePrompt)
     }
 
-    fun deleteProject(id: String) = container.storyboardStore.delete(id)
+    fun deleteProject(id: String): Boolean {
+        val project = container.storyboardStore.project(id) ?: return false
+        if (project.shots.any(::shotRunning)) {
+            _message.value = AppStrings.get(R.string.board_err_delete_running_project)
+            return false
+        }
+        container.storyboardStore.delete(id)
+        return true
+    }
 
     fun setStyle(projectId: String, style: String) = container.storyboardStore.setStyle(projectId, style)
 
@@ -70,8 +78,20 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         container.storyboardStore.addShot(projectId, prompt)
     }
 
-    fun deleteShot(projectId: String, shotId: String) =
+    fun deleteShot(projectId: String, shotId: String) {
+        val shot = container.storyboardStore.project(projectId)
+            ?.shots?.firstOrNull { it.id == shotId } ?: return
+        if (shotRunning(shot)) {
+            _message.value = AppStrings.get(R.string.board_err_delete_running_shot)
+            return
+        }
         container.storyboardStore.deleteShot(projectId, shotId)
+    }
+
+    private fun shotRunning(shot: StoryboardShot): Boolean =
+        shot.status == "running" || shot.taskId?.let { taskId ->
+            container.generationManager.tasks.value.firstOrNull { it.taskId == taskId }?.isActive
+        } == true
 
     fun updateShot(projectId: String, shotId: String, prompt: String) =
         container.storyboardStore.updateShot(projectId, shotId) {
@@ -93,12 +113,10 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         val index = project.shots.indexOfFirst { it.id == shotId }
         if (index < 0) return null
         val shot = project.shots[index]
-        val running = shot.status == "running" || shot.taskId?.let { taskId ->
-            container.generationManager.tasks.value.firstOrNull { it.taskId == taskId }?.isActive
-        } == true
-        if (running) return null
+        if (shotRunning(shot)) return null
         val previous = project.shots.getOrNull(index - 1)
-        val reference = shot.referencePath ?: previous?.lastFramePath
+        val reference = if (shot.referenceManual) shot.referencePath
+        else shot.referencePath ?: previous?.lastFramePath
         val prompt = listOf(project.stylePrompt, shot.prompt)
             .filter { it.isNotBlank() }
             .joinToString(", ")
@@ -157,12 +175,12 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                         val lastFrame = extractLastFrame(shot.id, resultPath)
                         container.storyboardStore.markDone(project.id, shot.id, resultPath, lastFrame)
                         val next = project.shots.getOrNull(project.shots.indexOfFirst { it.id == shot.id } + 1)
-                        if (next != null && lastFrame != null &&
+                        if (next != null && lastFrame != null && !next.referenceManual &&
                             (next.referencePath.isNullOrBlank() ||
                                 next.referencePath == previousLastFrame ||
                                 next.referencePath == shot.resultPath)
                         ) {
-                            container.storyboardStore.setReference(project.id, next.id, lastFrame)
+                            container.storyboardStore.setReference(project.id, next.id, lastFrame, manual = false)
                         }
                         syncing.remove(shot.id)
                     }

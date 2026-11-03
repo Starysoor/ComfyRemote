@@ -74,16 +74,33 @@ sealed class WsEvent {
     class Preview(val bitmap: Bitmap) : WsEvent()
 }
 
-class ComfyApi(base: String) {
+class ComfyApi(
+    base: String,
+    private val client: OkHttpClient = defaultClient,
+) {
     val base = base.trimEnd('/')
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.MINUTES)
-        .writeTimeout(120, TimeUnit.SECONDS)
-        .build()
-
     private fun urlEnc(s: String) = java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+
+    companion object {
+        /** Generation may wait a long time for queue/result responses. */
+        val defaultClient: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.MINUTES)
+                .writeTimeout(120, TimeUnit.SECONDS)
+                .build()
+        }
+
+        /** Short client for startup recovery and health probes; never blocks the UI for minutes. */
+        val probeClient: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(4, TimeUnit.SECONDS)
+                .readTimeout(8, TimeUnit.SECONDS)
+                .writeTimeout(8, TimeUnit.SECONDS)
+                .build()
+        }
+    }
 
     private suspend fun httpGet(path: String): String = withContext(Dispatchers.IO) {
         client.newCall(Request.Builder().url(base + path).build()).execute().use { resp ->
@@ -205,12 +222,32 @@ class ComfyApi(base: String) {
     }
 
     suspend fun downloadImage(img: OutputImage): ByteArray = withContext(Dispatchers.IO) {
-        val url = "$base/view?filename=${urlEnc(img.filename)}&subfolder=${urlEnc(img.subfolder)}&type=${urlEnc(img.type)}"
+        val url = viewUrl(img)
         client.newCall(Request.Builder().url(url).build()).execute().use { resp ->
             if (!resp.isSuccessful) throw ComfyException("下载图片失败 HTTP ${resp.code}")
             resp.body?.bytes() ?: throw ComfyException("下载图片失败：空响应")
         }
     }
+
+    /** Streams large local videos/audio straight to disk. */
+    suspend fun downloadTo(img: OutputImage, target: java.io.File) = withContext(Dispatchers.IO) {
+        try {
+            client.newCall(Request.Builder().url(viewUrl(img)).build()).execute().use { resp ->
+                if (!resp.isSuccessful) throw ComfyException("下载图片失败 HTTP ${resp.code}")
+                val body = resp.body ?: throw ComfyException("下载图片失败：空响应")
+                target.parentFile?.mkdirs()
+                body.byteStream().use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+        } catch (t: Throwable) {
+            target.delete()
+            throw t
+        }
+    }
+
+    private fun viewUrl(img: OutputImage): String =
+        "$base/view?filename=${urlEnc(img.filename)}&subfolder=${urlEnc(img.subfolder)}&type=${urlEnc(img.type)}"
 
     suspend fun uploadImage(data: ByteArray, filename: String): String = withContext(Dispatchers.IO) {
         val ext = filename.substringAfterLast('.', "png").lowercase()

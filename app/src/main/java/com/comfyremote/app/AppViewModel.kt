@@ -3,11 +3,12 @@ package com.comfyremote.app
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.comfyremote.app.data.repository.ServerSession
+import com.comfyremote.app.navigation.Routes
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 
 data class AppUiState(
     val ready: Boolean = false,
@@ -20,25 +21,24 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     val state: StateFlow<AppUiState> = _state.asStateFlow()
 
     init {
+        // The shell is usable immediately; ComfyUI auto-recovery runs in the background.
+        _state.value = AppUiState(
+            ready = true,
+            session = container.serverSession.session.value,
+        )
         viewModelScope.launch {
-            val saved = container.serverRepository.savedLastUrl()
-            if (saved != null) {
-                withTimeoutOrNull(4_000) {
-                    runCatching {
-                        container.serverSession.connect(saved)
-                        container.objectInfoCache.invalidate()
-                        container.serverRepository.remember(saved)
-                    }
-                }
+            container.serverSession.session.collect { session ->
+                _state.update { it.copy(session = session) }
             }
-            _state.value = AppUiState(
-                ready = true,
-                session = container.serverSession.session.value,
-            )
-            launch {
-                container.serverSession.session.collect { session ->
-                    _state.value = _state.value.copy(session = session)
-                }
+        }
+        viewModelScope.launch {
+            val saved = container.serverRepository.savedLastUrl() ?: return@launch
+            runCatching {
+                container.serverSession.connect(saved, auto = true)
+                container.objectInfoCache.invalidate()
+                container.serverRepository.remember(saved)
+            }.onSuccess {
+                container.navigationRequests.request(Routes.CREATE)
             }
         }
     }

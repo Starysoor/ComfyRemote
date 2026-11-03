@@ -26,7 +26,7 @@ class ServerHealthRepository {
     suspend fun probe(url: String): ServerHealth {
         val start = System.nanoTime()
         return runCatching {
-            val api = ComfyApi(url)
+            val api = ComfyApi(url, ComfyApi.probeClient)
             val stats = api.systemStats()
             val queue = runCatching { api.queueSnapshot() }.getOrNull()
             ServerHealth(

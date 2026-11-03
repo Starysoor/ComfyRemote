@@ -41,6 +41,9 @@ class GenerationManager(
     val localQueuePaused: StateFlow<Boolean> = _localQueuePaused.asStateFlow()
 
     private val jobs = ConcurrentHashMap<String, Job>()
+    private val spendRecordedIds = ConcurrentHashMap.newKeySet<String>().apply {
+        addAll(_tasks.value.filter { it.spendRecorded }.map { it.taskId })
+    }
 
     init {
         // Persist normalization before any recovery/local-queue work starts.
@@ -56,9 +59,6 @@ class GenerationManager(
     /** Submits one request immediately to its bound server. */
     fun submit(request: GenerationRequest): String {
         val task = newTask(request)
-        if (request.provider == AutoDlConfig.PROVIDER) {
-            container.cloudSpendStore.record(request.workflowName, request.estimatedCloudCost)
-        }
         mutateTasks { prune(listOf(task) + it) }
         startService()
         launchTracked(task.taskId) { execute(task) }
@@ -80,11 +80,6 @@ class GenerationManager(
                 batchSize = requests.size,
                 recoveryNote = if (localQueue) "Waiting in local queue" else null,
             )
-        }
-        requests.forEach { request ->
-            if (request.provider == AutoDlConfig.PROVIDER) {
-                container.cloudSpendStore.record(request.workflowName, request.estimatedCloudCost)
-            }
         }
         mutateTasks { prune(tasks + it) }
         startService()
@@ -216,13 +211,31 @@ class GenerationManager(
         clientId = UUID.randomUUID().toString(),
     )
 
+    /** Persists runner progress and records spend exactly once, after the remote task id exists. */
+    private fun persistProgress(updated: GenerationTask, allowTerminalExit: Boolean = false) {
+        val firstCloudSubmit = updated.shouldRecordCloudSpend && spendRecordedIds.add(updated.taskId)
+        if (firstCloudSubmit) {
+            container.cloudSpendStore.record(
+                updated.request.workflowName,
+                updated.request.estimatedCloudCost,
+                updated.promptId,
+            )
+        }
+        patch(updated.taskId, allowTerminalExit) {
+            updated.copy(
+                localPending = false,
+                spendRecorded = updated.spendRecorded || firstCloudSubmit || updated.taskId in spendRecordedIds,
+            )
+        }
+    }
+
     private suspend fun execute(task: GenerationTask) {
         val runner = runnerFor(task)
         try {
             val final = runner.run(task.copy(localPending = false, recoveryNote = null)) { updated ->
-                patch(updated.taskId) { updated.copy(localPending = false) }
+                persistProgress(updated)
             }
-            patch(final.taskId) { final.copy(localPending = false) }
+            persistProgress(final)
         } catch (e: kotlinx.coroutines.CancellationException) {
             patch(task.taskId) {
                 it.copy(
@@ -257,8 +270,8 @@ class GenerationManager(
         patch(task.taskId, allowTerminalExit = true) { task }
         val runner = runnerFor(task)
         try {
-            val final = runner.recover(task) { updated -> patch(updated.taskId, allowTerminalExit = true) { updated.copy(localPending = false) } }
-            patch(final.taskId, allowTerminalExit = true) { final.copy(localPending = false) }
+            val final = runner.recover(task) { updated -> persistProgress(updated, allowTerminalExit = true) }
+            persistProgress(final, allowTerminalExit = true)
         } catch (e: kotlinx.coroutines.CancellationException) {
             patch(task.taskId, allowTerminalExit = true) {
                 it.copy(

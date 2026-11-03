@@ -24,6 +24,7 @@ data class DiscoveredServer(val ip: String, val url: String) {
 sealed interface DiscoveryEvent {
     data class Progress(val scanned: Int, val total: Int) : DiscoveryEvent
     data class Found(val server: DiscoveredServer) : DiscoveryEvent
+    data class Warning(val code: String) : DiscoveryEvent
     data class Error(val message: String) : DiscoveryEvent
     data object Finished : DiscoveryEvent
 }
@@ -35,6 +36,15 @@ internal fun ipv4SubnetPrefix(address: String): String? {
     val octets = parts.map { it.toIntOrNull() ?: return null }
     if (octets.any { it !in 0..255 }) return null
     return "${octets[0]}.${octets[1]}.${octets[2]}."
+}
+
+/** Tailscale uses CGNAT 100.64.0.0/10, which is not a Java site-local address. */
+internal fun isCgnatAddress(address: String): Boolean {
+    val parts = address.split('.')
+    if (parts.size != 4) return false
+    val octets = parts.map { it.toIntOrNull() ?: return false }
+    if (octets.any { it !in 0..255 }) return false
+    return octets[0] == 100 && octets[1] in 64..127
 }
 
 /**
@@ -52,13 +62,17 @@ class LanServerDiscovery(
         .readTimeout(verifyTimeoutMs, TimeUnit.MILLISECONDS)
         .build()
 
+    private data class Subnet(val prefix: String, val vpn: Boolean)
+
     fun discover(): Flow<DiscoveryEvent> = channelFlow {
-        val prefix = withContext(Dispatchers.IO) { localSubnetPrefix() }
-        if (prefix == null) {
+        val subnet = withContext(Dispatchers.IO) { localSubnet() }
+        if (subnet == null) {
             send(DiscoveryEvent.Error("not-on-wifi"))
             send(DiscoveryEvent.Finished)
             return@channelFlow
         }
+        if (subnet.vpn) send(DiscoveryEvent.Warning("vpn-only"))
+        val prefix = subnet.prefix
         val total = 254
         var scanned = 0
         coroutineScope {
@@ -76,24 +90,36 @@ class LanServerDiscovery(
         send(DiscoveryEvent.Finished)
     }.flowOn(Dispatchers.IO)
 
-    /** Best-effort: prefers wlan0-style site-local IPv4 addresses. */
-    private fun localSubnetPrefix(): String? {
+    /** Best-effort: prefers Wi-Fi site-local addresses, then VPN/CGNAT interfaces. */
+    private fun localSubnet(): Subnet? {
         val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
-        var fallback: String? = null
+        var siteFallback: Subnet? = null
+        var vpnFallback: Subnet? = null
         while (interfaces.hasMoreElements()) {
             val network = interfaces.nextElement()
             if (!network.isUp || network.isLoopback) continue
+            val vpnInterface = network.name.lowercase().let {
+                "tun" in it || "tailscale" in it || "ppp" in it || "vpn" in it
+            }
             val addresses = network.inetAddresses
             while (addresses.hasMoreElements()) {
                 val address = addresses.nextElement()
-                if (address is Inet4Address && address.isSiteLocalAddress) {
-                    val prefix = ipv4SubnetPrefix(address.hostAddress ?: "") ?: continue
-                    if (network.name.startsWith("wlan")) return prefix
-                    fallback = fallback ?: prefix
+                if (address !is Inet4Address) continue
+                val host = address.hostAddress ?: continue
+                val prefix = ipv4SubnetPrefix(host) ?: continue
+                when {
+                    address.isSiteLocalAddress -> {
+                        val candidate = Subnet(prefix, vpn = false)
+                        if (network.name.startsWith("wlan")) return candidate
+                        siteFallback = siteFallback ?: candidate
+                    }
+                    isCgnatAddress(host) || vpnInterface -> {
+                        vpnFallback = vpnFallback ?: Subnet(prefix, vpn = true)
+                    }
                 }
             }
         }
-        return fallback
+        return siteFallback ?: vpnFallback
     }
 
     private suspend fun isComfyAt(ip: String): Boolean = runCatching {

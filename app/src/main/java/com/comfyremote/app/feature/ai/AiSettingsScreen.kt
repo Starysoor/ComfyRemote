@@ -40,10 +40,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.AiSkillDef
 import com.comfyremote.app.R
+import com.comfyremote.app.data.repository.AiEndpointPolicy
 import com.comfyremote.app.ui.Spacing
 import com.comfyremote.app.ui.components.BannerTone
 import com.comfyremote.app.ui.components.BottomActionBar
@@ -120,7 +122,20 @@ fun AiSettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(Spacing.md),
                 ) {
                     IrisTextField(settings.baseUrl, viewModel::updateBase, label = stringResource(R.string.ai_base_url), singleLine = true, modifier = Modifier.fillMaxWidth())
-                    IrisTextField(settings.apiKey, viewModel::updateKey, label = stringResource(R.string.ai_api_key), singleLine = true, modifier = Modifier.fillMaxWidth())
+                    if (AiEndpointPolicy.isInsecureRemote(settings.baseUrl)) {
+                        InfoBanner(
+                            text = stringResource(R.string.ai_insecure_http_warning),
+                            tone = BannerTone.Warning,
+                        )
+                    }
+                    IrisTextField(
+                        settings.apiKey,
+                        viewModel::updateKey,
+                        label = stringResource(R.string.ai_api_key),
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     IrisTextField(settings.model, viewModel::updateModel, label = stringResource(R.string.ai_model), singleLine = true, modifier = Modifier.fillMaxWidth())
                     IrisTextField(
                         settings.visionModel,

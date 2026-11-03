@@ -98,6 +98,9 @@ class ConnectViewModel(private val container: AppContainer) : ViewModel() {
                         val entry = event.server.asEntry()
                         it.copy(scanFound = (it.scanFound + entry).distinctBy(ServerEntry::url))
                     }
+                    is DiscoveryEvent.Warning -> _state.update {
+                        it.copy(scanError = discoveryError(event.code))
+                    }
                     is DiscoveryEvent.Error -> _state.update {
                         it.copy(scanError = discoveryError(event.message))
                     }
@@ -122,6 +125,7 @@ class ConnectViewModel(private val container: AppContainer) : ViewModel() {
 
     private fun discoveryError(code: String): String = when (code) {
         "not-on-wifi" -> AppStrings.get(R.string.connect_not_on_wifi)
+        "vpn-only" -> AppStrings.get(R.string.connect_scan_vpn_hint)
         else -> code
     }
 }

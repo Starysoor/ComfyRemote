@@ -1,7 +1,9 @@
 package com.comfyremote.app.data.discovery
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LanServerDiscoveryTest {
@@ -16,5 +18,14 @@ class LanServerDiscoveryTest {
         assertNull(ipv4SubnetPrefix("192.168.1"))
         assertNull(ipv4SubnetPrefix("192.168.1.999"))
         assertNull(ipv4SubnetPrefix("hello"))
+    }
+
+    @Test
+    fun cgnatRangeIsRecognisedForVpnDiscovery() {
+        assertTrue(isCgnatAddress("100.64.0.1"))
+        assertTrue(isCgnatAddress("100.127.255.254"))
+        assertFalse(isCgnatAddress("100.63.0.1"))
+        assertFalse(isCgnatAddress("100.128.0.1"))
+        assertFalse(isCgnatAddress("192.168.1.2"))
     }
 }

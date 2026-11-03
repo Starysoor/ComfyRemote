@@ -39,6 +39,7 @@ object GenerationTaskCodec {
         .put("recovered", task.recovered)
         .put("recoveryNote", task.recoveryNote ?: JSONObject.NULL)
         .put("localPending", task.localPending)
+        .put("spendRecorded", task.spendRecorded)
         .put("batchId", task.batchId ?: JSONObject.NULL)
         .put("batchIndex", task.batchIndex ?: JSONObject.NULL)
         .put("batchSize", task.batchSize ?: JSONObject.NULL)
@@ -69,6 +70,7 @@ object GenerationTaskCodec {
             recovered = o.optBoolean("recovered", false),
             recoveryNote = nullableString(o, "recoveryNote"),
             localPending = o.optBoolean("localPending", false),
+            spendRecorded = o.optBoolean("spendRecorded", false),
             batchId = nullableString(o, "batchId"),
             batchIndex = nullableInt(o, "batchIndex"),
             batchSize = nullableInt(o, "batchSize"),

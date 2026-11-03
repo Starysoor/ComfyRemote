@@ -20,4 +20,5 @@
     <string name="connect_failed">连接失败：%1$s</string>
     <string name="connect_scan_none">未发现 ComfyUI（确认手机与电脑在同一 Wi-Fi）</string>
     <string name="connect_not_on_wifi">无法确定 Wi-Fi 网段（未连接或使用流量）</string>
+    <string name="connect_scan_vpn_hint">只扫描了本机 /24 网段。Tailscale/VPN 场景请手动输入设备 IP 或 MagicDNS 名称。</string>
 </resources>

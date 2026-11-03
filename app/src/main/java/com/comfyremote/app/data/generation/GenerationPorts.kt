@@ -34,6 +34,9 @@ class ComfyGenerationBackend(serverUrl: String) : GenerationBackend {
     override fun wsEvents(clientId: String): Flow<WsEvent> = api.wsEvents(clientId)
     override suspend fun historyEntry(promptId: String): JSONObject? = api.historyEntry(promptId)
     override suspend fun downloadImage(image: OutputImage): ByteArray = api.downloadImage(image)
+    override suspend fun downloadTo(image: OutputImage, target: File) {
+        api.downloadTo(image, target)
+    }
     override suspend fun queueSnapshot(): QueueSnapshot = api.queueSnapshot()
 }
 

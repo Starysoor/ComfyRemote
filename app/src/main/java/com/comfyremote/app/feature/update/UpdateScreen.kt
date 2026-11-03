@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
 import com.comfyremote.app.ui.IrisType
@@ -91,6 +92,7 @@ fun UpdateScreen(
                 label = stringResource(R.string.update_token),
                 supportingText = stringResource(R.string.update_token_hint),
                 singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth(),
             )
             IrisSecondaryButton(

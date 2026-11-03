@@ -20,4 +20,5 @@
     <string name="connect_failed">Connection failed: %1$s</string>
     <string name="connect_scan_none">No ComfyUI found - check that both devices are on the same Wi-Fi</string>
     <string name="connect_not_on_wifi">Unknown subnet - not on Wi-Fi</string>
+    <string name="connect_scan_vpn_hint">Only the local /24 was scanned. For Tailscale/VPN, enter the device IP or MagicDNS name manually.</string>
 </resources>

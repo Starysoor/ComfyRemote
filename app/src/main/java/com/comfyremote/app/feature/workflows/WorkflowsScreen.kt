@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
 import com.comfyremote.app.WorkflowEntry
 import com.comfyremote.app.data.cloud.AutoDlConfig
+import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.ui.Iris
 import com.comfyremote.app.ui.LocalAppSettings
 import com.comfyremote.app.ui.Spacing
@@ -53,6 +54,7 @@ import com.comfyremote.app.ui.components.TextAction
 fun WorkflowsScreen(
     viewModel: WorkflowsViewModel,
     onOpenWorkflow: (WorkflowEntry) -> Unit,
+    onOpenTransfer: (DraftTransfer) -> Unit,
     onServers: () -> Unit,
     onSettings: () -> Unit,
 ) {
@@ -171,8 +173,12 @@ fun WorkflowsScreen(
 
             if (state.query.isBlank()) {
                 val presets = state.recentPresets.filter { preset ->
-                    if (cloud) preset.workflowPath?.startsWith("autodl:") == true
-                    else preset.workflowPath?.startsWith("autodl:") != true
+                    if (cloud) {
+                        preset.workflowPath?.startsWith("autodl:") == true
+                    } else {
+                        preset.workflowPath?.startsWith("autodl:") != true &&
+                            (preset.serverUrl.isNullOrBlank() || preset.serverUrl == state.session?.url)
+                    }
                 }
                 val results = state.recentResults.filter { item ->
                     if (cloud) item.serverUrl == AutoDlConfig.BASE_URL
@@ -188,13 +194,13 @@ fun WorkflowsScreen(
                         item("result-tiles") {
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                                 items(withMedia, key = { "tile:${it.first.id}" }) { (result, path) ->
-                                    RecentResultTile(result, path) { viewModel.prepareResult(result)?.let(onOpenWorkflow) }
+                                    RecentResultTile(result, path) { viewModel.prepareResult(result)?.let(onOpenTransfer) }
                                 }
                             }
                         }
                     }
                     items(withoutMedia, key = { "result:${it.id}" }) { result ->
-                        RecentResultRow(result) { viewModel.prepareResult(result)?.let(onOpenWorkflow) }
+                        RecentResultRow(result) { viewModel.prepareResult(result)?.let(onOpenTransfer) }
                     }
                 }
                 if (settings.recentPresetsCount > 0 && presets.isNotEmpty()) {

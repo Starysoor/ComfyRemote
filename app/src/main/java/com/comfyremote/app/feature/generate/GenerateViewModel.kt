@@ -87,6 +87,8 @@ data class GenerateUiState(
     val uploads: Map<String, ImageUploadStatus> = emptyMap(),
     val batchCount: Int = 1,
     val batchLocalQueue: Boolean = true,
+    /** Storyboard shots bind one task per shot, so batch controls are locked to 1. */
+    val storyboardShot: Boolean = false,
     val message: String? = null,
 ) {
     val filteredPresets: List<PromptPreset>
@@ -151,6 +153,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     private var submitJob: Job? = null
     private var pendingStoryboardProjectId: String? = null
     private var pendingStoryboardShotId: String? = null
+    private var storyboardReferenceValueAtLoad: String? = null
 
     init {
         viewModelScope.launch {
@@ -195,6 +198,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         loadedPath = path
         pendingStoryboardProjectId = null
         pendingStoryboardShotId = null
+        storyboardReferenceValueAtLoad = null
         _state.update { it.copy(loading = true, error = null, draft = null, insight = null) }
         viewModelScope.launch {
             runCatching { buildDraft(path, name) }
@@ -203,6 +207,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                     val transfer = container.draftTransferRepository.consume(path)
                     pendingStoryboardProjectId = transfer?.storyboardProjectId
                     pendingStoryboardShotId = transfer?.storyboardShotId
+                    val storyboard = pendingStoryboardProjectId != null && pendingStoryboardShotId != null
                     val remembered = if (transfer == null) {
                         container.workflowDraftStore.load(
                             path,
@@ -234,10 +239,15 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                             insight = insightFor(draft, conv),
                             skills = container.aiSkillBindingStore.filter(container.aiSkillStore.load(), name, path),
                             activeTaskId = null,
+                            batchCount = if (storyboard) 1
+                                else container.appSettingsStore.settings.value.defaultBatchCount,
+                            storyboardShot = storyboard,
                             message = reuseMessage,
                         )
                     }
-                    transfer?.referenceLocalPath?.takeIf(String::isNotBlank)?.let(::useLocalResultAsReference)
+                    transfer?.referenceLocalPath?.takeIf(String::isNotBlank)?.let { reference ->
+                        useLocalResultAsReference(reference, initial = storyboard)
+                    }
                     consumeIncomingMedia()
                 }
                 .onFailure { e ->
@@ -293,7 +303,10 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     fun updateValue(key: String, value: String) = updateDraft { it.copy(values = it.values + (key to value)) }
     fun toggleRandomSeed() = updateDraft { it.copy(randomSeed = !it.randomSeed) }
     fun setPresetQuery(value: String) = _state.update { it.copy(presetQuery = value) }
-    fun setBatchCount(value: Int) = _state.update { it.copy(batchCount = value.coerceIn(1, MAX_BATCH)) }
+    fun setBatchCount(value: Int) {
+        if (_state.value.storyboardShot) return
+        _state.update { it.copy(batchCount = value.coerceIn(1, MAX_BATCH)) }
+    }
     fun toggleBatchLocalQueue() = _state.update { it.copy(batchLocalQueue = !it.batchLocalQueue) }
     fun clearMessage() = _state.update { it.copy(message = null) }
     fun dismissAiResult() = _state.update { it.copy(aiResult = null) }
@@ -344,17 +357,19 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
 
         val projectId = pendingStoryboardProjectId
         val shotId = pendingStoryboardShotId
-        if (projectId != null && shotId != null) {
+        val storyboard = projectId != null && shotId != null
+        if (storyboard) {
             val status = container.storyboardStore.project(projectId)
                 ?.shots?.firstOrNull { it.id == shotId }?.status
             if (status == "running") {
                 _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_storyboard_running)) }
                 return
             }
+            syncStoryboardReference(projectId, shotId, draft)
         }
 
         persistDraftNow(draft)
-        val count = _state.value.batchCount.coerceIn(1, MAX_BATCH)
+        val count = effectiveBatchCount(storyboard, _state.value.batchCount)
         val requests = (0 until count).map { index -> buildRequest(draft, cv, index) }
         val localQueue = _state.value.batchLocalQueue
         submitJob = viewModelScope.launch {
@@ -372,6 +387,21 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 )
             }
         }
+    }
+
+    /** Persists a manually changed reference so Regenerate opens the same image. */
+    private fun syncStoryboardReference(projectId: String, shotId: String, draft: WorkflowDraft) {
+        val imageField = draft.fields.firstOrNull { it.kind == FieldKind.IMAGE } ?: return
+        val current = draft.values[imageField.key] ?: imageField.value
+        if (current.isBlank()) {
+            if (storyboardReferenceValueAtLoad != null) {
+                container.storyboardStore.setReference(projectId, shotId, null, manual = true)
+            }
+            return
+        }
+        if (current == storyboardReferenceValueAtLoad) return
+        val localPath = container.cloudInputStore.localPath(current) ?: return
+        container.storyboardStore.setReference(projectId, shotId, localPath, manual = true)
     }
 
     private fun fieldValue(
@@ -521,6 +551,8 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 prompts = prompts,
                 workflowPath = draft.workflowPath,
                 createdAt = System.currentTimeMillis(),
+                serverUrl = draft.storageServerUrl.ifBlank { container.serverSession.url }
+                    .takeIf { it.isNotBlank() },
                 values = values,
                 randomSeed = draft.randomSeed,
                 tags = listOf("workflow"),
@@ -553,15 +585,30 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
 
     fun applyPreset(preset: PromptPreset, mode: PresetApplyMode = PresetApplyMode.ALL) {
         container.promptPresetRepository.markUsed(preset.id)
+        val current = _state.value.draft
+        val targetServer = current?.storageServerUrl?.ifBlank { container.serverSession.url }.orEmpty()
+        val fieldsByKey = current?.fields?.associateBy { it.key }.orEmpty()
+        val mediaAllowed = preset.serverUrl != null && preset.serverUrl == targetServer
+        val skippedMedia = if (current != null && !mediaAllowed && preset.isWorkflowPreset) {
+            preset.values.keys.count { key ->
+                fieldsByKey[key]?.kind == FieldKind.IMAGE || fieldsByKey[key]?.kind == FieldKind.AUDIO
+            }
+        } else 0
         updateDraft { draft ->
             val textFields = draft.fields.filter { it.kind == FieldKind.TEXT }
             val textKeys = textFields.mapTo(hashSetOf()) { it.key }
-            val parameterKeys = draft.fields.filter { it.kind != FieldKind.TEXT }.mapTo(hashSetOf()) { it.key }
+            val parameterKeys = draft.fields
+                .filter { it.kind == FieldKind.PARAM || it.kind == FieldKind.SEED }
+                .mapTo(hashSetOf()) { it.key }
             val knownKeys = draft.fields.mapTo(hashSetOf()) { it.key }
+            val fields = draft.fields.associateBy { it.key }
             var values = draft.values
 
             if (preset.isWorkflowPreset && preset.workflowPath == draft.workflowPath) {
-                val accepted = preset.values.filterKeys { it in knownKeys }
+                val accepted = preset.values.filterKeys { key ->
+                    key in knownKeys &&
+                        (mediaAllowed || fields[key]?.kind !in setOf(FieldKind.IMAGE, FieldKind.AUDIO))
+                }
                 when (mode) {
                     PresetApplyMode.ALL -> values = values + accepted
                     PresetApplyMode.PROMPTS -> values = values + accepted.filterKeys { it in textKeys }
@@ -581,6 +628,11 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 values = values,
                 randomSeed = if (mode != PresetApplyMode.PROMPTS) preset.randomSeed ?: draft.randomSeed else draft.randomSeed,
             )
+        }
+        if (skippedMedia > 0) {
+            _state.update {
+                it.copy(message = AppStrings.get(R.string.gen_vm_preset_media_skipped, skippedMedia))
+            }
         }
     }
 
@@ -639,7 +691,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun useLocalResultAsReference(localPath: String) {
+    fun useLocalResultAsReference(localPath: String, initial: Boolean = false) {
         val draft = _state.value.draft ?: return
         val field = draft.fields.firstOrNull { it.kind == FieldKind.IMAGE }
         if (field == null) {
@@ -659,9 +711,12 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                     container.serverSession.require().uploadImage(bytes, "result_ref_${System.currentTimeMillis()}.$ext")
                 }
             }.onSuccess { name ->
+                if (initial) storyboardReferenceValueAtLoad = name
                 updateValue(field.key, name)
                 clearUpload(field.key)
-                _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_result_as_reference)) }
+                if (!initial) {
+                    _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_result_as_reference)) }
+                }
             }.onFailure { e ->
                 setUpload(field.key, ImageUploadStatus(ImageUploadPhase.FAILED, e.message))
             }
@@ -864,5 +919,9 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         _state.update { it.copy(uploads = it.uploads - key) }
     }
 
-    companion object { private const val MAX_BATCH = 16 }
+    companion object { internal const val MAX_BATCH = 16 }
 }
+
+/** Storyboard shots bind exactly one task; ordinary workflows keep their configured batch. */
+internal fun effectiveBatchCount(storyboard: Boolean, configured: Int): Int =
+    if (storyboard) 1 else configured.coerceIn(1, GenerateViewModel.MAX_BATCH)

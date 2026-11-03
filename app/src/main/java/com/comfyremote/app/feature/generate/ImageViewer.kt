@@ -52,6 +52,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import com.comfyremote.app.R
+import com.comfyremote.app.data.media.MediaTypeResolver
 import com.comfyremote.app.data.media.decodeSampled
 import com.comfyremote.app.ui.AppStrings
 import kotlinx.coroutines.Dispatchers
@@ -151,25 +152,13 @@ fun shareMedia(context: Context, path: String) {
     }
 }
 
-private val VIDEO_EXTENSIONS = setOf("mp4", "webm", "mov", "m4v", "mkv", "avi", "3gp")
+fun isVideoPath(path: String): Boolean = MediaTypeResolver.isVideo(path)
 
-fun isVideoPath(path: String): Boolean =
-    path.substringAfterLast('.', "").lowercase() in VIDEO_EXTENSIONS
-
-fun isAudioPath(path: String): Boolean =
-    path.substringAfterLast('.', "").lowercase() in setOf("wav", "mp3", "m4a", "ogg", "flac", "aac")
+fun isAudioPath(path: String): Boolean = MediaTypeResolver.isAudio(path)
 
 fun isNonImageMedia(path: String): Boolean = isVideoPath(path) || isAudioPath(path)
 
-fun mediaMimeType(path: String): String = when (path.substringAfterLast('.', "").lowercase()) {
-    "mp4", "m4v" -> "video/mp4"
-    "webm" -> "video/webm"
-    "mov" -> "video/quicktime"
-    "gif" -> "image/gif"
-    "webp" -> "image/webp"
-    "jpg", "jpeg" -> "image/jpeg"
-    else -> if (isAudioPath(path)) "audio/*" else "image/png"
-}
+fun mediaMimeType(path: String): String = MediaTypeResolver.mimeType(path)
 
 /**
  * Square media thumbnail for images, videos (first frame + play badge) and
