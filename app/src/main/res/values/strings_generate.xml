@@ -102,6 +102,8 @@
 
     <!-- ViewModel messages -->
     <string name="gen_vm_cloud_note">Cloud workflow · executed by AutoDL.Art</string>
+    <string name="gen_workflow_id">ID · %1$s</string>
+    <string name="gen_vm_multi_ref_note">Multi-image references guide identity/style; they do not guarantee an identical first frame. Use a first/last-frame workflow when the first frame must match exactly.</string>
     <string name="gen_vm_defaults_restored">Workflow defaults restored</string>
     <string name="gen_vm_server_disconnected">Server disconnected</string>
     <string name="gen_vm_cloud_token_missing">Configure a cloud token in Settings → Cloud</string>
@@ -122,6 +124,7 @@
         <item quantity="other">Imported %1$d presets</item>
     </plurals>
     <string name="gen_vm_local_audio_unsupported">Local ComfyUI audio inputs are not supported yet</string>
+    <string name="gen_vm_wait_media">Wait for the reference media to finish loading</string>
     <string name="gen_vm_no_reference_input">This workflow has no reference-image input</string>
     <string name="gen_vm_result_as_reference">Result set as reference image</string>
     <string name="gen_vm_no_video_workflow">Set a default cloud video workflow in Settings</string>

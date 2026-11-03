@@ -102,6 +102,8 @@
 
     <!-- ViewModel 提示 -->
     <string name="gen_vm_cloud_note">云端工作流 · 由 AutoDL.Art 执行</string>
+    <string name="gen_workflow_id">ID · %1$s</string>
+    <string name="gen_vm_multi_ref_note">多图参考用于约束人物与风格，不保证首帧与参考图完全一致；需要固定首帧请使用首尾帧工作流。</string>
     <string name="gen_vm_defaults_restored">已恢复工作流默认值</string>
     <string name="gen_vm_server_disconnected">服务器已断开</string>
     <string name="gen_vm_cloud_token_missing">请先在设置 → 云端服务中配置 Token</string>
@@ -120,6 +122,7 @@
         <item quantity="other">已导入 %1$d 个预设</item>
     </plurals>
     <string name="gen_vm_local_audio_unsupported">本地 ComfyUI 工作流暂不支持音频输入</string>
+    <string name="gen_vm_wait_media">请等待参考素材处理完成</string>
     <string name="gen_vm_no_reference_input">当前工作流没有可接收参考图的输入</string>
     <string name="gen_vm_result_as_reference">结果图已设为参考图</string>
     <string name="gen_vm_no_video_workflow">请先在设置中配置默认云端视频工作流</string>

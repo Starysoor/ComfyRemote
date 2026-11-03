@@ -51,7 +51,10 @@ class CloudInputStore(private val context: Context) {
 
     suspend fun saveBytes(bytes: ByteArray, mime: String?, maxDimension: Int = 1024): String =
         withContext(Dispatchers.IO) {
-            val (prepared, ext) = ImagePreprocessor.prepare(bytes, mime, maxDimension, 84)
+            // Always normalize to JPEG: phone galleries may return HEIC/AVIF/GIF or a
+            // null MIME, and hosted workflows only accept JPEG/PNG/WebP. Re-encoding
+            // also keeps the base64 request small.
+            val (prepared, ext) = ImagePreprocessor.prepare(bytes, mime, maxDimension, 84, forceJpeg = true)
             val name = "cloud_${System.currentTimeMillis()}_${(1000..9999).random()}.$ext"
             val target = File(dir, name)
             target.writeBytes(prepared)

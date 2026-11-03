@@ -249,9 +249,16 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             val warnings = CloudWorkflowMapping.warnings(spec)
             val notes = listOf(
                 spec.name,
+                AppStrings.get(R.string.gen_workflow_id, spec.id),
                 spec.description,
+                spec.content,
                 AppStrings.get(R.string.gen_vm_cloud_note),
-            ).filter(String::isNotBlank)
+                if (spec.kind == "video" && spec.rules.any { it.name.startsWith("ref_image_") }) {
+                    AppStrings.get(R.string.gen_vm_multi_ref_note)
+                } else {
+                    null
+                },
+            ).filterNotNull().filter(String::isNotBlank)
             val prompt = spec.toJson()
             return WorkflowDraft(
                 workflowPath = path,
@@ -315,6 +322,10 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 }
                 return
             }
+        }
+        if (_state.value.uploads.values.any { it.phase == ImageUploadPhase.UPLOADING }) {
+            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_wait_media)) }
+            return
         }
         val blocking = _state.value.insight?.blockingIssues.orEmpty()
         if (blocking.isNotEmpty()) {

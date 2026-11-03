@@ -7,7 +7,7 @@
 
 One lens, every model. Android client for local ComfyUI **and** hosted cloud workflows — pick a model, write a prompt, generate images, video or audio.
 
-**v2.2.0** · [AutoDL cloud guide](docs/AutoDL.md) · [Screenshots](docs/verification)
+**v2.2.1** · [AutoDL cloud guide](docs/AutoDL.md) · [Screenshots](docs/verification)
 
 <a href="docs/verification/redesign/light-create.png"><img src="docs/verification/redesign/light-create.png" width="200"/></a>
 <a href="docs/verification/redesign/light-generate.png"><img src="docs/verification/redesign/light-generate.png" width="200"/></a>

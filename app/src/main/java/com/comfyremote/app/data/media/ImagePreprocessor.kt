@@ -22,13 +22,15 @@ object ImagePreprocessor {
         mime: String?,
         maxDimension: Int = MAX_DIMENSION,
         jpegQuality: Int = JPEG_QUALITY,
+        /** Cloud APIs expect a predictable MIME type; always re-encode then. */
+        forceJpeg: Boolean = false,
     ): Pair<ByteArray, String> {
         val limit = maxDimension.coerceAtLeast(256)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         if (bounds.outWidth <= 0) return Pair(bytes, extFor(mime))
         val maxDim = maxOf(bounds.outWidth, bounds.outHeight)
-        if (maxDim <= limit) return Pair(bytes, extFor(mime))
+        if (maxDim <= limit && !forceJpeg) return Pair(bytes, extFor(mime))
 
         val opts = BitmapFactory.Options().apply {
             inSampleSize = (maxDim / limit).coerceAtLeast(1)

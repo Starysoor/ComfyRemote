@@ -18,6 +18,7 @@
     <string name="wf_recent_results">Recent results</string>
     <string name="wf_setup">SETUP</string>
     <string name="wf_recent">RECENT</string>
+    <string name="wf_cloud_id">ID · %1$s</string>
     <string name="wf_cloud_workflows">Cloud workflows</string>
     <string name="wf_workflows">Workflows</string>
     <string name="wf_empty_cloud">No cloud workflows available</string>

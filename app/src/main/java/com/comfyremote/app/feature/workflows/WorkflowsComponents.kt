@@ -32,6 +32,7 @@ import com.comfyremote.app.HistoryItem
 import com.comfyremote.app.R
 import com.comfyremote.app.ServerEntry
 import com.comfyremote.app.WorkflowEntry
+import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.repository.PromptPreset
 import com.comfyremote.app.data.repository.ServerHealth
 import com.comfyremote.app.feature.generate.MediaThumbnail
@@ -184,6 +185,21 @@ internal fun WorkflowRow(
         title = workflow.name,
         subtitle = if (workflow.cloud) workflow.description else null,
         titleMaxLines = 2,
+        subtitleMaxLines = if (workflow.cloud) 2 else 1,
+        footer = if (workflow.cloud) {
+            {
+                Text(
+                    stringResource(
+                        R.string.wf_cloud_id,
+                        workflow.path.removePrefix(AutoDlConfig.PATH_PREFIX),
+                    ),
+                    style = IrisType.metaSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        } else null,
         accent = favorite,
         meta = {
             StatusChip(workflowType(workflow))

@@ -19,8 +19,8 @@ android {
         applicationId = "com.comfyremote.app"
         minSdk = 29
         targetSdk = 34
-        versionCode = 21
-        versionName = "2.2.0"
+        versionCode = 22
+        versionName = "2.2.1"
     }
 
     signingConfigs {
@@ -48,7 +48,10 @@ android {
         jvmTarget = "17"
         freeCompilerArgs += "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi"
     }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 }
 
 dependencies {

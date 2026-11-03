@@ -4,6 +4,8 @@ import com.comfyremote.app.ComfyException
 import com.comfyremote.app.OutputImage
 import com.comfyremote.app.QueueSnapshot
 import com.comfyremote.app.WsEvent
+import android.util.Log
+import com.comfyremote.app.BuildConfig
 import com.comfyremote.app.data.cloud.CloudProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -24,6 +26,19 @@ class CloudWorkflowBackend(
     private var lastStatus: String = ""
 
     override suspend fun queuePrompt(prompt: JSONObject, clientId: String): String {
+        if (BuildConfig.DEBUG) {
+            // Log only media metadata, never prompts or base64 contents. This makes
+            // "was my reference included?" reproducible from logcat.
+            val media = buildList {
+                prompt.keys().forEach { key ->
+                    val value = prompt.optString(key)
+                    if (value.startsWith("data:")) {
+                        add("$key(${value.substringAfter("data:").substringBefore(";")}, ${value.length}B)")
+                    }
+                }
+            }
+            Log.d("IrisCloud", "submit workflow=$workflowId keys=${prompt.keys().asSequence().toList()} media=$media")
+        }
         val id = repository.submit(workflowId, prompt)
         taskId = id
         lastStatus = "QUEUED"

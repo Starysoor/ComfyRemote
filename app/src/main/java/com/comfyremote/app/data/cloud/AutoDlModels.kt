@@ -124,6 +124,7 @@ data class CloudWorkflowSpec(
     val name: String,
     val kind: String,
     val description: String,
+    val content: String = "",
     val rules: List<CloudInputRule>,
     val pricing: CloudPricing? = null,
 ) {
@@ -135,6 +136,7 @@ data class CloudWorkflowSpec(
         .put("name", name)
         .put("kind", kind)
         .put("description", description)
+        .put("content", content)
         .put("pricing", pricing?.let(::pricingToJson) ?: JSONObject.NULL)
         .put("rules", JSONArray().apply { rules.forEach { put(ruleToJson(it)) } })
 
@@ -153,6 +155,7 @@ data class CloudWorkflowSpec(
                 name = json.optString("name", id),
                 kind = json.optString("kind", "video"),
                 description = json.optString("description"),
+                content = json.optString("content"),
                 rules = rules,
                 pricing = json.optJSONObject("pricing")?.let(::pricingFromJson),
             )
@@ -299,6 +302,7 @@ object CloudWorkflowParser {
             name = data.optString("name", id),
             kind = kind,
             description = data.optString("description"),
+            content = data.optString("content"),
             rules = rules,
             pricing = parsePricing(data.optJSONObject("billing_config"), priceType),
         )

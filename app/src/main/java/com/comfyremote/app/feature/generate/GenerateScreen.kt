@@ -158,7 +158,8 @@ fun GenerateScreen(
                             stringResource(R.string.gen_generate)
                         },
                         onClick = { viewModel.generate() },
-                        enabled = state.insight?.compatible != false,
+                        enabled = state.insight?.compatible != false &&
+                            state.uploads.values.none { it.phase == ImageUploadPhase.UPLOADING },
                         icon = Icons.Outlined.AutoAwesome,
                     )
                 }
@@ -185,7 +186,15 @@ fun GenerateScreen(
                     verticalArrangement = Arrangement.spacedBy(if (appSettings.compactUi) Spacing.sm else Spacing.md),
                 ) {
                     task?.let { t -> item("status") { GenerationStatusCard(t, running) } }
-                    state.insight?.let { insight -> item("workflow-insight") { WorkflowInsightCard(insight) } }
+                    state.insight?.let { insight ->
+                        item("workflow-insight") {
+                            WorkflowInsightCard(
+                                insight,
+                                workflowId = draft.cloud?.id,
+                                workflowDescription = draft.cloud?.description,
+                            )
+                        }
+                    }
                     task?.error?.let { error ->
                         item("error") {
                             ErrorCard(

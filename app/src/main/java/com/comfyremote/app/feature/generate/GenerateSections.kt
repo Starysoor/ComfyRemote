@@ -112,13 +112,35 @@ internal fun GenerationStatusCard(task: GenerationTask, running: Boolean) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun WorkflowInsightCard(insight: WorkflowInsight) {
+internal fun WorkflowInsightCard(
+    insight: WorkflowInsight,
+    workflowId: String? = null,
+    workflowDescription: String? = null,
+) {
     IrisCard {
         Text(
             stringResource(R.string.gen_insight_title).uppercase(),
             style = IrisType.overline,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        workflowId?.takeIf(String::isNotBlank)?.let {
+            Text(
+                stringResource(R.string.gen_workflow_id, it),
+                style = IrisType.metaSmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        workflowDescription?.takeIf(String::isNotBlank)?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (insight.capabilities.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 insight.capabilities.forEach { StatusChip(it.label) }

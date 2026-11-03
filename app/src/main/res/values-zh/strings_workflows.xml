@@ -18,6 +18,7 @@
     <string name="wf_recent_results">最近结果</string>
     <string name="wf_setup">整套</string>
     <string name="wf_recent">最近</string>
+    <string name="wf_cloud_id">ID · %1$s</string>
     <string name="wf_cloud_workflows">云端工作流</string>
     <string name="wf_workflows">工作流</string>
     <string name="wf_empty_cloud">云端没有可用工作流</string>

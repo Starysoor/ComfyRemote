@@ -85,8 +85,10 @@ fun ListRow(
     meta: (@Composable RowScope.() -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    footer: (@Composable () -> Unit)? = null,
     accent: Boolean = false,
     titleMaxLines: Int = 1,
+    subtitleMaxLines: Int = 1,
     onClick: (() -> Unit)? = null,
 ) {
     val compact = LocalAppSettings.current.compactUi
@@ -129,7 +131,7 @@ fun ListRow(
                             it,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
+                            maxLines = subtitleMaxLines,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
@@ -140,6 +142,7 @@ fun ListRow(
                             content = it,
                         )
                     }
+                    footer?.invoke()
                 }
             }
             when {

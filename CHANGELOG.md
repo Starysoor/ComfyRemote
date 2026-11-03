@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.2.1 — 2026-11-03
+
+### Added
+
+- Cloud workflow cards now show the unique AutoDL workflow ID under the name.
+- Cloud workflow descriptions are shown in the list and in the Generate workflow card; the full AutoDL detail `content` is available in Workflow notes.
+- Debug logging of cloud media metadata (`IrisCloud`) to diagnose missing reference images.
+
+### Fixed
+
+- Prevent submitting a cloud task while reference images/audio are still being prepared.
+- Normalize every cloud reference image to JPEG, so HEIC/AVIF/GIF/null-MIME images cannot be sent with an invalid MIME type.
+- Show a clear note that multi-image references do not guarantee an identical first frame; use a first/last-frame workflow for exact first-frame control.
+- Version `2.2.1` (versionCode 22).
+
 ## 2.2.0 — 2026-11-03
 
 ### Added
