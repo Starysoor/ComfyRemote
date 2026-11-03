@@ -57,6 +57,7 @@ import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.feature.ai.AiSettingsScreen
 import com.comfyremote.app.feature.ai.AiSettingsViewModel
 import com.comfyremote.app.feature.cloud.CloudProviderPlaceholderScreen
+import com.comfyremote.app.feature.cloud.CloudProviderSettingsScreen
 import com.comfyremote.app.feature.cloud.CloudServicesScreen
 import com.comfyremote.app.feature.connect.ConnectScreen
 import com.comfyremote.app.feature.connect.ConnectViewModel
@@ -289,12 +290,19 @@ private fun AppNavHost(
                 arguments = listOf(navArgument("providerId") { type = NavType.StringType }),
             ) { entry ->
                 val providerId = entry.arguments?.getString("providerId").orEmpty()
-                if (providerId == AutoDlConfig.PROVIDER) {
-                    val vm: CloudSettingsViewModel = viewModel(factory = factory)
-                    CloudSettingsScreen(vm) { navController.popBackStack() }
-                } else {
-                    CloudProviderPlaceholderScreen(
-                        title = container.cloudProviders.byId(providerId)?.label ?: providerId,
+                val provider = container.cloudProviders.byId(providerId)
+                when {
+                    providerId == AutoDlConfig.PROVIDER -> {
+                        val vm: CloudSettingsViewModel = viewModel(factory = factory)
+                        CloudSettingsScreen(vm) { navController.popBackStack() }
+                    }
+                    provider != null -> CloudProviderSettingsScreen(
+                        provider = provider,
+                        settings = container.cloudProviderSettingsStore,
+                        onBack = { navController.popBackStack() },
+                    )
+                    else -> CloudProviderPlaceholderScreen(
+                        title = providerId,
                         onBack = { navController.popBackStack() },
                     )
                 }

@@ -13,6 +13,11 @@
     <string name="cloud_provider_configured">已配置</string>
     <string name="cloud_provider_not_configured">未配置</string>
     <string name="cloud_provider_unavailable">该厂商的设置页暂未提供。</string>
+    <string name="cloud_provider_base_url">Base URL</string>
+    <string name="cloud_provider_base_url_hint">请包含 API 版本段，例如 https://api.example.com/v1</string>
+    <string name="cloud_provider_api_key">API Key / Token</string>
+    <string name="cloud_provider_models">模型列表</string>
+    <string name="cloud_provider_models_hint">逗号分隔的模型 ID；留空则请求 /models</string>
     <string name="settings_update">软件更新</string>
     <string name="settings_update_detail">检查并安装 GitHub Release</string>
     <string name="settings_version">版本</string>

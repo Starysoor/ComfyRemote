@@ -5,7 +5,12 @@ import android.content.SharedPreferences
 import com.comfyremote.app.data.cloud.AutoDlRepository
 import com.comfyremote.app.data.cloud.AutoDlSettingsStore
 import com.comfyremote.app.data.cloud.CloudInputStore
+import com.comfyremote.app.data.cloud.CloudProviderSettingsStore
 import com.comfyremote.app.data.cloud.CloudSpendStore
+import com.comfyremote.app.data.cloud.CustomOpenAiRepository
+import com.comfyremote.app.data.cloud.GeminiImageRepository
+import com.comfyremote.app.data.cloud.OpenAiImageRepository
+import com.comfyremote.app.data.cloud.ReplicateRepository
 import com.comfyremote.app.data.discovery.LanServerDiscovery
 import com.comfyremote.app.data.generation.CloudSubmissionGate
 import com.comfyremote.app.data.generation.GenerationManager
@@ -44,7 +49,20 @@ class AppContainer(val app: Application) {
 
     val autoDlSettingsStore = AutoDlSettingsStore(secretStore)
     val autoDlRepository = AutoDlRepository(autoDlSettingsStore)
-    val cloudProviders = com.comfyremote.app.data.cloud.CloudProviderRegistry(listOf(autoDlRepository))
+    val cloudProviderSettingsStore = CloudProviderSettingsStore(prefs, secretStore)
+    val openAiImageRepository = OpenAiImageRepository(cloudProviderSettingsStore)
+    val geminiImageRepository = GeminiImageRepository(cloudProviderSettingsStore)
+    val replicateRepository = ReplicateRepository(cloudProviderSettingsStore)
+    val customOpenAiRepository = CustomOpenAiRepository(cloudProviderSettingsStore)
+    val cloudProviders = com.comfyremote.app.data.cloud.CloudProviderRegistry(
+        listOf(
+            autoDlRepository,
+            openAiImageRepository,
+            geminiImageRepository,
+            replicateRepository,
+            customOpenAiRepository,
+        )
+    )
     val cloudInputStore = CloudInputStore(app)
     val cloudSpendStore = CloudSpendStore(prefs)
     val storyboardStore = StoryboardStore(app)

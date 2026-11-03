@@ -13,6 +13,11 @@
     <string name="cloud_provider_configured">Configured</string>
     <string name="cloud_provider_not_configured">Not configured</string>
     <string name="cloud_provider_unavailable">Settings for this provider are not available yet.</string>
+    <string name="cloud_provider_base_url">Base URL</string>
+    <string name="cloud_provider_base_url_hint">Include the API version segment, e.g. https://api.example.com/v1</string>
+    <string name="cloud_provider_api_key">API key / token</string>
+    <string name="cloud_provider_models">Models</string>
+    <string name="cloud_provider_models_hint">Comma-separated model IDs; leave blank to query /models</string>
     <string name="settings_update">Software update</string>
     <string name="settings_update_detail">Check and install GitHub Releases</string>
     <string name="settings_version">Version</string>

@@ -13,6 +13,7 @@ interface CloudProvider {
     val pathPrefix: String
     val baseUrl: String
     val settingsSummary: String get() = "Hosted workflow API"
+    val defaultModels: List<String> get() = emptyList()
 
     fun configured(): Boolean
 

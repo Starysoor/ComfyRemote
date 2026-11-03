@@ -22,7 +22,10 @@
 - Project aspect-ratio/default-value model fields; per-shot workflow and portable parameter memory for Regenerate.
 - Shot multi-reference: select several project assets and fill consecutive image inputs in one Generate session.
 - History results can be added to a storyboard project with a chosen semantic role.
-- Cloud provider registry metadata and a Cloud services list with per-provider detail routing.
+- Official provider adapters: OpenAI Images (GPT Image 1, DALL·E 3), Google Gemini/Imagen image models, and Replicate image/video models.
+- Replicate input parameters are discovered from each model's OpenAPI input schema.
+- Custom OpenAI-compatible provider with editable base URL, token and model list; image parameters are inferred automatically.
+- Cloud provider registry metadata and a Cloud services list with per-provider detail routing and credential settings.
 - Create's Cloud tab aggregates workflows from every registered provider and labels cards with the provider name.
 - Cloud confirmation, cancellation and spend tracking now treat every non-ComfyUI provider as hosted cloud work.
 - Version `2.3.0` (versionCode 26).
