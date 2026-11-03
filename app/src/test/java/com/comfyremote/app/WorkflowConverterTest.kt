@@ -166,9 +166,9 @@ class WorkflowConverterTest {
         val stored = listOf(edited)
         val merged = AiSkillDef.mergeBuiltins(stored)
         assertEquals("my prompt", merged.first { it.id == AiSkillDef.DEFAULT_NATURAL_ID }.systemPrompt)
-        assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_EN_ID })
+        assertTrue(merged.none { it.id == AiSkillDef.DEFAULT_EN_ID })
         assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_NEG_ID })
-        assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_TRANSLATE_ID })
+        assertTrue(merged.none { it.id == AiSkillDef.DEFAULT_TRANSLATE_ID })
         assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_NSFW_EXPAND_ID })
         assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_NSFW_TAGS_ID })
     }

@@ -119,6 +119,17 @@ class AiClientTest {
     }
 
     @Test
+    fun tagProfilesResolveAndAddQualityConventions() {
+        assertEquals(TagProfile.ILLUSTRIOUS, TagProfile.AUTO.resolve("Anima-Turbo极速文生图"))
+        assertEquals(TagProfile.ILLUSTRIOUS, TagProfile.AUTO.resolve("SDXL-动漫文生图"))
+        assertEquals(TagProfile.PONY, TagProfile.AUTO.resolve("Pony-V6"))
+        assertEquals(TagProfile.AUTO, TagProfile.AUTO.resolve("MOSS-A-加速文生图"))
+        assertTrue(tagProfileInstruction(TagProfile.PONY, "anything").contains("score_9"))
+        assertTrue(tagProfileInstruction(TagProfile.DANBOORU, "anything").contains("masterpiece"))
+        assertTrue(tagProfileInstruction(TagProfile.AUTO, "MOSS").isEmpty())
+    }
+
+    @Test
     fun applyThinkingModeWritesExpectedFields() {
         // mirrors MainViewModel.applyThinkingMode mapping via the same JSON contract
         val extra = JSONObject()

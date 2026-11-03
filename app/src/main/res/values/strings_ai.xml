@@ -7,6 +7,7 @@
     <string name="ai_base_url">Base URL</string>
     <string name="ai_api_key">API Key</string>
     <string name="ai_insecure_http_warning">Non-local HTTP endpoint: the API key and prompt content will be sent unencrypted</string>
+    <string name="ai_tag_profile">Tag profile</string>
     <string name="ai_model">Model</string>
     <string name="ai_vision_model">Vision model (image rewrite)</string>
     <string name="ai_vision_model_hint">Blank reuses the model above; must accept image_url input</string>

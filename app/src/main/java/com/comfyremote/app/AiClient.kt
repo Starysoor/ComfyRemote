@@ -23,6 +23,32 @@ enum class SkillExecution { TEXT_MODEL, VISION_MODEL, MULTI_STAGE }
 
 enum class SkillOutput { REPLACE_FIELD, APPEND, CANDIDATES, MULTI_FIELD }
 
+/** Quality-tag conventions for tag-oriented models. */
+enum class TagProfile {
+    AUTO, DANBOORU, ILLUSTRIOUS, PONY, CUSTOM;
+
+    fun resolve(workflowName: String): TagProfile {
+        if (this != AUTO) return this
+        val name = workflowName.lowercase()
+        return when {
+            "pony" in name -> PONY
+            "illustrious" in name || "anima" in name || "sdxl" in name -> ILLUSTRIOUS
+            "moss" in name || "qwen" in name || "flux" in name -> AUTO
+            else -> DANBOORU
+        }
+    }
+}
+
+/** Extra system-prompt guidance for the selected tag profile. */
+fun tagProfileInstruction(profile: TagProfile, workflowName: String): String {
+    return when (profile.resolve(workflowName)) {
+        TagProfile.DANBOORU -> "Tag profile: Danbooru. Start with masterpiece, best quality, very aesthetic, absurdres; use standard Danbooru tags."
+        TagProfile.ILLUSTRIOUS -> "Tag profile: Illustrious/Anima/SDXL. Start with masterpiece, best quality, very aesthetic, absurdres; prefer booru tags and character tags."
+        TagProfile.PONY -> "Tag profile: Pony. Start with score_9, score_8_up, score_7_up; use Pony-style booru tags and source_anime when appropriate."
+        TagProfile.CUSTOM, TagProfile.AUTO -> ""
+    }
+}
+
 /** A user-editable prompt skill (two built-ins by default, any number custom). */
 data class AiSkillDef(
     val id: String,
@@ -103,10 +129,13 @@ data class AiSkillDef(
 
         val VISION_REWRITE_DEFAULT = AiSkillDef(
             DEFAULT_VISION_ID, "AI 看图改写",
-            "你是一位能直接观察图片的视觉提示词导演。用户会给你一张参考图和修改要求。\n" +
-                    "先在心里仔细分辨图片中实际存在的主体、外貌、服装、动作、环境、构图、镜头、光线、色彩与风格，再据此重写提示词：保留参考图的核心特征，同时落实用户的修改要求。\n" +
-                    "如果用途是视频，补充镜头运动、主体动作、时间感与氛围变化。不要编造图片中不存在的角色或元素；不要输出解释、前缀或引号。\n" +
-                    "只输出重写后的提示词本身。",
+            "你是一位能直接观察参考图的视觉提示词导演。参考图是你的隐藏上下文，不是让你写图片说明。\n" +
+                    "先在心里分辨主体身份、外貌、服装、动作、环境、构图、镜头、光线、色彩与风格，但不要把分析过程或图片描述写进最终提示词。\n" +
+                    "用户没有要求改变的人物身份、服装、场景、风格、光线和构图默认视为连续性约束。\n" +
+                    "如果用途是视频，重点描述发生了什么变化、动作如何发生、镜头如何运动，以及如何从首帧自然过渡到尾帧；不要写“第一张图/第二张图”。\n" +
+                    "如果用途是生图，重点理解用户想改什么、保留什么。\n" +
+                    "不要为了证明看懂图片而机械复述画面。不要编造图片中不存在的角色或元素；不要输出解释、前缀或引号。\n" +
+                    "只输出最终的提示词本身。",
             true,
             description = "Reads reference images as hidden context and rewrites the target prompt.",
             scopes = setOf(
@@ -137,15 +166,16 @@ data class AiSkillDef(
             true,
         )
 
+        private val RETIRED_BUILTINS = setOf(DEFAULT_EN_ID, DEFAULT_TRANSLATE_ID)
+
         fun defaults(): List<AiSkillDef> = listOf(
-            NATURAL_DEFAULT, TAGS_DEFAULT, EN_EXPAND_DEFAULT,
-            NEGATIVE_DEFAULT, TRANSLATE_DEFAULT, VISION_REWRITE_DEFAULT,
-            NSFW_EXPAND_DEFAULT, NSFW_TAGS_DEFAULT,
+            NATURAL_DEFAULT, TAGS_DEFAULT, NEGATIVE_DEFAULT,
+            VISION_REWRITE_DEFAULT, NSFW_EXPAND_DEFAULT, NSFW_TAGS_DEFAULT,
         )
 
-        /** Ensures every built-in skill exists (appends missing ones, keeps user edits). */
+        /** Ensures every built-in skill exists and drops retired built-ins. */
         fun mergeBuiltins(stored: List<AiSkillDef>): List<AiSkillDef> {
-            val out = stored.toMutableList()
+            val out = stored.filterNot { it.builtin && it.id in RETIRED_BUILTINS }.toMutableList()
             for (d in defaults()) {
                 if (out.none { it.id == d.id }) out.add(d)
             }

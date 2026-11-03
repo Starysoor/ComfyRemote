@@ -4,8 +4,11 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.comfyremote.app.AiImagePayload
 import com.comfyremote.app.AiResult
 import com.comfyremote.app.AiSkillDef
+import com.comfyremote.app.TagProfile
+import com.comfyremote.app.tagProfileInstruction
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.ComfyApi
 import com.comfyremote.app.ComfyException
@@ -503,8 +506,18 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         }
         val busy = "$fieldKey|${skill.id}"
         _state.update { it.copy(aiBusy = busy) }
+        val draft = _state.value.draft
+        val tagSkill = skill.id == AiSkillDef.DEFAULT_TAGS_ID || skill.id == AiSkillDef.DEFAULT_NSFW_TAGS_ID
+        val profile = TagProfile.entries.firstOrNull { it.name == settings.tagProfile } ?: TagProfile.AUTO
+        val systemPrompt = if (tagSkill) {
+            listOf(skill.systemPrompt, tagProfileInstruction(profile, draft?.workflowName.orEmpty()))
+                .filter(String::isNotBlank)
+                .joinToString("\n\n")
+        } else {
+            skill.systemPrompt
+        }
         viewModelScope.launch {
-            runCatching { container.aiRepository.chat(skill.systemPrompt, source) }
+            runCatching { container.aiRepository.chat(systemPrompt, source) }
                 .onSuccess { out -> _state.update { it.copy(aiBusy = null, aiResult = AiResult(fieldKey, out)) } }
                 .onFailure { e -> _state.update { it.copy(aiBusy = null, message = e.message ?: "AI error") } }
         }
@@ -756,10 +769,6 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     fun visionRewrite(targetFieldKey: String?, imageValue: String, instruction: String) {
         if (_state.value.aiBusy != null) return
         val draft = _state.value.draft ?: return
-        if (imageValue.isBlank()) {
-            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_pick_image)) }
-            return
-        }
         val target = draft.fields.firstOrNull { it.key == targetFieldKey && it.kind == FieldKind.TEXT }
             ?: draft.fields.firstOrNull {
                 it.kind == FieldKind.TEXT && it.multiline && !it.looksLikeNegativePrompt()
@@ -774,37 +783,40 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_ai_not_configured)) }
             return
         }
+        val references = VisionContext.references(draft, draft.values, imageValue)
+        if (references.isEmpty()) {
+            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_pick_image)) }
+            return
+        }
+        val mode = VisionContext.mode(draft)
         val skill = container.aiSkillStore.load().firstOrNull { it.id == AiSkillDef.DEFAULT_VISION_ID }
             ?: AiSkillDef.VISION_REWRITE_DEFAULT
         val busy = "vision:${target.key}"
         _state.update { it.copy(aiBusy = busy) }
         viewModelScope.launch {
             runCatching {
-                val bytes = loadVisionImageBytes(imageValue)
-                    ?: throw ComfyException(AppStrings.get(R.string.gen_vm_cannot_read_image))
-                val (prepared, ext) = withContext(Dispatchers.IO) {
-                    ImagePreprocessor.prepare(bytes, null, 1024, 84)
+                val payloads = mutableListOf<AiImagePayload>()
+                references.take(MAX_VISION_IMAGES).forEach { reference ->
+                    val bytes = loadVisionImageBytes(reference.value) ?: return@forEach
+                    val (prepared, ext) = withContext(Dispatchers.IO) {
+                        ImagePreprocessor.prepare(bytes, null, 1024, 84)
+                    }
+                    payloads += AiImagePayload(
+                        bytes = prepared,
+                        mime = CloudInputStore.mimeForExt(ext),
+                        role = reference.role,
+                        order = reference.order,
+                        label = reference.label,
+                    )
+                }
+                if (payloads.isEmpty()) {
+                    throw ComfyException(AppStrings.get(R.string.gen_vm_cannot_read_image))
                 }
                 val current = draft.values[target.key] ?: target.value
-                val userText = buildString {
-                    append(
-                        AppStrings.get(
-                            R.string.gen_vm_vision_change,
-                            instruction.trim().ifBlank { AppStrings.get(R.string.gen_vm_vision_default_instruction) },
-                        )
-                    )
-                    if (current.isNotBlank()) {
-                        append("\n")
-                        append(AppStrings.get(R.string.gen_vm_vision_current, current))
-                    }
-                    append("\n")
-                    append(AppStrings.get(R.string.gen_vm_vision_look))
-                }
                 container.aiRepository.visionChat(
-                    systemPrompt = skill.systemPrompt,
-                    userText = userText,
-                    imageBytes = prepared,
-                    mime = CloudInputStore.mimeForExt(ext),
+                    systemPrompt = VisionContext.systemPrompt(skill.systemPrompt, mode, references),
+                    userText = VisionContext.userText(instruction, current, mode, references),
+                    images = payloads,
                 )
             }.onSuccess { out ->
                 _state.update { it.copy(aiBusy = null, aiResult = AiResult(target.key, out)) }
@@ -921,7 +933,10 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         _state.update { it.copy(uploads = it.uploads - key) }
     }
 
-    companion object { internal const val MAX_BATCH = 16 }
+    companion object {
+        internal const val MAX_BATCH = 16
+        private const val MAX_VISION_IMAGES = 8
+    }
 }
 
 /** Storyboard shots bind exactly one task; ordinary workflows keep their configured batch. */

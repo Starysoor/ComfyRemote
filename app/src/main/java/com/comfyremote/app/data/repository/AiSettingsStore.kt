@@ -16,15 +16,23 @@ data class AiSettings(
     val maxTokensText: String = "",
     val extraJson: String = "",
     val thinkingMode: String = "default",
+    /** AUTO resolves from the workflow name (Danbooru/Illustrious/Pony/native). */
+    val tagProfile: String = "AUTO",
 ) {
     val configured: Boolean
         get() = baseUrl.isNotBlank() && apiKey.isNotBlank() && model.isNotBlank()
 
-    fun asTunables(): AiTunables = AiTunables(
-        temperature = temperatureText.trim().toDoubleOrNull(),
-        maxTokens = maxTokensText.trim().toIntOrNull()?.takeIf { it > 0 },
-        extraJson = runCatching { JSONObject(extraJson) }.getOrNull(),
-    )
+    fun asTunables(): AiTunables {
+        return AiTunables(
+            temperature = temperatureText.trim().toDoubleOrNull(),
+            maxTokens = maxTokensText.trim().toIntOrNull()?.takeIf { it > 0 },
+            extraJson = AiModelCapabilities.filterExtra(
+                runCatching { JSONObject(extraJson) }.getOrNull(),
+                baseUrl,
+                model,
+            ),
+        )
+    }
 }
 
 /** Persists AI expansion endpoint settings + the GitHub update token. */
@@ -42,6 +50,7 @@ class AiSettingsStore(
         maxTokensText = prefs.getString("aiMaxTok", "") ?: "",
         extraJson = prefs.getString("aiExtra", "") ?: "",
         thinkingMode = prefs.getString("aiThinking", "default") ?: "default",
+        tagProfile = prefs.getString("aiTagProfile", "AUTO") ?: "AUTO",
     )
 
     fun save(s: AiSettings) {
@@ -54,6 +63,7 @@ class AiSettingsStore(
             .putString("aiMaxTok", s.maxTokensText.trim())
             .putString("aiExtra", s.extraJson.trim())
             .putString("aiThinking", s.thinkingMode)
+            .putString("aiTagProfile", s.tagProfile)
             .apply()
     }
 }

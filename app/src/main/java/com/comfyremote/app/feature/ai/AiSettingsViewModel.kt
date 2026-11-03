@@ -44,6 +44,7 @@ class AiSettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun updateTemp(v: String) = edit { it.copy(temperatureText = v.filter { c -> c.isDigit() || c == '.' }) }
     fun updateMaxTokens(v: String) = edit { it.copy(maxTokensText = v.filter(Char::isDigit)) }
     fun updateExtra(v: String) = edit { it.copy(extraJson = v) }
+    fun updateTagProfile(v: String) = edit { it.copy(tagProfile = v) }
 
     fun applyThinkingMode(mode: String) {
         val current = _state.value.settings

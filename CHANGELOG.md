@@ -8,6 +8,10 @@
 - Reference-role defaults on local and cloud image fields, with provider rule metadata.
 - Skill Runtime metadata on `AiSkillDef`: scopes, input sources, execution and output policies.
 - Multi-image vision requests that send every reference with its role/order in one request.
+- AI vision rewrite now treats references as hidden context, fuses all enabled references, and describes start→end transitions instead of captioning images.
+- Tag profiles (AUTO / Danbooru / Illustrious / Pony / Custom) shape the AI tag skill's quality conventions.
+- AI reasoning controls are provider/model-aware; inapplicable protocol fields are stripped from requests.
+- Retired the built-in English-expand and translate skills; users can recreate them as custom skills.
 - Independent "auto-save drafts" and "auto-restore drafts" settings.
 - Cloud provider registry metadata for the upcoming multi-provider settings page.
 - Version `2.3.0` (versionCode 26).
