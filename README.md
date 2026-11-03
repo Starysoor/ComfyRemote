@@ -7,7 +7,7 @@
 
 One lens, every model. Android client for local ComfyUI **and** hosted cloud workflows — pick a model, write a prompt, generate images, video or audio.
 
-**v2.3.0-dev** · [AutoDL cloud guide](docs/AutoDL.md) · [Screenshots](docs/verification)
+**v2.3.0** · [Download APK](https://github.com/Starysoor/Iris/releases/latest) · [Cloud provider guide](docs/CloudProviders.md) · [AutoDL guide](docs/AutoDL.md) · [Screenshots](docs/verification)
 
 <a href="docs/verification/redesign/light-create.png"><img src="docs/verification/redesign/light-create.png" width="200"/></a>
 <a href="docs/verification/redesign/light-generate.png"><img src="docs/verification/redesign/light-generate.png" width="200"/></a>
@@ -18,7 +18,7 @@ One lens, every model. Android client for local ComfyUI **and** hosted cloud wor
 
 **Iris** turns your phone into a remote for generation models running on your PC or in the cloud:
 
-- **Local + cloud workflows** — browse saved ComfyUI workflows from a local server, or AutoDL.Art hosted workflows (MiniMax H3 video, Wan2.2 motion transfer and more) from one Create screen
+- **Local + multi-provider cloud workflows** — browse local ComfyUI and AutoDL.Art workflows alongside OpenAI, Gemini, Replicate, SiliconFlow, AutoDL Models and configurable OpenAI-compatible / JSON-template APIs
 - **Workflow conversion** — converts ComfyUI canvas JSON to API format automatically and discovers prompts, seeds, reference images and advanced parameters
 - **Cloud video + audio** — image-to-video, first/last-frame, multi-image/multi-audio, lip-sync and TTS workflows; results are downloaded immediately because hosted URLs expire
 - **Cost guardrails** — platform price, per-run estimate and confirmation before a paid submit; local spend estimate and cancel warnings
@@ -30,7 +30,7 @@ One lens, every model. Android client for local ComfyUI **and** hosted cloud wor
 - **Multi-server** — saved servers, LAN discovery, health/queue probing, least-busy switching
 - **Configurable UI** — compact layout, recent-result count, theme, default batch/seed/queue, upload size and more in Settings
 - **Iris design system** — purpose-built light/dark palettes, typography, surfaces, chips, inputs and edge-to-edge navigation
-- **Encrypted secrets** — AI keys, AutoDL token and GitHub token are stored with an Android Keystore-backed AES/GCM key
+- **Secret storage** — tokens normally use Android Keystore-backed AES/GCM; when Keystore encryption is unavailable, a legacy plaintext fallback can be used to prevent token loss
 
 ## 中文
 
@@ -38,7 +38,7 @@ One lens, every model. Android client for local ComfyUI **and** hosted cloud wor
 
 ### 核心能力
 
-- **本地 + 云端**：创作页一键切换本地 ComfyUI 与 AutoDL.Art 托管工作流（MiniMax H3 视频、Wan2.2 动作迁移等）
+- **本地 + 多厂商云端**：创作页统一管理本地 ComfyUI、AutoDL.Art 托管工作流，以及 OpenAI、Gemini、Replicate、SiliconFlow、AutoDL Models 和可自定义的兼容接口、JSON 模板 API
 - **云端视频 + 音频**：图生视频、首尾帧、多图参考、多图多音频、对口型与 TTS；云端结果是临时链接，成功后立即下载到手机
 - **费用护栏**：提交前显示平台计价、本次预估并二次确认；本地记录预估消耗；取消云端任务会提示平台侧可能继续计费
 - **分镜**：把多个云端视频镜头串成项目，上一镜的尾帧自动成为下一镜参考图
@@ -49,7 +49,7 @@ One lens, every model. Android client for local ComfyUI **and** hosted cloud wor
 - **多服务器**：保存地址、局域网发现、健康/队列探测、最空闲切换
 - **可定制界面**：紧凑布局、最近结果数量、主题、默认批量/种子/队列、上传尺寸等，全部集中在设置页
 - **Iris 设计系统**：自建浅色/深色配色、字体、卡片、Chip、输入框和 edge-to-edge 导航
-- **密钥加密**：AI Key、AutoDL Token、GitHub Token 使用 Android Keystore 的 AES/GCM 加密存储
+- **密钥保护**：正常设备使用 Android Keystore 的 AES/GCM 加密保存令牌；Keystore 不可用时为避免丢失令牌，可能回退到本地明文保存，建议在安全设备上使用
 
 ### 连接方式
 
@@ -58,13 +58,15 @@ One lens, every model. Android client for local ComfyUI **and** hosted cloud wor
 | 模拟器 | `http://10.0.2.2:8188` |
 | 手机与电脑同一 Wi-Fi | `http://<电脑局域网IP>:8188` |
 | 任意网络 | 电脑与手机都装 [Tailscale](https://tailscale.com)，填电脑的 Tailscale IP |
-| 云端（无需本地显卡） | 设置 → 云端服务，填 AutoDL.Art 的 ComfyUI 分组 Token |
+| 云端（无需本地显卡） | 设置 → 云端服务，选择对应厂商并配置其独立 API Key / Endpoint；AutoDL 托管工作流使用 ComfyUI 分组 Token |
 
 ComfyUI 需以 `--listen 0.0.0.0` 启动。连接页可直接选择“仅使用云端模型”。
 
-### 云端计费提醒
+### 云端计费与恢复提醒
 
-AutoDL.Art 的托管工作流按次/按秒计费。应用会在提交前显示平台价与本次预估并请求确认，设置中可关闭确认（不建议）。云端任务目前没有公开的远程取消接口，取消只会停止手机端跟踪，平台侧可能继续执行并计费；本地“预估消耗”只是记录，不是账单。
+云端 Provider 根据其各自的计费规则收费。Iris 会在发起付费生成前显示可获得的价格/预估并请求确认；本地“预估消耗”不是厂商账单。取消本地跟踪不一定会取消远端任务，某些厂商仍可能继续执行及计费。云端结果链接可能过期，请及时保存。
+
+v2.3.0 增强了云端任务状态和结果的重启恢复；极端情况下，如果远端已接受任务而本机持久化同时失败，仍可能需要手工找回远端任务 ID。详见 [云服务配置与恢复说明](docs/CloudProviders.md)。
 
 ## Build
 
@@ -85,7 +87,9 @@ Release builds are produced by GitHub Actions on `v*` tags (signing key provided
 
 ### Documentation
 
+- [Cloud services: providers, configuration, recovery and known limits](docs/CloudProviders.md)
 - [AutoDL cloud workflows, parameters and billing](docs/AutoDL.md)
+- [v2.3.0 release notes](docs/releases/v2.3.0.md)
 - [Verification screenshots](docs/verification)
 - [v2.2 redesign screenshots](docs/verification/redesign)
 - [Changelog](CHANGELOG.md)

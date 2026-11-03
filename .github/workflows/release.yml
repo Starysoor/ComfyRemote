@@ -87,5 +87,6 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           target_commitish: ${{ github.sha }}
           name: ${{ env.RELEASE_TAG }}
-          generate_release_notes: true
+          body_path: docs/releases/${{ env.RELEASE_TAG }}.md
+          generate_release_notes: false
           files: app/build/outputs/apk/release/Iris-${{ env.RELEASE_TAG }}.apk

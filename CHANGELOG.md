@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.3.0 — 2026-11-03
+## 2.3.0 — 2026-11-04
 
 ### Added
 
@@ -33,6 +33,22 @@
 - Cloud confirmation, cancellation and spend tracking now treat every non-ComfyUI provider as hosted cloud work.
 - Launch intro: a 2.2 s "lens" animation on launcher cold starts (rack-focus pull-back, ring impact, dive through the pupil into the live UI). Tap or Back skips it; it never plays for notification/share launches or with system animations off, and can be turned off in App & interface.
 - Version `2.3.0` (versionCode 26).
+
+### Fixed and verified for release
+
+- All non-local cloud submissions now use the cloud prompt builder so user inputs, images and parameters reach the provider.
+- Cloud Provider tasks and paid output metadata survive process restart where the remote task ID and recovery record were durably saved; Replicate polling retains the submission-time Endpoint.
+- Storyboard asset removal and shot reorder update automatic references without overwriting manual references; cloud draft scopes are separated from local ComfyUI servers.
+- Custom JSON templates preserve number/boolean JSON types and provide honest remote-health status when no safe health probe exists.
+- Cloud cancellation remains cancellation rather than failure; provider errors name the actual service.
+- Recovery-record write failures are no longer silently treated as success. Token reads preserve the fallback credential when Android Keystore is unavailable.
+- Local mock HTTP tests exercise submit → poll → restart recovery → completion. Android 34 emulator QA verified cold start, force-stop/relaunch and crash-free app shell. Unit tests, Debug/Release builds and lint passed.
+
+### Known limitations
+
+- An I/O failure exactly after a remote task is accepted but before the task index is written can still prevent fully automatic recovery; the remote task ID is shown in submission errors when known.
+- Provider-specific paid end-to-end coverage is partial. API/model availability, pricing and remote cancellation depend on each provider; follow the current official documentation.
+- Device smoke tests verify launch/relaunch and the connection screen, not every generation UI and workflow.
 
 ## 2.2.4 — 2026-11-03
 
