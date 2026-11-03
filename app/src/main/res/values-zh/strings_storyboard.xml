@@ -32,6 +32,7 @@
     <string name="board_assets_empty">还没有项目素材</string>
     <string name="board_asset_role">选择素材角色</string>
     <string name="board_use_asset">使用项目素材作为参考</string>
+    <string name="board_apply_assets">应用素材</string>
     <string name="board_move_up">上移</string>
     <string name="board_move_down">下移</string>
     <string name="board_duplicate">复制镜头</string>

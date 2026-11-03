@@ -112,21 +112,30 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     fun insertShotAfter(projectId: String, shotId: String, prompt: String) =
         container.storyboardStore.insertShotAfter(projectId, shotId, prompt)
 
-    fun assignAssetToShot(projectId: String, shotId: String, assetId: String) {
-        val asset = container.storyboardStore.project(projectId)
-            ?.assets?.firstOrNull { it.id == assetId } ?: return
+    fun assignAssetToShot(projectId: String, shotId: String, assetId: String) =
+        assignAssetsToShot(projectId, shotId, listOf(assetId))
+
+    fun assignAssetsToShot(projectId: String, shotId: String, assetIds: List<String>) {
+        val project = container.storyboardStore.project(projectId) ?: return
+        val assets = assetIds.mapNotNull { id -> project.assets.firstOrNull { it.id == id } }
         container.storyboardStore.updateShot(projectId, shotId) {
             it.copy(
-                referencePath = asset.path,
+                referenceAssetIds = assetIds,
+                referencePath = assets.firstOrNull()?.path,
                 referenceManual = true,
-                referenceRole = asset.role,
+                referenceRole = assets.firstOrNull()?.role ?: ReferenceRole.AUTO,
             )
         }
     }
 
     fun clearShotReference(projectId: String, shotId: String) =
         container.storyboardStore.updateShot(projectId, shotId) {
-            it.copy(referencePath = null, referenceManual = true, referenceRole = ReferenceRole.AUTO)
+            it.copy(
+                referencePath = null,
+                referenceAssetIds = emptyList(),
+                referenceManual = true,
+                referenceRole = ReferenceRole.AUTO,
+            )
         }
 
     /** Copies a picked image into project-owned storage so it survives gallery changes. */
@@ -161,6 +170,9 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         val shot = project.shots[index]
         if (shotRunning(shot)) return null
         val previous = project.shots.getOrNull(index - 1)
+        val assetReferences = shot.referenceAssetIds.mapNotNull { id ->
+            project.assets.firstOrNull { it.id == id }?.path
+        }
         val reference = if (shot.referenceManual) shot.referencePath
         else shot.referencePath ?: previous?.lastFramePath
         val prompt = listOf(project.stylePrompt, shot.prompt)
@@ -180,7 +192,8 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                 values = values,
                 randomSeed = true,
                 serverUrl = null,
-                referenceLocalPath = reference,
+                referenceLocalPath = if (assetReferences.isEmpty()) reference else null,
+                referenceLocalPaths = assetReferences,
                 storyboardProjectId = project.id,
                 storyboardShotId = shot.id,
             )

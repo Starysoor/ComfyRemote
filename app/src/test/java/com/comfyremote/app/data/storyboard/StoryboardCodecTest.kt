@@ -22,6 +22,7 @@ class StoryboardCodecTest {
             referencePath = "/files/last.png",
             referenceManual = true,
             referenceRole = com.comfyremote.app.data.reference.ReferenceRole.START_FRAME,
+            referenceAssetIds = listOf("asset-hero", "asset-scene"),
             workflowId = "minimax_h3_lightx2v_v5",
             values = mapOf("prompt" to "close-up", "duration" to "5"),
         )
@@ -62,6 +63,7 @@ class StoryboardCodecTest {
         )
         assertEquals("9:16", restored.aspectRatio)
         assertEquals("768p竖", restored.defaultValues["resolution"])
+        assertEquals(listOf("asset-hero", "asset-scene"), restored.shots[1].referenceAssetIds)
         assertEquals("minimax_h3_lightx2v_v5", restored.shots[1].workflowId)
         assertEquals("5", restored.shots[1].values["duration"])
         assertEquals(1, restored.assets.size)

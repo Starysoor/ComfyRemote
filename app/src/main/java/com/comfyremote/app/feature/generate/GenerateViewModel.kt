@@ -156,7 +156,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     private var submitJob: Job? = null
     private var pendingStoryboardProjectId: String? = null
     private var pendingStoryboardShotId: String? = null
-    private var storyboardReferenceValueAtLoad: String? = null
+    private val storyboardReferenceValuesAtLoad = mutableMapOf<String, String>()
 
     init {
         viewModelScope.launch {
@@ -201,7 +201,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         loadedPath = path
         pendingStoryboardProjectId = null
         pendingStoryboardShotId = null
-        storyboardReferenceValueAtLoad = null
+        storyboardReferenceValuesAtLoad.clear()
         _state.update { it.copy(loading = true, error = null, draft = null, insight = null) }
         viewModelScope.launch {
             runCatching { buildDraft(path, name) }
@@ -250,8 +250,14 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                             message = reuseMessage,
                         )
                     }
-                    transfer?.referenceLocalPath?.takeIf(String::isNotBlank)?.let { reference ->
-                        useLocalResultAsReference(reference, initial = storyboard)
+                    val multipleReferences = transfer?.referenceLocalPaths.orEmpty()
+                        .filter(String::isNotBlank)
+                    if (multipleReferences.isNotEmpty()) {
+                        applyReferencePaths(multipleReferences, initial = storyboard)
+                    } else {
+                        transfer?.referenceLocalPath?.takeIf(String::isNotBlank)?.let { reference ->
+                            useLocalResultAsReference(reference, initial = storyboard)
+                        }
                     }
                     consumeIncomingMedia()
                 }
@@ -408,15 +414,20 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Persists a manually changed reference so Regenerate opens the same image. */
     private fun syncStoryboardReference(projectId: String, shotId: String, draft: WorkflowDraft) {
+        val shot = container.storyboardStore.project(projectId)
+            ?.shots?.firstOrNull { it.id == shotId } ?: return
+        // Multi-reference shots are already described by their project asset ids.
+        if (shot.referenceAssetIds.isNotEmpty()) return
         val imageField = draft.fields.firstOrNull { it.kind == FieldKind.IMAGE } ?: return
         val current = draft.values[imageField.key] ?: imageField.value
+        val initial = storyboardReferenceValuesAtLoad[imageField.key]
         if (current.isBlank()) {
-            if (storyboardReferenceValueAtLoad != null) {
+            if (initial != null) {
                 container.storyboardStore.setReference(projectId, shotId, null, manual = true)
             }
             return
         }
-        if (current == storyboardReferenceValueAtLoad) return
+        if (current == initial) return
         val localPath = container.cloudInputStore.localPath(current) ?: return
         container.storyboardStore.setReference(projectId, shotId, localPath, manual = true)
     }
@@ -720,9 +731,14 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun useLocalResultAsReference(localPath: String, initial: Boolean = false) {
+    fun useLocalResultAsReference(
+        localPath: String,
+        initial: Boolean = false,
+        fieldKey: String? = null,
+    ) {
         val draft = _state.value.draft ?: return
-        val field = draft.fields.firstOrNull { it.kind == FieldKind.IMAGE }
+        val field = fieldKey?.let { key -> draft.fields.firstOrNull { it.key == key } }
+            ?: draft.fields.firstOrNull { it.kind == FieldKind.IMAGE }
         if (field == null) {
             _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_no_reference_input)) }
             return
@@ -730,26 +746,53 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         if (!draft.isCloud && !container.serverSession.connected) return
         viewModelScope.launch {
             setUpload(field.key, ImageUploadStatus(ImageUploadPhase.UPLOADING))
-            runCatching {
-                if (draft.isCloud) {
-                    container.cloudInputStore.saveFromFile(localPath, cloudImageDimension())
-                } else {
-                    val file = File(localPath)
-                    val bytes = withContext(Dispatchers.IO) { file.readBytes() }
-                    val ext = file.extension.ifBlank { "png" }
-                    container.serverSession.require().uploadImage(bytes, "result_ref_${System.currentTimeMillis()}.$ext")
+            runCatching { referenceValueFor(draft, field, localPath) }
+                .onSuccess { name ->
+                    if (initial) storyboardReferenceValuesAtLoad[field.key] = name
+                    updateValue(field.key, name)
+                    clearUpload(field.key)
+                    if (!initial) {
+                        _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_result_as_reference)) }
+                    }
+                }.onFailure { e ->
+                    setUpload(field.key, ImageUploadStatus(ImageUploadPhase.FAILED, e.message))
                 }
-            }.onSuccess { name ->
-                if (initial) storyboardReferenceValueAtLoad = name
-                updateValue(field.key, name)
-                clearUpload(field.key)
-                if (!initial) {
-                    _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_result_as_reference)) }
-                }
-            }.onFailure { e ->
-                setUpload(field.key, ImageUploadStatus(ImageUploadPhase.FAILED, e.message))
+        }
+    }
+
+    /** Fills consecutive image inputs from a multi-reference storyboard shot. */
+    private fun applyReferencePaths(paths: List<String>, initial: Boolean) {
+        val draft = _state.value.draft ?: return
+        val fields = draft.fields.filter { it.kind == FieldKind.IMAGE }.take(paths.size)
+        if (fields.isEmpty()) return
+        viewModelScope.launch {
+            fields.zip(paths).forEach { (field, path) ->
+                setUpload(field.key, ImageUploadStatus(ImageUploadPhase.UPLOADING))
+                runCatching { referenceValueFor(draft, field, path) }
+                    .onSuccess { name ->
+                        if (initial) storyboardReferenceValuesAtLoad[field.key] = name
+                        updateValue(field.key, name)
+                        clearUpload(field.key)
+                    }.onFailure { e ->
+                        setUpload(field.key, ImageUploadStatus(ImageUploadPhase.FAILED, e.message))
+                    }
             }
         }
+    }
+
+    private suspend fun referenceValueFor(
+        draft: WorkflowDraft,
+        field: PromptField,
+        localPath: String,
+    ): String {
+        if (draft.isCloud) {
+            return container.cloudInputStore.saveFromFile(localPath, cloudImageDimension())
+        }
+        val file = File(localPath)
+        val bytes = withContext(Dispatchers.IO) { file.readBytes() }
+        val ext = file.extension.ifBlank { "png" }
+        return container.serverSession.require()
+            .uploadImage(bytes, "result_ref_${System.currentTimeMillis()}_${field.key.hashCode()}.$ext")
     }
 
     /** One-tap handoff from a generated image to the configured cloud video workflow. */

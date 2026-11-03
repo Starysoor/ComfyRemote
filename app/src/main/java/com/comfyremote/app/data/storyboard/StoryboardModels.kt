@@ -16,6 +16,8 @@ data class StoryboardShot(
     val referenceManual: Boolean = false,
     /** Semantic purpose of this shot's reference image. */
     val referenceRole: ReferenceRole = ReferenceRole.AUTO,
+    /** Project asset ids used as this shot's multiple references. */
+    val referenceAssetIds: List<String> = emptyList(),
     /** Per-shot workflow override; null uses the project workflow. */
     val workflowId: String? = null,
     /** Last used non-media field values for this shot. */
@@ -100,6 +102,7 @@ object StoryboardCodec {
         .put("referencePath", shot.referencePath ?: JSONObject.NULL)
         .put("referenceManual", shot.referenceManual)
         .put("referenceRole", shot.referenceRole.name)
+        .put("referenceAssetIds", JSONArray().apply { shot.referenceAssetIds.forEach { put(it) } })
         .put("workflowId", shot.workflowId ?: JSONObject.NULL)
         .put("values", JSONObject(shot.values))
         .put("lastFramePath", shot.lastFramePath ?: JSONObject.NULL)
@@ -114,6 +117,9 @@ object StoryboardCodec {
         referencePath = nullableString(o, "referencePath"),
         referenceManual = o.optBoolean("referenceManual", false),
         referenceRole = ReferenceRole.fromStorage(o.optString("referenceRole")),
+        referenceAssetIds = o.optJSONArray("referenceAssetIds")?.let { array ->
+            (0 until array.length()).map { array.optString(it) }.filter { it.isNotBlank() }
+        }.orEmpty(),
         workflowId = nullableString(o, "workflowId"),
         values = stringMap(o.optJSONObject("values")),
         lastFramePath = nullableString(o, "lastFramePath"),

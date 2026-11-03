@@ -33,6 +33,7 @@
     <string name="board_assets_empty">No project assets yet</string>
     <string name="board_asset_role">Choose asset role</string>
     <string name="board_use_asset">Use project asset as reference</string>
+    <string name="board_apply_assets">Apply assets</string>
     <string name="board_move_up">Move up</string>
     <string name="board_move_down">Move down</string>
     <string name="board_duplicate">Duplicate shot</string>

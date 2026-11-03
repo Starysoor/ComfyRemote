@@ -2,6 +2,7 @@ package com.comfyremote.app.feature.storyboard
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -93,6 +95,7 @@ fun StoryboardDetailScreen(
     var assetRoleDialog by remember { mutableStateOf(false) }
     var pendingAssetRole by remember { mutableStateOf<ReferenceRole?>(null) }
     var assetShotId by remember { mutableStateOf<String?>(null) }
+    var selectedAssetIds by remember { mutableStateOf(setOf<String>()) }
     var menuOpen by remember { mutableStateOf(false) }
     val assetPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val role = pendingAssetRole
@@ -259,7 +262,10 @@ fun StoryboardDetailScreen(
                         onMoveDown = { viewModel.moveShot(project.id, shot.id, 1) },
                         onDuplicate = { viewModel.duplicateShot(project.id, shot.id) },
                         onInsertAfter = { insertAfterShotId = shot.id },
-                        onPickAsset = { assetShotId = shot.id },
+                        onPickAsset = {
+                            assetShotId = shot.id
+                            selectedAssetIds = shot.referenceAssetIds.toSet()
+                        },
                         onClearReference = { viewModel.clearShotReference(project.id, shot.id) },
                     )
                 }
@@ -319,17 +325,35 @@ fun StoryboardDetailScreen(
                 } else {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
                         assets.forEach { asset ->
-                            TextButton(onClick = {
-                                viewModel.assignAssetToShot(projectId, shotId, asset.id)
-                                assetShotId = null
-                            }) {
-                                Text("${referenceRoleLabel(asset.role)} · ${asset.label.ifBlank { asset.path.substringAfterLast('/') }}")
+                            val checked = asset.id in selectedAssetIds
+                            Row(
+                                Modifier.fillMaxWidth().clickable {
+                                    selectedAssetIds = if (checked) {
+                                        selectedAssetIds - asset.id
+                                    } else {
+                                        selectedAssetIds + asset.id
+                                    }
+                                },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(checked = checked, onCheckedChange = null)
+                                Text(
+                                    "${referenceRoleLabel(asset.role)} · " +
+                                        asset.label.ifBlank { asset.path.substringAfterLast('/') },
+                                )
                             }
                         }
                     }
                 }
             },
-            confirmButton = {},
+            confirmButton = {
+                if (assets.isNotEmpty()) {
+                    TextButton(onClick = {
+                        viewModel.assignAssetsToShot(projectId, shotId, selectedAssetIds.toList())
+                        assetShotId = null
+                    }) { Text(stringResource(R.string.board_apply_assets)) }
+                }
+            },
             dismissButton = {
                 TextButton(onClick = { assetShotId = null }) {
                     Text(stringResource(R.string.action_cancel))
