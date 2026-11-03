@@ -84,8 +84,11 @@ data class CloudWorkflowSummary(
     val usageCount: Int = 0,
     val pricing: CloudPricing? = null,
 ) {
-    fun toEntry(): WorkflowEntry = WorkflowEntry(
-        path = AutoDlConfig.PATH_PREFIX + id,
+    fun toEntry(
+        pathPrefix: String = AutoDlConfig.PATH_PREFIX,
+        providerLabel: String = "AutoDL.Art",
+    ): WorkflowEntry = WorkflowEntry(
+        path = pathPrefix + id,
         name = name,
         sizeKb = "",
         cloud = true,
@@ -93,6 +96,7 @@ data class CloudWorkflowSummary(
         description = description,
         priceType = priceType,
         priceLabel = pricing?.label.orEmpty(),
+        providerLabel = providerLabel,
     )
 }
 

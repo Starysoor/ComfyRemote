@@ -20,7 +20,9 @@
 - Project aspect-ratio/default-value model fields; per-shot workflow and portable parameter memory for Regenerate.
 - Shot multi-reference: select several project assets and fill consecutive image inputs in one Generate session.
 - History results can be added to a storyboard project with a chosen semantic role.
-- Cloud provider registry metadata for the upcoming multi-provider settings page.
+- Cloud provider registry metadata and a Cloud services list with per-provider detail routing.
+- Create's Cloud tab aggregates workflows from every registered provider and labels cards with the provider name.
+- Cloud confirmation, cancellation and spend tracking now treat every non-ComfyUI provider as hosted cloud work.
 - Version `2.3.0` (versionCode 26).
 
 ## 2.2.4 — 2026-11-03

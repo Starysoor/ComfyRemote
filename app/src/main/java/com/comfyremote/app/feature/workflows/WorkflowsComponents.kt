@@ -32,7 +32,6 @@ import com.comfyremote.app.HistoryItem
 import com.comfyremote.app.R
 import com.comfyremote.app.ServerEntry
 import com.comfyremote.app.WorkflowEntry
-import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.repository.PromptPreset
 import com.comfyremote.app.data.repository.ServerHealth
 import com.comfyremote.app.feature.generate.MediaThumbnail
@@ -191,7 +190,7 @@ internal fun WorkflowRow(
                 Text(
                     stringResource(
                         R.string.wf_cloud_id,
-                        workflow.path.removePrefix(AutoDlConfig.PATH_PREFIX),
+                        workflow.path.substringAfter(':'),
                     ),
                     style = IrisType.metaSmall,
                     color = MaterialTheme.colorScheme.primary,
@@ -203,6 +202,9 @@ internal fun WorkflowRow(
         accent = favorite,
         meta = {
             StatusChip(workflowType(workflow))
+            if (workflow.providerLabel.isNotBlank()) {
+                StatusChip(workflow.providerLabel, tone = ChipTone.Neutral)
+            }
             if (recent) StatusChip(stringResource(R.string.wf_recent), tone = ChipTone.Accent)
             val price = when {
                 workflow.priceLabel.isNotBlank() -> workflow.priceLabel

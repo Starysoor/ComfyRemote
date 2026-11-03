@@ -56,6 +56,8 @@ import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.feature.ai.AiSettingsScreen
 import com.comfyremote.app.feature.ai.AiSettingsViewModel
+import com.comfyremote.app.feature.cloud.CloudProviderPlaceholderScreen
+import com.comfyremote.app.feature.cloud.CloudServicesScreen
 import com.comfyremote.app.feature.connect.ConnectScreen
 import com.comfyremote.app.feature.connect.ConnectViewModel
 import com.comfyremote.app.feature.connect.ServerManagerScreen
@@ -128,7 +130,7 @@ private fun AppNavHost(
         scope.launch {
             // Cloud workflows are submitted through their provider; the AutoDL base URL
             // is not a ComfyUI server and must not trigger the local server picker.
-            val cloud = transfer.workflowPath.startsWith(AutoDlConfig.PATH_PREFIX)
+            val cloud = container.cloudProviders.forPath(transfer.workflowPath) != null
             val source = transfer.serverUrl?.trim()?.removeSuffix("/").orEmpty()
             val ready = if (cloud || source.isBlank() || source == container.serverSession.url) {
                 true
@@ -192,6 +194,7 @@ private fun AppNavHost(
                     onOpenTransfer = ::openTransfer,
                     onServers = { navController.navigate(Routes.SERVERS) },
                     onSettings = { navController.navigate(Routes.SETTINGS) },
+                    onCloudSettings = { navController.navigate(Routes.CLOUD_SERVICES) },
                 )
             }
             composable(Routes.TASKS) {
@@ -260,7 +263,7 @@ private fun AppNavHost(
                     onApp = { navController.navigate(Routes.APP_SETTINGS) },
                     onServers = { navController.navigate(Routes.SERVERS) },
                     onAi = { navController.navigate(Routes.AI_SETTINGS) },
-                    onCloud = { navController.navigate(Routes.CLOUD_SETTINGS) },
+                    onCloud = { navController.navigate(Routes.CLOUD_SERVICES) },
                     onUpdate = { navController.navigate(Routes.UPDATE) },
                 )
             }
@@ -271,6 +274,30 @@ private fun AppNavHost(
             composable(Routes.CLOUD_SETTINGS) {
                 val vm: CloudSettingsViewModel = viewModel(factory = factory)
                 CloudSettingsScreen(vm) { navController.popBackStack() }
+            }
+            composable(Routes.CLOUD_SERVICES) {
+                CloudServicesScreen(
+                    providers = container.cloudProviders.info(),
+                    onBack = { navController.popBackStack() },
+                    onOpenProvider = { providerId ->
+                        navController.navigate(Routes.cloudProvider(providerId))
+                    },
+                )
+            }
+            composable(
+                Routes.CLOUD_PROVIDER_PATTERN,
+                arguments = listOf(navArgument("providerId") { type = NavType.StringType }),
+            ) { entry ->
+                val providerId = entry.arguments?.getString("providerId").orEmpty()
+                if (providerId == AutoDlConfig.PROVIDER) {
+                    val vm: CloudSettingsViewModel = viewModel(factory = factory)
+                    CloudSettingsScreen(vm) { navController.popBackStack() }
+                } else {
+                    CloudProviderPlaceholderScreen(
+                        title = container.cloudProviders.byId(providerId)?.label ?: providerId,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
             }
             composable(Routes.SERVERS) {
                 val vm: ConnectViewModel = viewModel(factory = factory)

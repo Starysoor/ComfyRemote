@@ -12,6 +12,7 @@ interface CloudProvider {
     val label: String
     val pathPrefix: String
     val baseUrl: String
+    val settingsSummary: String get() = "Hosted workflow API"
 
     fun configured(): Boolean
 
@@ -32,6 +33,7 @@ data class CloudProviderInfo(
     val label: String,
     val pathPrefix: String,
     val configured: Boolean,
+    val summary: String = "",
 )
 
 class CloudProviderRegistry(private val providers: List<CloudProvider>) {
@@ -39,7 +41,7 @@ class CloudProviderRegistry(private val providers: List<CloudProvider>) {
 
     /** Provider cards for the future multi-provider settings page. */
     fun info(): List<CloudProviderInfo> = providers.map {
-        CloudProviderInfo(it.id, it.label, it.pathPrefix, it.configured())
+        CloudProviderInfo(it.id, it.label, it.pathPrefix, it.configured(), it.settingsSummary)
     }
 
     fun byId(id: String): CloudProvider? = providers.firstOrNull { it.id == id }

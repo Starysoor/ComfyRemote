@@ -34,7 +34,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
 import com.comfyremote.app.WorkflowEntry
-import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.ui.Iris
 import com.comfyremote.app.ui.LocalAppSettings
@@ -57,6 +56,7 @@ fun WorkflowsScreen(
     onOpenTransfer: (DraftTransfer) -> Unit,
     onServers: () -> Unit,
     onSettings: () -> Unit,
+    onCloudSettings: () -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
     val settings = LocalAppSettings.current
@@ -160,28 +160,31 @@ fun WorkflowsScreen(
                 }
             }
 
-            if (cloud && !state.autoDlConfigured) {
+            if (cloud && !state.cloudConfigured) {
                 item("cloud-token") {
                     InfoBanner(
                         text = stringResource(R.string.wf_cloud_token_hint),
                         tone = BannerTone.Warning,
                         actionLabel = stringResource(R.string.wf_go_settings),
-                        onAction = onSettings,
+                        onAction = onCloudSettings,
                     )
                 }
             }
 
             if (state.query.isBlank()) {
                 val presets = state.recentPresets.filter { preset ->
+                    val providerPath = preset.workflowPath?.let { path ->
+                        state.cloudPrefixes.any { prefix -> path.startsWith(prefix) }
+                    } == true
                     if (cloud) {
-                        preset.workflowPath?.startsWith("autodl:") == true
+                        providerPath
                     } else {
-                        preset.workflowPath?.startsWith("autodl:") != true &&
+                        !providerPath &&
                             (preset.serverUrl.isNullOrBlank() || preset.serverUrl == state.session?.url)
                     }
                 }
                 val results = state.recentResults.filter { item ->
-                    if (cloud) item.serverUrl == AutoDlConfig.BASE_URL
+                    if (cloud) item.serverUrl in state.cloudBaseUrls
                     else state.session == null || item.serverUrl.isBlank() ||
                         item.serverUrl == state.session?.url
                 }
@@ -269,12 +272,12 @@ private fun WorkflowsTopBar(
     val cloud = state.source == WorkflowSource.CLOUD
     val session = state.session
     val subtitle = when {
-        cloud -> stringResource(if (state.autoDlConfigured) R.string.wf_subtitle_cloud_ready else R.string.wf_subtitle_cloud_token)
+        cloud -> stringResource(if (state.cloudConfigured) R.string.wf_subtitle_cloud_ready else R.string.wf_subtitle_cloud_token)
         session != null -> session.device.ifBlank { session.url }
         else -> stringResource(R.string.wf_no_local_server)
     }
     val dot = when {
-        cloud -> if (state.autoDlConfigured) Iris.colors.success else Iris.colors.warning
+        cloud -> if (state.cloudConfigured) Iris.colors.success else Iris.colors.warning
         session != null -> Iris.colors.success
         else -> MaterialTheme.colorScheme.outline
     }

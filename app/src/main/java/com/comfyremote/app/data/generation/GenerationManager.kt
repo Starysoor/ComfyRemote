@@ -6,7 +6,6 @@ import androidx.core.content.ContextCompat
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.ComfyApi
 import com.comfyremote.app.PromptValidationException
-import com.comfyremote.app.data.cloud.AutoDlConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -111,7 +110,7 @@ class GenerationManager(
             return CancelOutcome(taskId, false)
         }
 
-        val cloud = task.request.provider == AutoDlConfig.PROVIDER
+        val cloud = task.request.provider != "comfyui"
         return when (cancelActionFor(task.phase, cloud, task.localPending)) {
             CancelAction.LOCAL_PENDING -> {
                 patch(taskId) {

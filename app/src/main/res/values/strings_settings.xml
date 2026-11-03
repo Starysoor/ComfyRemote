@@ -8,7 +8,11 @@
     <string name="settings_ai">AI prompts</string>
     <string name="settings_ai_detail">Model, vision rewrite, API key and skills</string>
     <string name="settings_cloud">Cloud services</string>
-    <string name="settings_cloud_detail">AutoDL token and default video workflow</string>
+    <string name="settings_cloud_detail">Hosted model providers, tokens and defaults</string>
+    <string name="cloud_services_title">Cloud services</string>
+    <string name="cloud_provider_configured">Configured</string>
+    <string name="cloud_provider_not_configured">Not configured</string>
+    <string name="cloud_provider_unavailable">Settings for this provider are not available yet.</string>
     <string name="settings_update">Software update</string>
     <string name="settings_update_detail">Check and install GitHub Releases</string>
     <string name="settings_version">Version</string>

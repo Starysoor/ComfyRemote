@@ -1,7 +1,6 @@
 package com.comfyremote.app.data.generation
 
 import com.comfyremote.app.R
-import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.repository.AppSettingsStore
 import com.comfyremote.app.ui.AppStrings
 import kotlinx.coroutines.CompletableDeferred
@@ -26,10 +25,10 @@ data class CloudConfirmation(
 object CloudSubmissionPolicy {
 
     fun needsConfirmation(requests: List<GenerationRequest>, confirmCloudSubmit: Boolean): Boolean =
-        confirmCloudSubmit && requests.any { it.provider == AutoDlConfig.PROVIDER }
+        confirmCloudSubmit && requests.any { it.provider != "comfyui" }
 
     fun confirmation(requests: List<GenerationRequest>, priceLabel: String?): CloudConfirmation {
-        val cloud = requests.filter { it.provider == AutoDlConfig.PROVIDER }
+        val cloud = requests.filter { it.provider != "comfyui" }
         val costs = cloud.map { it.estimatedCloudCost }
         val perRun = if (cloud.size == 1) costs.singleOrNull() else costs.distinct().singleOrNull()
         val total = if (costs.isNotEmpty() && costs.all { it != null }) costs.filterNotNull().sum() else null

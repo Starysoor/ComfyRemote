@@ -31,6 +31,23 @@ class CloudWorkflowTest {
     )
 
     @Test
+    fun workflowEntriesCarryProviderPrefixAndLabel() {
+        val summary = CloudWorkflowSummary(
+            id = "wf-1",
+            name = "Cloud workflow",
+            description = "desc",
+            kind = "video",
+            priceType = "video_sec_cost",
+        )
+
+        val entry = summary.toEntry("provider:", "Provider B")
+
+        assertEquals("provider:wf-1", entry.path)
+        assertEquals("Provider B", entry.providerLabel)
+        assertEquals(true, entry.cloud)
+    }
+
+    @Test
     fun fieldsMatchAutoDlRulesAndHideBlankAssetDefaults() {
         val fields = CloudWorkflowMapping.fields(spec())
         assertEquals(5, fields.size)

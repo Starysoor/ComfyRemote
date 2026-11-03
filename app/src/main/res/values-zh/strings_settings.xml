@@ -8,7 +8,11 @@
     <string name="settings_ai">AI 提示词</string>
     <string name="settings_ai_detail">模型、看图改写、API Key、Skills</string>
     <string name="settings_cloud">云端服务</string>
-    <string name="settings_cloud_detail">AutoDL Token、默认视频工作流</string>
+    <string name="settings_cloud_detail">云端模型厂商、Token 与默认配置</string>
+    <string name="cloud_services_title">云端服务</string>
+    <string name="cloud_provider_configured">已配置</string>
+    <string name="cloud_provider_not_configured">未配置</string>
+    <string name="cloud_provider_unavailable">该厂商的设置页暂未提供。</string>
     <string name="settings_update">软件更新</string>
     <string name="settings_update_detail">检查并安装 GitHub Release</string>
     <string name="settings_version">版本</string>

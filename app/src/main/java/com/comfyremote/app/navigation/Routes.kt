@@ -11,6 +11,8 @@ object Routes {
     const val SETTINGS = "settings"
     const val APP_SETTINGS = "app-settings"
     const val CLOUD_SETTINGS = "cloud-settings"
+    const val CLOUD_SERVICES = "cloud-services"
+    const val CLOUD_PROVIDER_PATTERN = "cloud-provider/{providerId}"
     const val SERVERS = "servers"
     const val AI_SETTINGS = "ai-settings"
     const val UPDATE = "update"
@@ -25,4 +27,6 @@ object Routes {
     fun task(taskId: String): String = "task/${Uri.encode(taskId)}"
 
     fun storyboard(projectId: String): String = "storyboard/${Uri.encode(projectId)}"
+
+    fun cloudProvider(providerId: String): String = "cloud-provider/${Uri.encode(providerId)}"
 }

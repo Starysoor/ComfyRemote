@@ -53,7 +53,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
-import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.generation.ResultImage
@@ -140,7 +139,7 @@ fun TaskDetailScreen(
                     task = task,
                     onCancel = {
                         when {
-                            task.request.provider == AutoDlConfig.PROVIDER -> confirmCloudCancel = true
+                            task.request.provider != "comfyui" -> confirmCloudCancel = true
                             task.phase == GenerationPhase.RUNNING -> confirmLocalInterrupt = true
                             else -> viewModel.cancel(task.taskId)
                         }

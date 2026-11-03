@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- 创作页（工作流列表） -->
-    <string name="wf_subtitle_cloud_ready">AutoDL · READY</string>
-    <string name="wf_subtitle_cloud_token">AutoDL · TOKEN NEEDED</string>
+    <string name="wf_subtitle_cloud_ready">云端 · READY</string>
+    <string name="wf_subtitle_cloud_token">云端 · TOKEN NEEDED</string>
     <string name="wf_no_local_server">未连接本地服务器</string>
     <string name="wf_server">服务器</string>
     <string name="wf_search">搜索工作流</string>
@@ -12,7 +12,7 @@
     <string name="wf_least_busy">最空闲</string>
     <string name="wf_not_checked">未检测</string>
     <string name="wf_server_stats">run %1$d · q %2$d · app %3$d</string>
-    <string name="wf_cloud_token_hint">可浏览云端工作流；提交前需配置 AutoDL Token</string>
+    <string name="wf_cloud_token_hint">可浏览云端工作流；提交前需配置对应厂商的 Token</string>
     <string name="wf_reuse_choose_title">选择工作流</string>
     <string name="wf_reuse_choose_detail">将把「%1$s」的参数带到你选择的工作流</string>
     <string name="wf_go_settings">去设置</string>
