@@ -13,6 +13,8 @@ data class DraftTransfer(
     /** Set when this draft was opened from a storyboard shot. */
     val storyboardProjectId: String? = null,
     val storyboardShotId: String? = null,
+    /** True when the user chose "pick a workflow" instead of returning to the original one. */
+    val reuseAcrossWorkflows: Boolean = false,
 )
 
 class DraftTransferRepository {
@@ -21,8 +23,12 @@ class DraftTransferRepository {
 
     fun put(transfer: DraftTransfer) = synchronized(lock) { pending = transfer }
 
+    fun peek(): DraftTransfer? = synchronized(lock) { pending }
+
     fun consume(workflowPath: String): DraftTransfer? = synchronized(lock) {
-        pending?.takeIf { it.workflowPath == workflowPath }?.also { pending = null }
+        pending?.takeIf {
+            it.workflowPath == workflowPath || it.reuseAcrossWorkflows
+        }?.also { pending = null }
     }
 
     fun clear() = synchronized(lock) { pending = null }

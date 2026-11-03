@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CloudQueue
@@ -58,10 +59,20 @@ fun WorkflowsScreen(
     val state by viewModel.state.collectAsState()
     val settings = LocalAppSettings.current
     val snackbar = remember { SnackbarHostState() }
+    val listState = rememberLazyListState()
     val cloud = state.source == WorkflowSource.CLOUD
 
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() }
+    }
+
+    // Re-check whenever the picker regains composition: reuse may be requested from
+    // History/Tasks while this ViewModel already exists.
+    LaunchedEffect(Unit) { viewModel.syncReuse() }
+
+    // The list may restore a scroll offset; bring the reuse prompt back into view.
+    LaunchedEffect(state.reuseTransfer) {
+        if (state.reuseTransfer != null) listState.scrollToItem(0)
     }
 
     IrisScaffold(
@@ -83,9 +94,22 @@ fun WorkflowsScreen(
     ) { pad ->
         LazyColumn(
             Modifier.padding(pad).fillMaxSize(),
+            state = listState,
             contentPadding = PaddingValues(start = Spacing.gutter, end = Spacing.gutter, top = Spacing.xs, bottom = Spacing.xl),
             verticalArrangement = Arrangement.spacedBy(Spacing.sm),
         ) {
+            state.reuseTransfer?.let { transfer ->
+                item("reuse") {
+                    InfoBanner(
+                        title = stringResource(R.string.wf_reuse_choose_title),
+                        text = stringResource(R.string.wf_reuse_choose_detail, transfer.workflowName),
+                        tone = BannerTone.Info,
+                        actionLabel = stringResource(R.string.action_cancel),
+                        onAction = viewModel::cancelReuse,
+                    )
+                }
+            }
+
             item("source") {
                 SegmentedControl(
                     options = listOf(stringResource(R.string.wf_source_local), stringResource(R.string.wf_source_cloud)),

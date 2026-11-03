@@ -114,6 +114,7 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
             values = if (hasActualSeed) task.request.fieldValues + task.seedValues else task.request.fieldValues,
             randomSeed = if (hasActualSeed) false else task.request.randomSeed,
             serverUrl = task.request.serverUrl,
+            reuseAcrossWorkflows = container.appSettingsStore.settings.value.reuseChooseWorkflow,
         )
         container.draftTransferRepository.put(transfer)
         return transfer

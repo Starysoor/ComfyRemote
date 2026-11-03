@@ -125,6 +125,12 @@ fun AppSettingsScreen(
                     checked = settings.autoSaveDrafts,
                     onCheckedChange = { value -> viewModel.update { it.copy(autoSaveDrafts = value) } },
                 )
+                SwitchRow(
+                    title = stringResource(R.string.settings_reuse_choose_workflow),
+                    detail = stringResource(R.string.settings_reuse_choose_workflow_detail),
+                    checked = settings.reuseChooseWorkflow,
+                    onCheckedChange = { value -> viewModel.update { it.copy(reuseChooseWorkflow = value) } },
+                )
                 ChoiceRow(
                     title = stringResource(R.string.settings_max_upload),
                     detail = stringResource(R.string.settings_max_upload_detail),

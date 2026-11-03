@@ -43,6 +43,8 @@
     <string name="settings_random_seed_detail">关闭后保留工作流内的 seed</string>
     <string name="settings_auto_save">自动保存草稿</string>
     <string name="settings_auto_save_detail">按工作流与服务器记住上次填写的参数</string>
+    <string name="settings_reuse_choose_workflow">复用参数时选择工作流</string>
+    <string name="settings_reuse_choose_workflow_detail">关闭后直接回到原平台和原工作流；开启后先进入工作流列表选择</string>
     <string name="settings_max_upload">上传图片最大边长</string>
     <string name="settings_max_upload_detail">大于该边长的参考图会等比压缩</string>
     <string name="settings_px">%1$s px</string>

@@ -67,8 +67,19 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
         _message.value = AppStrings.get(R.string.history_msg_saved_preset)
     }
 
-    fun prepareReuse(item: HistoryItem): DraftTransfer? = prepareTransfer(item, null, reproduceSeed = true)
-    fun prepareReference(item: HistoryItem, localPath: String): DraftTransfer? = prepareTransfer(item, localPath, reproduceSeed = false)
+    fun prepareReuse(item: HistoryItem): DraftTransfer? = prepareTransfer(
+        item,
+        null,
+        reproduceSeed = true,
+        allowWorkflowChoice = container.appSettingsStore.settings.value.reuseChooseWorkflow,
+    )
+
+    fun prepareReference(item: HistoryItem, localPath: String): DraftTransfer? = prepareTransfer(
+        item,
+        localPath,
+        reproduceSeed = false,
+        allowWorkflowChoice = false,
+    )
 
     /** Continue a still image into the configured cloud video workflow. */
     fun prepareVideo(item: HistoryItem, localPath: String): DraftTransfer? {
@@ -89,7 +100,12 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
         return transfer
     }
 
-    private fun prepareTransfer(item: HistoryItem, referenceLocalPath: String?, reproduceSeed: Boolean): DraftTransfer? {
+    private fun prepareTransfer(
+        item: HistoryItem,
+        referenceLocalPath: String?,
+        reproduceSeed: Boolean,
+        allowWorkflowChoice: Boolean = false,
+    ): DraftTransfer? {
         if (item.wfPath.isBlank()) return null
         val transfer = DraftTransfer(
             workflowPath = item.wfPath,
@@ -98,6 +114,7 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
             randomSeed = if (reproduceSeed && item.seeds.isNotBlank()) false else item.randomSeed,
             serverUrl = item.serverUrl.takeIf(String::isNotBlank),
             referenceLocalPath = referenceLocalPath,
+            reuseAcrossWorkflows = allowWorkflowChoice,
         )
         container.draftTransferRepository.put(transfer)
         return transfer

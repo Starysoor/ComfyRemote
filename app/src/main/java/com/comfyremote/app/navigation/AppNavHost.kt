@@ -52,6 +52,7 @@ import androidx.navigation.navArgument
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.AppViewModel
 import com.comfyremote.app.AppViewModelFactory
+import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.feature.ai.AiSettingsScreen
 import com.comfyremote.app.feature.ai.AiSettingsViewModel
@@ -112,8 +113,11 @@ private fun AppNavHost(
 
     fun openTransfer(transfer: DraftTransfer) {
         scope.launch {
+            // Cloud workflows are submitted through their provider; the AutoDL base URL
+            // is not a ComfyUI server and must not trigger the local server picker.
+            val cloud = transfer.workflowPath.startsWith(AutoDlConfig.PATH_PREFIX)
             val source = transfer.serverUrl?.trim()?.removeSuffix("/").orEmpty()
-            val ready = if (source.isBlank() || source == container.serverSession.url) {
+            val ready = if (cloud || source.isBlank() || source == container.serverSession.url) {
                 true
             } else {
                 runCatching {
@@ -122,11 +126,14 @@ private fun AppNavHost(
                     container.serverRepository.saveLastUrl(source)
                 }.isSuccess
             }
-            if (ready) {
-                navController.navigate(Routes.generate(transfer.workflowPath, transfer.workflowName))
-            } else {
+            if (!ready) {
                 container.draftTransferRepository.clear()
                 navController.navigate(Routes.SERVERS)
+            } else if (transfer.reuseAcrossWorkflows) {
+                // Keep the transfer pending so the workflow the user picks consumes it.
+                navigateTopLevel(navController, Routes.CREATE)
+            } else {
+                navController.navigate(Routes.generate(transfer.workflowPath, transfer.workflowName))
             }
         }
     }

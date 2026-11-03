@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.2.2 — 2026-11-03
+
+### Added
+
+- Setting to choose a workflow when reusing history/task parameters; off (default) returns straight to the original platform and workflow.
+
+### Fixed
+
+- Reusing a cloud (AutoDL) result no longer asks for a local ComfyUI server.
+- Version `2.2.2` (versionCode 23).
+
 ## 2.2.1 — 2026-11-03
 
 ### Added

@@ -6,6 +6,7 @@ import com.comfyremote.app.AppContainer
 import com.comfyremote.app.HistoryItem
 import com.comfyremote.app.ServerEntry
 import com.comfyremote.app.WorkflowEntry
+import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.repository.PromptPreset
 import com.comfyremote.app.data.repository.ServerHealth
@@ -28,6 +29,7 @@ data class WorkflowsUiState(
     val cloudError: String? = null,
     val cloudLoaded: Boolean = false,
     val autoDlConfigured: Boolean = false,
+    val reuseTransfer: DraftTransfer? = null,
     val query: String = "",
     val loading: Boolean = false,
     val error: String? = null,
@@ -63,6 +65,14 @@ data class WorkflowsUiState(
 }
 
 class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
+    private val pendingAtStart = container.draftTransferRepository.peek()
+        ?.takeIf { it.reuseAcrossWorkflows }
+    private val initialSource = when {
+        pendingAtStart?.workflowPath?.startsWith(AutoDlConfig.PATH_PREFIX) == true -> WorkflowSource.CLOUD
+        pendingAtStart != null -> WorkflowSource.LOCAL
+        container.serverSession.connected -> WorkflowSource.LOCAL
+        else -> WorkflowSource.CLOUD
+    }
     private val _state = MutableStateFlow(
         WorkflowsUiState(
             recentPaths = container.workflowUsageRepository.recentPaths(),
@@ -71,7 +81,8 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
             recentResults = recentResults(container.historyRepository.load(), container.serverSession.session.value?.url),
             session = container.serverSession.session.value,
             servers = container.serverRepository.load(),
-            source = if (container.serverSession.connected) WorkflowSource.LOCAL else WorkflowSource.CLOUD,
+            source = initialSource,
+            reuseTransfer = pendingAtStart,
             autoDlConfigured = container.autoDlRepository.configured(),
         )
     )
@@ -129,6 +140,27 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setQuery(value: String) = _state.update { it.copy(query = value) }
     fun clearMessage() = _state.update { it.copy(message = null) }
+
+    /** Pick up a transfer that asked the user to choose a different workflow. */
+    fun syncReuse() {
+        val pending = container.draftTransferRepository.peek()
+        if (pending?.reuseAcrossWorkflows != true) {
+            _state.update { it.copy(reuseTransfer = null) }
+            return
+        }
+        val source = if (pending.workflowPath.startsWith(AutoDlConfig.PATH_PREFIX)) {
+            WorkflowSource.CLOUD
+        } else {
+            WorkflowSource.LOCAL
+        }
+        _state.update { it.copy(source = source, reuseTransfer = pending, query = "") }
+        if (source == WorkflowSource.CLOUD && !_state.value.cloudLoaded) loadCloud(force = false)
+    }
+
+    fun cancelReuse() {
+        container.draftTransferRepository.clear()
+        _state.update { it.copy(reuseTransfer = null) }
+    }
 
     fun setSource(source: WorkflowSource) {
         if (_state.value.source == source) return

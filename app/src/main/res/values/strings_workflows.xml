@@ -13,6 +13,8 @@
     <string name="wf_not_checked">Not checked</string>
     <string name="wf_server_stats">run %1$d · q %2$d · app %3$d</string>
     <string name="wf_cloud_token_hint">Browse cloud workflows now; add an AutoDL token before running</string>
+    <string name="wf_reuse_choose_title">Choose a workflow</string>
+    <string name="wf_reuse_choose_detail">Parameters from \"%1$s\" will be applied to the workflow you pick</string>
     <string name="wf_go_settings">Settings</string>
     <string name="wf_recent_setups">Recent setups</string>
     <string name="wf_recent_results">Recent results</string>

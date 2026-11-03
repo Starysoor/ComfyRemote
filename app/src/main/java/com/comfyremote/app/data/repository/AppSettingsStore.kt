@@ -26,6 +26,8 @@ data class AppSettings(
     val advancedExpandedByDefault: Boolean = false,
     val defaultVideoWorkflowId: String = "minimax_h3_lightx2v_v5",
     val confirmCloudSubmit: Boolean = true,
+    /** Off: reuse returns straight to the original platform/workflow. */
+    val reuseChooseWorkflow: Boolean = false,
 )
 
 /** Persists [AppSettings] in the shared `comfyremote` preferences file. */
@@ -50,6 +52,7 @@ class AppSettingsStore(private val prefs: SharedPreferences) {
         defaultVideoWorkflowId = prefs.getString(KEY_VIDEO_WORKFLOW, "minimax_h3_lightx2v_v5")
             ?.trim().orEmpty(),
         confirmCloudSubmit = prefs.getBoolean(KEY_CONFIRM_CLOUD, true),
+        reuseChooseWorkflow = prefs.getBoolean(KEY_REUSE_CHOOSE_WORKFLOW, false),
     )
 
     fun save(settings: AppSettings) {
@@ -70,6 +73,7 @@ class AppSettingsStore(private val prefs: SharedPreferences) {
             .putBoolean(KEY_ADVANCED_OPEN, settings.advancedExpandedByDefault)
             .putString(KEY_VIDEO_WORKFLOW, settings.defaultVideoWorkflowId.trim())
             .putBoolean(KEY_CONFIRM_CLOUD, settings.confirmCloudSubmit)
+            .putBoolean(KEY_REUSE_CHOOSE_WORKFLOW, settings.reuseChooseWorkflow)
             .apply()
     }
 
@@ -91,5 +95,6 @@ class AppSettingsStore(private val prefs: SharedPreferences) {
         private const val KEY_ADVANCED_OPEN = "appAdvancedExpanded"
         private const val KEY_VIDEO_WORKFLOW = "appDefaultVideoWorkflow"
         private const val KEY_CONFIRM_CLOUD = "appConfirmCloudSubmit"
+        private const val KEY_REUSE_CHOOSE_WORKFLOW = "appReuseChooseWorkflow"
     }
 }
