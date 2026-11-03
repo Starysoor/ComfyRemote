@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Settings hub -->
+    <string name="settings_group_connections">Connections &amp; services</string>
+    <string name="settings_group_ai_creation">AI &amp; creation</string>
+    <string name="settings_group_about">Updates &amp; about</string>
     <string name="settings_app">App &amp; interface</string>
     <string name="settings_app_detail">Theme, compact layout, recent counts, creation defaults</string>
     <string name="settings_servers">Servers</string>
@@ -13,11 +16,38 @@
     <string name="cloud_provider_configured">Configured</string>
     <string name="cloud_provider_not_configured">Not configured</string>
     <string name="cloud_provider_unavailable">Settings for this provider are not available yet.</string>
+    <string name="cloud_providers">Providers</string>
+    <string name="cloud_status_refresh">Recheck</string>
+    <string name="cloud_status_unknown">Not checked</string>
+    <string name="cloud_status_checking">Checking…</string>
+    <string name="cloud_status_ready">Online</string>
+    <string name="cloud_status_auth_failed">Auth failed</string>
+    <string name="cloud_status_unreachable">Unreachable</string>
+    <string name="cloud_status_error">Error</string>
+    <string name="cloud_status_models">%1$d models</string>
+    <string name="cloud_status_ok">Connection OK · %1$d models</string>
+    <string name="cloud_status_testing">Testing connection…</string>
+    <string name="cloud_status_discovering">Discovering models…</string>
+    <string name="cloud_status_discovery_unsupported">This provider does not support model discovery; edit the list manually.</string>
+    <string name="cloud_status_discovery_empty">No models were returned. Keep the manual list as a fallback.</string>
+    <string name="cloud_status_discovered">%1$d models discovered; review and save.</string>
+    <string name="cloud_status_save_before_test">Save your changes before testing or refreshing.</string>
+    <string name="cloud_spend_summary">Local spend estimate</string>
+    <string name="cloud_spend_today">Today</string>
+    <string name="cloud_spend_month">This month</string>
+    <string name="cloud_spend_units">%1$d units</string>
+    <string name="cloud_spend_summary_note">Based on local submissions; not a provider bill.</string>
+    <string name="cloud_clear_spend_confirm_title">Clear local spend estimate?</string>
+    <string name="cloud_clear_spend_confirm_body">This removes local entries only and cannot be undone.</string>
+    <string name="cloud_clear_cache_confirm_title">Clear cloud reference copies?</string>
+    <string name="cloud_clear_cache_confirm_body">Cloud workflows that reuse these copies will need to upload the image again.</string>
     <string name="cloud_provider_base_url">Base URL</string>
     <string name="cloud_provider_base_url_hint">Include the API version segment, e.g. https://api.example.com/v1</string>
     <string name="cloud_provider_api_key">API key / token</string>
     <string name="cloud_provider_models">Models</string>
     <string name="cloud_provider_models_hint">Comma-separated model IDs; leave blank to query /models</string>
+    <string name="cloud_provider_test">Test connection</string>
+    <string name="cloud_provider_refresh_models">Refresh models</string>
     <string name="cloud_template_config">Template config (JSON)</string>
     <string name="cloud_template_config_hint">submitUrl, bodyTemplate with {{field}}, taskIdPath, statusUrlTemplate, resultUrlPath, fields</string>
     <string name="cloud_template_sample_request">Sample request JSON (optional)</string>

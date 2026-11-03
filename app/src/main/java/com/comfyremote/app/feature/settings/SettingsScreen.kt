@@ -41,13 +41,7 @@ fun SettingsScreen(
             Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(ScreenContentPadding),
             verticalArrangement = Arrangement.spacedBy(Spacing.xl),
         ) {
-            SettingsGroup(title = null) {
-                SettingRow(
-                    title = stringResource(R.string.settings_app),
-                    detail = stringResource(R.string.settings_app_detail),
-                    icon = Icons.Outlined.Tune,
-                    onClick = onApp,
-                )
+            SettingsGroup(title = stringResource(R.string.settings_group_connections)) {
                 SettingRow(
                     title = stringResource(R.string.settings_servers),
                     detail = stringResource(R.string.settings_servers_detail),
@@ -55,26 +49,35 @@ fun SettingsScreen(
                     onClick = onServers,
                 )
                 SettingRow(
+                    title = stringResource(R.string.settings_cloud),
+                    detail = stringResource(R.string.settings_cloud_detail),
+                    icon = Icons.Outlined.Cloud,
+                    onClick = onCloud,
+                    divider = false,
+                )
+            }
+            SettingsGroup(title = stringResource(R.string.settings_group_ai_creation)) {
+                SettingRow(
                     title = stringResource(R.string.settings_ai),
                     detail = stringResource(R.string.settings_ai_detail),
                     icon = Icons.Outlined.AutoAwesome,
                     onClick = onAi,
                 )
                 SettingRow(
-                    title = stringResource(R.string.settings_cloud),
-                    detail = stringResource(R.string.settings_cloud_detail),
-                    icon = Icons.Outlined.Cloud,
-                    onClick = onCloud,
+                    title = stringResource(R.string.settings_app),
+                    detail = stringResource(R.string.settings_app_detail),
+                    icon = Icons.Outlined.Tune,
+                    onClick = onApp,
+                    divider = false,
                 )
+            }
+            SettingsGroup(title = stringResource(R.string.settings_group_about)) {
                 SettingRow(
                     title = stringResource(R.string.settings_update),
                     detail = stringResource(R.string.settings_update_detail),
                     icon = Icons.Outlined.SystemUpdate,
                     onClick = onUpdate,
-                    divider = false,
                 )
-            }
-            SettingsGroup(title = null) {
                 SettingRow(
                     title = stringResource(R.string.settings_version),
                     icon = Icons.Outlined.Info,

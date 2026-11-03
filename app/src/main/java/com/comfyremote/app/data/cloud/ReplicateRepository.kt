@@ -1,6 +1,7 @@
 package com.comfyremote.app.data.cloud
 
 import com.comfyremote.app.ComfyException
+import kotlin.coroutines.cancellation.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -22,6 +23,26 @@ class ReplicateRepository(
     private fun account() = settings.account(id, DEFAULT_BASE, MODELS)
 
     override fun configured(): Boolean = account().token.isNotBlank()
+
+    /** Replicate has no user model catalogue; validate the token against the account API. */
+    override suspend fun check(): CloudHealth {
+        if (!configured()) {
+            return CloudHealth(CloudHealthStatus.NOT_CONFIGURED, checkedAt = System.currentTimeMillis())
+        }
+        return try {
+            val account = account()
+            CloudHttp.getJson("${account.baseUrl.trimEnd('/')}/account", auth(account))
+            CloudHealth(
+                status = CloudHealthStatus.READY,
+                modelCount = account.models.ifEmpty { MODELS }.size,
+                checkedAt = System.currentTimeMillis(),
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            classifyCloudFailure(error).copy(checkedAt = System.currentTimeMillis())
+        }
+    }
 
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> =
         account().models.ifEmpty { MODELS }.map { model ->

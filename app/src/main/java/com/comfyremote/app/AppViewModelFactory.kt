@@ -3,6 +3,7 @@ package com.comfyremote.app
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.comfyremote.app.feature.ai.AiSettingsViewModel
+import com.comfyremote.app.feature.cloud.CloudServicesViewModel
 import com.comfyremote.app.feature.connect.ConnectViewModel
 import com.comfyremote.app.feature.generate.GenerateViewModel
 import com.comfyremote.app.feature.history.HistoryViewModel
@@ -27,6 +28,7 @@ class AppViewModelFactory(
         modelClass.isAssignableFrom(AiSettingsViewModel::class.java) -> AiSettingsViewModel(container)
         modelClass.isAssignableFrom(AppSettingsViewModel::class.java) -> AppSettingsViewModel(container)
         modelClass.isAssignableFrom(CloudSettingsViewModel::class.java) -> CloudSettingsViewModel(container)
+        modelClass.isAssignableFrom(CloudServicesViewModel::class.java) -> CloudServicesViewModel(container)
         modelClass.isAssignableFrom(StoryboardViewModel::class.java) -> StoryboardViewModel(container)
         modelClass.isAssignableFrom(UpdateViewModel::class.java) -> UpdateViewModel(container)
         else -> error("Unknown ViewModel ${modelClass.name}")

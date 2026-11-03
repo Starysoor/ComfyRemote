@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- 设置首页 -->
+    <string name="settings_group_connections">连接与服务</string>
+    <string name="settings_group_ai_creation">AI 与创作</string>
+    <string name="settings_group_about">更新与关于</string>
     <string name="settings_app">应用与界面</string>
     <string name="settings_app_detail">主题、紧凑布局、最近结果数量、创作默认值</string>
     <string name="settings_servers">服务器</string>
@@ -13,11 +16,38 @@
     <string name="cloud_provider_configured">已配置</string>
     <string name="cloud_provider_not_configured">未配置</string>
     <string name="cloud_provider_unavailable">该厂商的设置页暂未提供。</string>
+    <string name="cloud_providers">服务商</string>
+    <string name="cloud_status_refresh">重新检查</string>
+    <string name="cloud_status_unknown">未检查</string>
+    <string name="cloud_status_checking">检查中…</string>
+    <string name="cloud_status_ready">正常</string>
+    <string name="cloud_status_auth_failed">认证失败</string>
+    <string name="cloud_status_unreachable">不可达</string>
+    <string name="cloud_status_error">异常</string>
+    <string name="cloud_status_models">%1$d 个模型</string>
+    <string name="cloud_status_ok">连接正常 · %1$d 个模型</string>
+    <string name="cloud_status_testing">正在测试连接…</string>
+    <string name="cloud_status_discovering">正在发现模型…</string>
+    <string name="cloud_status_discovery_unsupported">该厂商不支持自动发现模型，请手动编辑列表。</string>
+    <string name="cloud_status_discovery_empty">没有返回模型，可继续使用手动列表。</string>
+    <string name="cloud_status_discovered">发现 %1$d 个模型，请检查后保存。</string>
+    <string name="cloud_status_save_before_test">请先保存修改，再测试连接或刷新模型。</string>
+    <string name="cloud_spend_summary">本地预估消耗</string>
+    <string name="cloud_spend_today">今日</string>
+    <string name="cloud_spend_month">本月</string>
+    <string name="cloud_spend_units">%1$d 单位</string>
+    <string name="cloud_spend_summary_note">根据本地提交记录估算，不是厂商账单。</string>
+    <string name="cloud_clear_spend_confirm_title">清除本地预估消耗？</string>
+    <string name="cloud_clear_spend_confirm_body">只会删除本地记录，无法恢复。</string>
+    <string name="cloud_clear_cache_confirm_title">清除云端参考图副本？</string>
+    <string name="cloud_clear_cache_confirm_body">复用这些副本的云端工作流需要重新上传图片。</string>
     <string name="cloud_provider_base_url">Base URL</string>
     <string name="cloud_provider_base_url_hint">请包含 API 版本段，例如 https://api.example.com/v1</string>
     <string name="cloud_provider_api_key">API Key / Token</string>
     <string name="cloud_provider_models">模型列表</string>
     <string name="cloud_provider_models_hint">逗号分隔的模型 ID；留空则请求 /models</string>
+    <string name="cloud_provider_test">测试连接</string>
+    <string name="cloud_provider_refresh_models">刷新模型</string>
     <string name="cloud_template_config">模板配置（JSON）</string>
     <string name="cloud_template_config_hint">submitUrl、带 {{field}} 的 bodyTemplate、taskIdPath、statusUrlTemplate、resultUrlPath、fields</string>
     <string name="cloud_template_sample_request">示例请求 JSON（可选）</string>

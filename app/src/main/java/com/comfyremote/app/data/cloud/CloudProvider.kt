@@ -1,5 +1,6 @@
 package com.comfyremote.app.data.cloud
 
+import kotlin.coroutines.cancellation.CancellationException
 import org.json.JSONObject
 
 /**
@@ -22,6 +23,43 @@ interface CloudProvider {
     suspend fun submit(workflowId: String, body: JSONObject): String
     suspend fun result(taskId: String): CloudTaskResult
     suspend fun download(url: String): ByteArray
+
+    /**
+     * Optional live model discovery (`GET /models` and similar). Null means the
+     * provider cannot enumerate models and the manual list stays authoritative.
+     */
+    suspend fun discoverModels(): List<String>? = null
+
+    /**
+     * Lightweight connection check used by Settings. Providers that can discover
+     * models hit the network; others fall back to their catalogue.
+     */
+    suspend fun check(): CloudHealth {
+        if (!configured()) {
+            return CloudHealth(CloudHealthStatus.NOT_CONFIGURED, checkedAt = System.currentTimeMillis())
+        }
+        return try {
+            val discovered = discoverModels()
+            if (discovered != null) {
+                CloudHealth(
+                    status = CloudHealthStatus.READY,
+                    modelCount = discovered.size,
+                    checkedAt = System.currentTimeMillis(),
+                )
+            } else {
+                val list = catalog(force = true)
+                CloudHealth(
+                    status = CloudHealthStatus.READY,
+                    modelCount = list.size,
+                    checkedAt = System.currentTimeMillis(),
+                )
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            classifyCloudFailure(error).copy(checkedAt = System.currentTimeMillis())
+        }
+    }
 
     /** Prefer this for large media; providers can stream directly to [target]. */
     suspend fun downloadTo(url: String, target: java.io.File) {

@@ -37,6 +37,8 @@ class AutoDlModelRepository(
 
     override fun configured(): Boolean = account().token.isNotBlank()
 
+    override suspend fun discoverModels(): List<String> = imageApi.discoverModels()
+
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
         val images = imageApi.catalog(force).filter { familyOf(it.id) == "image" }
         val videos = VIDEO_MODELS.map { model ->

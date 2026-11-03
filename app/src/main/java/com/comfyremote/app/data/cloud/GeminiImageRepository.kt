@@ -23,6 +23,21 @@ class GeminiImageRepository(
 
     override fun configured(): Boolean = account().token.isNotBlank()
 
+    override suspend fun discoverModels(): List<String> {
+        val account = account()
+        if (account.token.isBlank()) throw ComfyException("Configure a Gemini API key first")
+        val root = CloudHttp.getJson(
+            "${account.baseUrl.trimEnd('/')}/models",
+            mapOf("x-goog-api-key" to account.token),
+        )
+        return modelIdsFromResponse(root.optJSONArray("models"), idKey = "name")
+            .map { it.removePrefix("models/") }
+            .filter { model ->
+                val lower = model.lowercase()
+                "image" in lower || "imagen" in lower
+            }
+    }
+
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> =
         account().models.ifEmpty { MODELS }.map { model ->
             CloudWorkflowSummary(

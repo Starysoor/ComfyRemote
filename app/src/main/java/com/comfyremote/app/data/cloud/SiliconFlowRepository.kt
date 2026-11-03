@@ -25,6 +25,13 @@ class SiliconFlowRepository(
 
     override fun configured(): Boolean = account().token.isNotBlank()
 
+    override suspend fun discoverModels(): List<String> {
+        val account = account()
+        if (account.token.isBlank()) throw ComfyException("Configure a SiliconFlow API key first")
+        val root = CloudHttp.getJson("${account.baseUrl.trimEnd('/')}/models", auth(account))
+        return modelIdsFromResponse(root.optJSONArray("data")).filter(::looksLikeMediaModel)
+    }
+
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> =
         account().models.ifEmpty { MODELS }.map { model ->
             CloudWorkflowSummary(
@@ -183,6 +190,15 @@ class SiliconFlowRepository(
     private fun kindOf(model: String): String {
         val lower = model.lowercase()
         return if (listOf("t2v", "i2v", "video", "wan2").any { it in lower }) "video" else "image"
+    }
+
+    private fun looksLikeMediaModel(model: String): Boolean {
+        val lower = model.lowercase()
+        return listOf(
+            "image", "kolors", "flux", "stable", "sd3", "sdxl", "wan", "video",
+            "seedance", "seedream", "kling", "hailuo", "minimax", "hunyuan",
+            "cogvideo", "z-image",
+        ).any { it in lower }
     }
 
     private fun extensionOf(url: String): String =

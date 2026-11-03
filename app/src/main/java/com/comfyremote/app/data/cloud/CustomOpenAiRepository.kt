@@ -24,6 +24,16 @@ class CustomOpenAiRepository(
 
     override fun configured(): Boolean = account().baseUrl.isNotBlank()
 
+    override suspend fun discoverModels(): List<String> {
+        val account = account()
+        if (account.baseUrl.isBlank()) return emptyList()
+        val root = CloudHttp.getJson(
+            "${account.baseUrl.trimEnd('/')}/models",
+            if (account.token.isBlank()) emptyMap() else mapOf("Authorization" to "Bearer ${account.token}"),
+        )
+        return modelIdsFromResponse(root.optJSONArray("data"))
+    }
+
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
         val account = account()
         if (account.baseUrl.isBlank()) return emptyList()

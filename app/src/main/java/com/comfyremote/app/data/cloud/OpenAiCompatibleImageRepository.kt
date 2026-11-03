@@ -23,6 +23,18 @@ class OpenAiCompatibleImageRepository(
 
     override fun configured(): Boolean = account().token.isNotBlank()
 
+    override suspend fun discoverModels(): List<String> {
+        val account = account()
+        if (account.token.isBlank()) throw ComfyException("Configure an API key first")
+        val root = CloudHttp.getJson(
+            "${account.baseUrl.trimEnd('/')}/models",
+            mapOf("Authorization" to "Bearer ${account.token}"),
+        )
+        val ids = modelIdsFromResponse(root.optJSONArray("data"))
+        // The official OpenAI catalogue also lists text/audio models.
+        return if (id == PROVIDER) ids.filter(::looksLikeImageModel) else ids
+    }
+
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
         val configuredModels = account().models.ifEmpty { MODELS }
         return configuredModels.map { model ->
@@ -166,6 +178,11 @@ class OpenAiCompatibleImageRepository(
         model.startsWith("gpt-image-1.5") -> "GPT Image 1.5"
         model == "dall-e-3" -> "DALL·E 3"
         else -> model
+    }
+
+    private fun looksLikeImageModel(model: String): Boolean {
+        val lower = model.lowercase()
+        return "image" in lower || lower.startsWith("dall-e")
     }
 
     private fun extensionOf(url: String): String =

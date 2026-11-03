@@ -59,6 +59,7 @@ import com.comfyremote.app.feature.ai.AiSettingsViewModel
 import com.comfyremote.app.feature.cloud.CloudProviderPlaceholderScreen
 import com.comfyremote.app.feature.cloud.CloudProviderSettingsScreen
 import com.comfyremote.app.feature.cloud.CloudServicesScreen
+import com.comfyremote.app.feature.cloud.CloudServicesViewModel
 import com.comfyremote.app.feature.connect.ConnectScreen
 import com.comfyremote.app.feature.connect.ConnectViewModel
 import com.comfyremote.app.feature.connect.ServerManagerScreen
@@ -277,8 +278,9 @@ private fun AppNavHost(
                 CloudSettingsScreen(vm) { navController.popBackStack() }
             }
             composable(Routes.CLOUD_SERVICES) {
+                val vm: CloudServicesViewModel = viewModel(factory = factory)
                 CloudServicesScreen(
-                    providers = container.cloudProviders.info(),
+                    viewModel = vm,
                     onBack = { navController.popBackStack() },
                     onOpenProvider = { providerId ->
                         navController.navigate(Routes.cloudProvider(providerId))
