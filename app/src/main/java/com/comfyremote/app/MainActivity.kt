@@ -16,6 +16,8 @@ import com.comfyremote.app.navigation.ComfyRemoteRoot
 import com.comfyremote.app.navigation.Routes
 import com.comfyremote.app.ui.IrisTheme
 import com.comfyremote.app.ui.LocalAppSettings
+import com.comfyremote.app.ui.intro.IrisIntro
+import com.comfyremote.app.ui.intro.IrisIntroHost
 import com.comfyremote.app.ui.isIrisDark
 
 class MainActivity : ComponentActivity() {
@@ -27,6 +29,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // A recreated Activity still carries the launch Intent; consume it only once.
         if (savedInstanceState == null) handleEntryIntent(intent)
+        // Decided once per cold start; recreation (rotation, theme change) never replays it.
+        val playIntro = savedInstanceState == null &&
+            IrisIntro.shouldPlay(this, intent, container.appSettingsStore.settings.value.playIntro)
         setContent {
             val settings by container.appSettingsStore.settings.collectAsState()
             val dark = isIrisDark(settings.themeMode)
@@ -42,8 +47,10 @@ class MainActivity : ComponentActivity() {
                 onDispose {}
             }
             IrisTheme(settings.themeMode) {
-                CompositionLocalProvider(LocalAppSettings provides settings) {
-                    ComfyRemoteRoot(container)
+                IrisIntroHost(play = playIntro, dark = dark) {
+                    CompositionLocalProvider(LocalAppSettings provides settings) {
+                        ComfyRemoteRoot(container)
+                    }
                 }
             }
         }

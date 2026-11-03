@@ -31,6 +31,7 @@
 - Cloud provider registry metadata and a Cloud services list with per-provider detail routing and credential settings.
 - Create's Cloud tab aggregates workflows from every registered provider and labels cards with the provider name.
 - Cloud confirmation, cancellation and spend tracking now treat every non-ComfyUI provider as hosted cloud work.
+- Launch intro: a 2.2 s "lens" animation on launcher cold starts (rack-focus pull-back, ring impact, dive through the pupil into the live UI). Tap or Back skips it; it never plays for notification/share launches or with system animations off, and can be turned off in App & interface.
 - Version `2.3.0` (versionCode 26).
 
 ## 2.2.4 — 2026-11-03

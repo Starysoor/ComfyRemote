@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.asStateFlow
 data class AppSettings(
     val themeMode: String = "system",              // system | light | dark
     val compactUi: Boolean = true,
+    /** Play the Iris intro on a launcher cold start. */
+    val playIntro: Boolean = true,
     val recentResultsCount: Int = 2,               // 0..4
     val recentPresetsCount: Int = 2,               // 0..4
     val showServerWorkspace: Boolean = true,
@@ -39,6 +41,7 @@ class AppSettingsStore(private val prefs: SharedPreferences) {
     fun load(): AppSettings = AppSettings(
         themeMode = prefs.getString(KEY_THEME, "system") ?: "system",
         compactUi = prefs.getBoolean(KEY_COMPACT, true),
+        playIntro = prefs.getBoolean(KEY_PLAY_INTRO, true),
         recentResultsCount = prefs.getInt(KEY_RECENT_RESULTS, 2).coerceIn(0, 4),
         recentPresetsCount = prefs.getInt(KEY_RECENT_PRESETS, 2).coerceIn(0, 4),
         showServerWorkspace = prefs.getBoolean(KEY_SERVER_WORKSPACE, true),
@@ -62,6 +65,7 @@ class AppSettingsStore(private val prefs: SharedPreferences) {
         prefs.edit()
             .putString(KEY_THEME, settings.themeMode)
             .putBoolean(KEY_COMPACT, settings.compactUi)
+            .putBoolean(KEY_PLAY_INTRO, settings.playIntro)
             .putInt(KEY_RECENT_RESULTS, settings.recentResultsCount.coerceIn(0, 4))
             .putInt(KEY_RECENT_PRESETS, settings.recentPresetsCount.coerceIn(0, 4))
             .putBoolean(KEY_SERVER_WORKSPACE, settings.showServerWorkspace)
@@ -85,6 +89,7 @@ class AppSettingsStore(private val prefs: SharedPreferences) {
     companion object {
         private const val KEY_THEME = "appThemeMode"
         private const val KEY_COMPACT = "appCompactUi"
+        private const val KEY_PLAY_INTRO = "appPlayIntro"
         private const val KEY_RECENT_RESULTS = "appRecentResults"
         private const val KEY_RECENT_PRESETS = "appRecentPresets"
         private const val KEY_SERVER_WORKSPACE = "appServerWorkspace"

@@ -60,6 +60,12 @@ fun AppSettingsScreen(
                     checked = settings.compactUi,
                     onCheckedChange = { value -> viewModel.update { it.copy(compactUi = value) } },
                 )
+                SwitchRow(
+                    title = stringResource(R.string.settings_intro),
+                    detail = stringResource(R.string.settings_intro_detail),
+                    checked = settings.playIntro,
+                    onCheckedChange = { value -> viewModel.update { it.copy(playIntro = value) } },
+                )
                 StepperRow(
                     title = stringResource(R.string.settings_recent_results),
                     detail = stringResource(R.string.settings_recent_results_detail),

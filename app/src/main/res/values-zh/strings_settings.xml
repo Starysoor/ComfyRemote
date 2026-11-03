@@ -9,7 +9,7 @@
     <string name="settings_keywords_servers">server connection address LAN discovery 服务器 连接 地址 局域网 发现</string>
     <string name="settings_keywords_cloud">cloud provider token key model spend 云端 厂商 密钥 模型 费用</string>
     <string name="settings_keywords_ai">AI model skill prompt vision key 模型 技能 提示词 看图 密钥</string>
-    <string name="settings_keywords_app">app interface theme compact draft batch notification cache download 应用 界面 主题 紧凑 草稿 批量 通知 缓存 下载</string>
+    <string name="settings_keywords_app">app interface theme compact intro launch animation 开场 启动 动画 draft batch notification cache download 应用 界面 主题 紧凑 草稿 批量 通知 缓存 下载</string>
     <string name="settings_keywords_update">update release version 更新 发布 版本</string>
     <string name="settings_keywords_provider">cloud provider token key model 云端 厂商 密钥 模型</string>
     <string name="settings_app">应用与界面</string>
@@ -110,6 +110,8 @@
     <string name="settings_theme_dark">深色</string>
     <string name="settings_compact">紧凑界面</string>
     <string name="settings_compact_detail">减少卡片留白，让列表显示更多内容</string>
+    <string name="settings_intro">启动动画</string>
+    <string name="settings_intro_detail">从桌面启动时播放 Iris 开场动画，点击可跳过</string>
     <string name="settings_recent_results">最近结果数量</string>
     <string name="settings_recent_results_detail">创作页显示最近结果的数量（0–4）</string>
     <string name="settings_recent_presets">最近预设数量</string>
