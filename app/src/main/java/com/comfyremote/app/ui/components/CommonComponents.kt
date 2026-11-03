@@ -151,8 +151,8 @@ fun InfoBanner(
 @Composable
 fun ErrorCard(
     title: String,
-    detail: String? = null,
     modifier: Modifier = Modifier,
+    detail: String? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
 ) {

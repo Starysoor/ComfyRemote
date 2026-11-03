@@ -31,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
@@ -90,7 +91,7 @@ fun HistoryScreen(
             } else {
                 LargeTopBar(
                     title = stringResource(R.string.nav_results),
-                    subtitle = stringResource(R.string.history_count, history.size),
+                    subtitle = pluralStringResource(R.plurals.history_count, history.size, history.size),
                     actions = {
                         if (history.isNotEmpty() || query.isNotBlank()) {
                             TextAction(stringResource(R.string.history_select), onClick = { selecting = true })

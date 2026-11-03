@@ -10,7 +10,10 @@
     <!-- Board detail -->
     <string name="board_not_found">Storyboard not found</string>
     <string name="board_delete_project">Delete project</string>
-    <string name="board_progress">%1$d / %2$d shots done</string>
+    <plurals name="board_progress">
+        <item quantity="one">%1$d / %2$d shot done</item>
+        <item quantity="other">%1$d / %2$d shots done</item>
+    </plurals>
     <string name="board_style_prompt">Shared style prompt (prefixed to every shot)</string>
     <string name="board_all_done">All shots are done</string>
     <string name="board_next_shot">Generate next shot</string>

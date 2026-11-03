@@ -5,7 +5,6 @@
     <!-- 通用操作 -->
     <string name="action_back">返回</string>
     <string name="action_cancel">取消</string>
-    <string name="action_ok">确定</string>
     <string name="action_save">保存</string>
     <string name="action_delete">删除</string>
     <string name="action_retry">重试</string>
@@ -14,11 +13,7 @@
     <string name="action_share">分享</string>
     <string name="action_close">关闭</string>
     <string name="action_clear">清除</string>
-    <string name="action_show">展开</string>
-    <string name="action_hide">收起</string>
     <string name="action_more">更多</string>
-    <string name="action_apply">应用</string>
-    <string name="action_copy">复制</string>
     <string name="action_reuse">复用</string>
     <string name="action_edit">编辑</string>
 
@@ -60,7 +55,9 @@
     <string name="notif_node">节点 %1$s</string>
     <string name="notif_generating">灵瞳生成中</string>
     <string name="notif_done_title">生成完成</string>
-    <string name="notif_done_text">%1$s · %2$d 个结果</string>
+    <plurals name="notif_done_text">
+        <item quantity="other">%1$s · %2$d 个结果</item>
+    </plurals>
     <string name="notif_cancelled">已取消</string>
     <string name="notif_failed">生成失败</string>
 

@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Result library -->
-    <string name="history_count">%1$d results</string>
+    <plurals name="history_count">
+        <item quantity="one">%1$d result</item>
+        <item quantity="other">%1$d results</item>
+    </plurals>
     <string name="history_selected">Selected %1$d</string>
     <string name="history_select_all">All</string>
     <string name="history_select">Select</string>

@@ -86,7 +86,7 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
     fun retryFailed() {
         val ids = container.generationManager.retryFailed(_serverUrl.value)
         _message.value = if (ids.isEmpty()) AppStrings.get(R.string.tasks_msg_no_failed)
-        else AppStrings.get(R.string.tasks_msg_retries_queued, ids.size)
+        else AppStrings.plural(R.plurals.tasks_msg_retries_queued, ids.size, ids.size)
     }
 
     fun retry(id: String): String? = container.generationManager.retry(id)

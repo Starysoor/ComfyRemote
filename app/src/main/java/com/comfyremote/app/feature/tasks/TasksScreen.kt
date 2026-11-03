@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import com.comfyremote.app.R
@@ -70,7 +71,11 @@ fun TasksScreen(
         topBar = {
             LargeTopBar(
                 title = stringResource(R.string.nav_tasks),
-                subtitle = stringResource(R.string.tasks_active_count, ui.tasks.count { it.isActive }),
+                subtitle = pluralStringResource(
+                    R.plurals.tasks_active_count,
+                    ui.tasks.count { it.isActive },
+                    ui.tasks.count { it.isActive },
+                ),
                 actions = {
                     Box {
                         IconButton(onClick = { actionMenu = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.action_more)) }
@@ -207,7 +212,7 @@ private fun ServerGroupHeader(label: String, url: String, active: Int, total: In
     Column {
         SectionHeader(label) {
             Text(
-                stringResource(R.string.tasks_group_meta, active, total),
+                pluralStringResource(R.plurals.tasks_group_meta, active, active, total),
                 style = IrisType.metaSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

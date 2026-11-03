@@ -132,8 +132,8 @@ enum class ChipTone { Neutral, Accent, Success, Warning, Error }
 @Composable
 fun StatusChip(
     text: String,
-    tone: ChipTone = ChipTone.Neutral,
     modifier: Modifier = Modifier,
+    tone: ChipTone = ChipTone.Neutral,
 ) {
     val scheme = MaterialTheme.colorScheme
     val iris = Iris.colors

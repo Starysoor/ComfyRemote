@@ -135,7 +135,7 @@ private fun TaskStatusLines(task: GenerationTask) {
 /** Status chip plus optional batch and recovered chips. */
 @Composable
 internal fun TaskChips(task: GenerationTask, recoveredLabel: String) {
-    StatusChip(task.label(), taskTone(task))
+    StatusChip(task.label(), tone = taskTone(task))
     task.batchIndex?.let { StatusChip("$it/${task.batchSize ?: it}") }
     if (task.recovered) StatusChip(recoveredLabel)
 }

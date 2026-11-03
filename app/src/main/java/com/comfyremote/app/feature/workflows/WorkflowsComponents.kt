@@ -153,7 +153,7 @@ internal fun RecentResultRow(item: HistoryItem, onClick: () -> Unit) {
         },
         meta = {
             if (item.favorite) FavoriteMark()
-            StatusChip(stringResource(R.string.action_reuse), ChipTone.Accent)
+            StatusChip(stringResource(R.string.action_reuse), tone = ChipTone.Accent)
         },
         onClick = onClick,
     )
@@ -187,7 +187,7 @@ internal fun WorkflowRow(
         accent = favorite,
         meta = {
             StatusChip(workflowType(workflow))
-            if (recent) StatusChip(stringResource(R.string.wf_recent), ChipTone.Accent)
+            if (recent) StatusChip(stringResource(R.string.wf_recent), tone = ChipTone.Accent)
             val price = when {
                 workflow.priceLabel.isNotBlank() -> workflow.priceLabel
                 workflow.priceType.isNotBlank() -> workflow.priceType.replace('_', ' ')

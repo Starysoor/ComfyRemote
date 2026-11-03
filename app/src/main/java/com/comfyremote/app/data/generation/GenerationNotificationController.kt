@@ -77,7 +77,12 @@ class GenerationNotificationController(private val context: Context) {
         val (title, text, icon) = when (task.phase) {
             GenerationPhase.SUCCEEDED -> Triple(
                 context.getString(R.string.notif_done_title),
-                context.getString(R.string.notif_done_text, task.request.workflowName, task.results.size),
+                context.resources.getQuantityString(
+                    R.plurals.notif_done_text,
+                    task.results.size,
+                    task.request.workflowName,
+                    task.results.size,
+                ),
                 android.R.drawable.ic_menu_gallery,
             )
             GenerationPhase.CANCELLED -> Triple(

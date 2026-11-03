@@ -3,6 +3,23 @@
 Captured on the `deck34` Android emulator against a real local ComfyUI server
 and a real AutoDL.Art test workflow.
 
+## v2.2 redesign
+
+The `redesign/` folder contains the light and dark Iris design-system screens:
+
+| File | Screen |
+|---|---|
+| `redesign/light-create.png` | Create — light |
+| `redesign/light-generate.png` | Generate — light |
+| `redesign/dark-create.png` | Create — dark |
+| `redesign/dark-generate.png` | Generate — dark |
+| `redesign/dark-board.png` | Board / storyboard — dark |
+| `redesign/dark-settings.png` | Settings — dark |
+| `redesign/dark-app-settings.png` | App settings — dark |
+| `redesign/dark-cloud-settings.png` | Cloud settings — dark |
+
+## Feature verification
+
 | File | What it shows |
 |---|---|
 | `iris-connect.png` | Iris connect screen and cloud-only entry |

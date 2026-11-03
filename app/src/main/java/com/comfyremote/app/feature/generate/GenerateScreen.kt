@@ -168,7 +168,7 @@ fun GenerateScreen(
         when {
             state.loading -> Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             state.error != null -> Box(Modifier.padding(pad).fillMaxSize().padding(Spacing.xl), contentAlignment = Alignment.Center) {
-                ErrorCard(stringResource(R.string.gen_load_failed), state.error)
+                ErrorCard(title = stringResource(R.string.gen_load_failed), detail = state.error)
             }
             draft == null -> Unit
             else -> {
@@ -189,8 +189,8 @@ fun GenerateScreen(
                     task?.error?.let { error ->
                         item("error") {
                             ErrorCard(
-                                errorKindLabel(error.kind),
-                                buildString {
+                                title = errorKindLabel(error.kind),
+                                detail = buildString {
                                     error.nodeType?.let { append("$it · ") }
                                     error.nodeId?.let { append("#$it · ") }
                                     append(error.message)

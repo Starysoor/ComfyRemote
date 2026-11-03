@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- 任务列表 -->
-    <string name="tasks_active_count">%1$d 个进行中</string>
+    <plurals name="tasks_active_count">
+        <item quantity="other">%1$d 个进行中</item>
+    </plurals>
     <string name="tasks_filter_all">全部</string>
     <string name="tasks_filter_active">进行中</string>
     <string name="tasks_filter_queued">排队</string>
@@ -9,7 +11,9 @@
     <string name="tasks_filter_done">已结束</string>
     <string name="tasks_all_servers">全部服务器</string>
     <string name="tasks_local_count">LOCAL %1$d</string>
-    <string name="tasks_group_meta">%1$d 进行中 · %2$d</string>
+    <plurals name="tasks_group_meta">
+        <item quantity="other">%1$d 进行中 · %2$d</item>
+    </plurals>
     <string name="tasks_resume_local">继续本地队列</string>
     <string name="tasks_pause_local">暂停本地队列</string>
     <string name="tasks_cancel_queued">取消排队</string>
@@ -49,7 +53,9 @@
     <!-- 消息 -->
     <string name="tasks_msg_queued_cancelled">已取消当前范围内的排队任务</string>
     <string name="tasks_msg_no_failed">没有可重试的失败任务</string>
-    <string name="tasks_msg_retries_queued">已加入 %1$d 个重试任务</string>
+    <plurals name="tasks_msg_retries_queued">
+        <item quantity="other">已加入 %1$d 个重试任务</item>
+    </plurals>
     <string name="tasks_msg_reconnecting">正在重新连接原任务</string>
     <string name="tasks_msg_cannot_recover">这个任务无法恢复</string>
 </resources>

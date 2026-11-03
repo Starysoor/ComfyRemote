@@ -106,7 +106,9 @@
     <string name="gen_vm_server_disconnected">服务器已断开</string>
     <string name="gen_vm_cloud_token_missing">请先在设置 → 云端服务中配置 Token</string>
     <string name="gen_vm_fix_compat">请先修复兼容性问题：%1$s</string>
-    <string name="gen_vm_batch_created">已创建 %1$d 个批量任务</string>
+    <plurals name="gen_vm_batch_created">
+        <item quantity="other">已创建 %1$d 个批量任务</item>
+    </plurals>
     <string name="gen_vm_need_positive">先在正向提示词框输入内容，AI 才能生成对应的负面提示词</string>
     <string name="gen_vm_need_prompt">先输入一些提示词</string>
     <string name="gen_vm_ai_not_configured">请先配置 AI 设置</string>
@@ -114,7 +116,9 @@
     <string name="gen_vm_saved_to_library">已保存到提示词库</string>
     <string name="gen_vm_workflow_preset_saved">已保存工作流预设</string>
     <string name="gen_vm_import_failed">导入失败：%1$s</string>
-    <string name="gen_vm_imported">已导入 %1$d 个预设</string>
+    <plurals name="gen_vm_imported">
+        <item quantity="other">已导入 %1$d 个预设</item>
+    </plurals>
     <string name="gen_vm_local_audio_unsupported">本地 ComfyUI 工作流暂不支持音频输入</string>
     <string name="gen_vm_no_reference_input">当前工作流没有可接收参考图的输入</string>
     <string name="gen_vm_result_as_reference">结果图已设为参考图</string>

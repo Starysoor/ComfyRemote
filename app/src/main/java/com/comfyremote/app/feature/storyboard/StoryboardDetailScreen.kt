@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -92,7 +93,12 @@ fun StoryboardDetailScreen(
                 title = project?.title ?: stringResource(R.string.board_title),
                 onBack = onBack,
                 subtitle = project?.let { p ->
-                    stringResource(R.string.board_progress, p.shots.count { it.status == "done" }, p.shots.size)
+                    pluralStringResource(
+                        R.plurals.board_progress,
+                        p.shots.size,
+                        p.shots.count { it.status == "done" },
+                        p.shots.size,
+                    )
                 },
                 actions = {
                     Box {

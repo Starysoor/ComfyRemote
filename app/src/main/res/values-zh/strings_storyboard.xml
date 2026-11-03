@@ -10,7 +10,9 @@
     <!-- 分镜详情 -->
     <string name="board_not_found">项目不存在</string>
     <string name="board_delete_project">删除项目</string>
-    <string name="board_progress">%1$d / %2$d 镜完成</string>
+    <plurals name="board_progress">
+        <item quantity="other">%1$d / %2$d 镜完成</item>
+    </plurals>
     <string name="board_style_prompt">统一风格提示词（会拼接到每个镜头前）</string>
     <string name="board_all_done">所有镜头都已完成</string>
     <string name="board_next_shot">生成下一镜</string>

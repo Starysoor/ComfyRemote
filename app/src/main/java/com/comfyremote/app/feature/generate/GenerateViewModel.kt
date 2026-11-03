@@ -347,7 +347,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         _state.update {
             it.copy(
                 activeTaskId = ids.firstOrNull(),
-                message = if (ids.size > 1) AppStrings.get(R.string.gen_vm_batch_created, ids.size) else null,
+                message = if (ids.size > 1) AppStrings.plural(R.plurals.gen_vm_batch_created, ids.size, ids.size) else null,
             )
         }
     }
@@ -541,7 +541,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             _state.update { state -> state.copy(message = AppStrings.get(R.string.gen_vm_import_failed, it.message ?: "invalid JSON")) }
             return
         }
-        _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_imported, count)) }
+        _state.update { it.copy(message = AppStrings.plural(R.plurals.gen_vm_imported, count, count)) }
     }
 
     fun applyPreset(preset: PromptPreset, mode: PresetApplyMode = PresetApplyMode.ALL) {

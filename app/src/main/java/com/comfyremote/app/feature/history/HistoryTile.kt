@@ -98,8 +98,8 @@ internal fun HistoryTile(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 when (path?.let(::mediaKind)) {
-                    MediaKind.VIDEO -> StatusChip(stringResource(R.string.history_video), ChipTone.Accent)
-                    MediaKind.AUDIO -> StatusChip(stringResource(R.string.history_audio), ChipTone.Accent)
+                    MediaKind.VIDEO -> StatusChip(stringResource(R.string.history_video), tone = ChipTone.Accent)
+                    MediaKind.AUDIO -> StatusChip(stringResource(R.string.history_audio), tone = ChipTone.Accent)
                     else -> Unit
                 }
                 if (item.images.size > 1) StatusChip("×${item.images.size}")

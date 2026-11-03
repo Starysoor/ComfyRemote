@@ -24,9 +24,9 @@
     <string name="settings_compact">Compact layout</string>
     <string name="settings_compact_detail">Less card padding, more content on screen</string>
     <string name="settings_recent_results">Recent results</string>
-    <string name="settings_recent_results_detail">How many recent results appear on Create (0-4)</string>
+    <string name="settings_recent_results_detail">How many recent results appear on Create (0–4)</string>
     <string name="settings_recent_presets">Recent setups</string>
-    <string name="settings_recent_presets_detail">How many recent setups appear on Create (0-4)</string>
+    <string name="settings_recent_presets_detail">How many recent setups appear on Create (0–4)</string>
     <string name="settings_server_workspace">Show server workspace</string>
     <string name="settings_server_workspace_detail">Show server switcher on the Create screen</string>
     <string name="settings_group_detail_sections">Detail sections</string>
@@ -36,7 +36,7 @@
     <string name="settings_advanced_expanded_detail">Whether steps/CFG/sampler params start expanded</string>
     <string name="settings_group_creation">Creation defaults</string>
     <string name="settings_batch_count">Default batch count</string>
-    <string name="settings_batch_count_detail">Default variations for a new workflow (1-16)</string>
+    <string name="settings_batch_count_detail">Default variations for a new workflow (1–16)</string>
     <string name="settings_local_queue">Use local queue by default</string>
     <string name="settings_local_queue_detail">Submit batch jobs one at a time</string>
     <string name="settings_random_seed">Random seed by default</string>
@@ -66,7 +66,10 @@
     <string name="settings_cloud_token_label">AutoDL Token</string>
     <string name="settings_cloud_save_token">Save token</string>
     <string name="settings_cloud_refresh">Refresh catalogue</string>
-    <string name="settings_cloud_found">%1$d video workflows found</string>
+    <plurals name="settings_cloud_found">
+        <item quantity="one">%1$d video workflow found</item>
+        <item quantity="other">%1$d video workflows found</item>
+    </plurals>
     <string name="settings_cloud_audio_note">The cloud catalogue also includes audio/TTS workflows</string>
     <string name="settings_cloud_default_video">Default video workflow</string>
     <string name="settings_cloud_default_video_detail">Used by the result page\'s “Make video” action. The image is passed as the first frame/reference.</string>

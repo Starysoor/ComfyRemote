@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Task list -->
-    <string name="tasks_active_count">%1$d active</string>
+    <plurals name="tasks_active_count">
+        <item quantity="one">%1$d active</item>
+        <item quantity="other">%1$d active</item>
+    </plurals>
     <string name="tasks_filter_all">All</string>
     <string name="tasks_filter_active">Active</string>
     <string name="tasks_filter_queued">Queued</string>
@@ -9,7 +12,10 @@
     <string name="tasks_filter_done">Done</string>
     <string name="tasks_all_servers">All servers</string>
     <string name="tasks_local_count">LOCAL %1$d</string>
-    <string name="tasks_group_meta">%1$d active · %2$d</string>
+    <plurals name="tasks_group_meta">
+        <item quantity="one">%1$d active · %2$d</item>
+        <item quantity="other">%1$d active · %2$d</item>
+    </plurals>
     <string name="tasks_resume_local">Resume local queue</string>
     <string name="tasks_pause_local">Pause local queue</string>
     <string name="tasks_cancel_queued">Cancel queued</string>
@@ -49,7 +55,10 @@
     <!-- Messages -->
     <string name="tasks_msg_queued_cancelled">Queued tasks cancelled</string>
     <string name="tasks_msg_no_failed">No failed tasks to retry</string>
-    <string name="tasks_msg_retries_queued">Queued %1$d retries</string>
+    <plurals name="tasks_msg_retries_queued">
+        <item quantity="one">Queued %1$d retry</item>
+        <item quantity="other">Queued %1$d retries</item>
+    </plurals>
     <string name="tasks_msg_reconnecting">Reconnecting to original task</string>
     <string name="tasks_msg_cannot_recover">This task cannot be recovered</string>
 </resources>

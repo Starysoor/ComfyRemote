@@ -24,9 +24,9 @@
     <string name="settings_compact">紧凑界面</string>
     <string name="settings_compact_detail">减少卡片留白，让列表显示更多内容</string>
     <string name="settings_recent_results">最近结果数量</string>
-    <string name="settings_recent_results_detail">创作页显示最近结果的数量（0-4）</string>
+    <string name="settings_recent_results_detail">创作页显示最近结果的数量（0–4）</string>
     <string name="settings_recent_presets">最近预设数量</string>
-    <string name="settings_recent_presets_detail">创作页显示最近整套预设的数量（0-4）</string>
+    <string name="settings_recent_presets_detail">创作页显示最近整套预设的数量（0–4）</string>
     <string name="settings_server_workspace">显示服务器工作台</string>
     <string name="settings_server_workspace_detail">在创作页顶部显示服务器切换条</string>
     <string name="settings_group_detail_sections">详情页折叠状态</string>
@@ -36,7 +36,7 @@
     <string name="settings_advanced_expanded_detail">步数、CFG、采样器等高级参数是否默认展开</string>
     <string name="settings_group_creation">创作默认值</string>
     <string name="settings_batch_count">默认批量数量</string>
-    <string name="settings_batch_count_detail">新工作流默认生成几张（1-16）</string>
+    <string name="settings_batch_count_detail">新工作流默认生成几张（1–16）</string>
     <string name="settings_local_queue">默认使用本地队列</string>
     <string name="settings_local_queue_detail">批量任务逐个发送，避免塞满服务器</string>
     <string name="settings_random_seed">默认随机种子</string>
@@ -66,7 +66,9 @@
     <string name="settings_cloud_token_label">AutoDL Token</string>
     <string name="settings_cloud_save_token">保存 Token</string>
     <string name="settings_cloud_refresh">刷新目录</string>
-    <string name="settings_cloud_found">已发现 %1$d 个视频工作流</string>
+    <plurals name="settings_cloud_found">
+        <item quantity="other">已发现 %1$d 个视频工作流</item>
+    </plurals>
     <string name="settings_cloud_audio_note">云端目录同时包含音频/TTS 工作流，可在创作页切换</string>
     <string name="settings_cloud_default_video">默认视频工作流</string>
     <string name="settings_cloud_default_video_detail">在结果页点“生成视频”时使用。输入图片会自动作为首帧/参考图传给云端。</string>

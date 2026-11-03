@@ -106,7 +106,10 @@
     <string name="gen_vm_server_disconnected">Server disconnected</string>
     <string name="gen_vm_cloud_token_missing">Configure a cloud token in Settings → Cloud</string>
     <string name="gen_vm_fix_compat">Fix compatibility issue first: %1$s</string>
-    <string name="gen_vm_batch_created">Created %1$d batch tasks</string>
+    <plurals name="gen_vm_batch_created">
+        <item quantity="one">Created %1$d batch task</item>
+        <item quantity="other">Created %1$d batch tasks</item>
+    </plurals>
     <string name="gen_vm_need_positive">Type a positive prompt first</string>
     <string name="gen_vm_need_prompt">Type a prompt first</string>
     <string name="gen_vm_ai_not_configured">Configure AI settings first</string>
@@ -114,7 +117,10 @@
     <string name="gen_vm_saved_to_library">Saved to prompt library</string>
     <string name="gen_vm_workflow_preset_saved">Workflow preset saved</string>
     <string name="gen_vm_import_failed">Import failed: %1$s</string>
-    <string name="gen_vm_imported">Imported %1$d presets</string>
+    <plurals name="gen_vm_imported">
+        <item quantity="one">Imported %1$d preset</item>
+        <item quantity="other">Imported %1$d presets</item>
+    </plurals>
     <string name="gen_vm_local_audio_unsupported">Local ComfyUI audio inputs are not supported yet</string>
     <string name="gen_vm_no_reference_input">This workflow has no reference-image input</string>
     <string name="gen_vm_result_as_reference">Result set as reference image</string>

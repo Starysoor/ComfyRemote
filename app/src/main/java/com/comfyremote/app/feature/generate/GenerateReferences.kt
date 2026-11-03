@@ -103,9 +103,9 @@ internal fun ReferenceImageField(
 }
 
 @Composable
-private fun tileModifier(onClick: () -> Unit): Modifier {
+private fun Modifier.tileModifier(onClick: () -> Unit): Modifier {
     val shape = MaterialTheme.shapes.medium
-    return Modifier
+    return this
         .size(Sizes.mediaSlot)
         .clip(shape)
         .background(MaterialTheme.colorScheme.surfaceContainer)
@@ -121,7 +121,7 @@ private fun ImageSlotTile(
     onPick: () -> Unit,
     onClear: () -> Unit,
 ) {
-    Box(tileModifier(onPick), contentAlignment = Alignment.Center) {
+    Box(Modifier.tileModifier(onPick), contentAlignment = Alignment.Center) {
         if (name.isNotBlank()) {
             val bitmap by produceState<Bitmap?>(null, name) { value = loadBitmap(name) }
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
@@ -159,7 +159,7 @@ private fun ImageSlotTile(
 
 @Composable
 private fun ActionTile(icon: ImageVector, caption: String, onClick: () -> Unit) {
-    Box(tileModifier(onClick), contentAlignment = Alignment.Center) { TileLabel(icon, caption) }
+    Box(Modifier.tileModifier(onClick), contentAlignment = Alignment.Center) { TileLabel(icon, caption) }
 }
 
 @Composable

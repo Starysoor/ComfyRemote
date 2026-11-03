@@ -174,7 +174,7 @@ private fun PresetRow(
                         modifier = Modifier.weight(1f, fill = false),
                     )
                     StatusChip(stringResource(if (preset.isWorkflowPreset) R.string.gen_tag_setup else R.string.gen_tag_prompt))
-                    if (preset.lastUsedAt != null) StatusChip(stringResource(R.string.gen_recent), ChipTone.Accent)
+                    if (preset.lastUsedAt != null) StatusChip(stringResource(R.string.gen_recent), tone = ChipTone.Accent)
                 }
                 if (preset.folder.isNotBlank()) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {

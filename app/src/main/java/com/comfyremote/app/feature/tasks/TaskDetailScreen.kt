@@ -126,8 +126,8 @@ fun TaskDetailScreen(
             task.error?.let { error ->
                 item("error") {
                     ErrorCard(
-                        error.uiLabel(),
-                        listOfNotNull(error.nodeTitle, error.nodeType, error.nodeId?.let { "#$it" }, error.message).joinToString(" · "),
+                        title = error.uiLabel(),
+                        detail = listOfNotNull(error.nodeTitle, error.nodeType, error.nodeId?.let { "#$it" }, error.message).joinToString(" · "),
                     )
                 }
             }

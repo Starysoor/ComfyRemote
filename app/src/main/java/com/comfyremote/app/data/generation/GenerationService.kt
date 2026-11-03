@@ -3,7 +3,6 @@ package com.comfyremote.app.data.generation
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.os.Build
 import android.os.IBinder
 import androidx.core.app.ServiceCompat
 import kotlinx.coroutines.CoroutineScope
@@ -43,21 +42,12 @@ class GenerationService : Service() {
                     stopSelf()
                 } else {
                     val task = active.first()
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        ServiceCompat.startForeground(
-                            this@GenerationService,
-                            GenerationNotificationController.RUNNING_NOTIFICATION_ID,
-                            controller.runningNotification(task),
-                            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
-                        )
-                    } else {
-                        ServiceCompat.startForeground(
-                            this@GenerationService,
-                            GenerationNotificationController.RUNNING_NOTIFICATION_ID,
-                            controller.runningNotification(task),
-                            0,
-                        )
-                    }
+                    ServiceCompat.startForeground(
+                        this@GenerationService,
+                        GenerationNotificationController.RUNNING_NOTIFICATION_ID,
+                        controller.runningNotification(task),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+                    )
                 }
             }
         }

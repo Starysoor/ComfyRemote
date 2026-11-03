@@ -72,7 +72,7 @@ import com.comfyremote.app.ui.components.Stepper
 internal fun GenerationStatusCard(task: GenerationTask, running: Boolean) {
     IrisCard(highlighted = running) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            StatusChip(statusLabel(task).uppercase(), phaseTone(task))
+            StatusChip(statusLabel(task).uppercase(), tone = phaseTone(task))
             if (task.recovered) StatusChip(stringResource(R.string.gen_recovered))
             task.batchIndex?.let { index -> StatusChip("$index/${task.batchSize ?: index}") }
             Text(

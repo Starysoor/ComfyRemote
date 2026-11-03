@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- 结果库 -->
-    <string name="history_count">%1$d 条结果</string>
+    <plurals name="history_count">
+        <item quantity="other">%1$d 条结果</item>
+    </plurals>
     <string name="history_selected">已选 %1$d</string>
     <string name="history_select_all">全选</string>
     <string name="history_select">多选</string>

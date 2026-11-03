@@ -102,7 +102,7 @@ fun VisionInstructionDialog(
         title = { Text(stringResource(R.string.gen_vision_rewrite)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                StatusChip(targetLabel, ChipTone.Accent)
+                StatusChip(targetLabel, tone = ChipTone.Accent)
                 IrisTextField(
                     value = instruction,
                     onValueChange = { instruction = it },
