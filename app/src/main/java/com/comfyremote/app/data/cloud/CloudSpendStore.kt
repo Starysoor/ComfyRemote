@@ -11,6 +11,8 @@ import java.util.UUID
 data class CloudSpendEntry(
     val id: String = UUID.randomUUID().toString(),
     val workflowName: String,
+    /** Cloud provider id (`openai`, `siliconflow`, ...), null for legacy entries. */
+    val providerId: String? = null,
     /** Null when the provider did not expose a price for the selected options. */
     val points: Int?,
     val estimated: Boolean = true,
@@ -27,12 +29,18 @@ class CloudSpendStore(private val prefs: SharedPreferences) {
 
     fun total(): Int = _entries.value.sumOf { it.points ?: 0 }
 
-    fun record(workflowName: String, points: Int?, remoteTaskId: String? = null) = synchronized(lock) {
+    fun record(
+        workflowName: String,
+        points: Int?,
+        remoteTaskId: String? = null,
+        providerId: String? = null,
+    ) = synchronized(lock) {
         if (remoteTaskId != null && _entries.value.any { it.remoteTaskId == remoteTaskId }) {
             return@synchronized
         }
         val entry = CloudSpendEntry(
             workflowName = workflowName,
+            providerId = providerId,
             points = points,
             remoteTaskId = remoteTaskId,
         )
@@ -53,6 +61,7 @@ class CloudSpendStore(private val prefs: SharedPreferences) {
             CloudSpendEntry(
                 id = o.optString("id"),
                 workflowName = o.optString("workflow"),
+                providerId = o.optString("provider").ifEmpty { null },
                 points = if (o.has("points") && !o.isNull("points")) o.optInt("points") else null,
                 estimated = o.optBoolean("estimated", true),
                 remoteTaskId = o.optString("remoteTaskId").ifEmpty { null },
@@ -68,6 +77,7 @@ class CloudSpendStore(private val prefs: SharedPreferences) {
                 JSONObject()
                     .put("id", entry.id)
                     .put("workflow", entry.workflowName)
+                    .put("provider", entry.providerId ?: "")
                     .put("points", entry.points ?: JSONObject.NULL)
                     .put("estimated", entry.estimated)
                     .put("remoteTaskId", entry.remoteTaskId ?: "")

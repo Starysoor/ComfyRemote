@@ -19,6 +19,8 @@ data class DraftTransfer(
     val storyboardShotId: String? = null,
     /** True when the user chose "pick a workflow" instead of returning to the original one. */
     val reuseAcrossWorkflows: Boolean = false,
+    /** Multiple local reference images for consecutive image inputs. */
+    val referenceLocalPaths: List<String> = emptyList(),
 )
 
 class DraftTransferRepository {

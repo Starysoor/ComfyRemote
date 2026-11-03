@@ -37,7 +37,6 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import com.comfyremote.app.R
-import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.ui.IrisType
 import com.comfyremote.app.ui.Spacing
@@ -64,7 +63,7 @@ fun TasksScreen(
                 task.phase == GenerationPhase.QUEUEING || task.phase == GenerationPhase.QUEUED)
     }
     val remoteCloudQueued = queuedTargets.count {
-        it.isRemoteQueued && it.request.provider == AutoDlConfig.PROVIDER
+        it.isRemoteQueued && it.request.provider != "comfyui"
     }
     var confirmClearFinished by remember { mutableStateOf(false) }
     var confirmCancelQueued by remember { mutableStateOf(false) }

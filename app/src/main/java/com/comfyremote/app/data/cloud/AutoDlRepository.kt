@@ -13,6 +13,7 @@ class AutoDlRepository(
 ) : CloudProvider {
     override val id: String = AutoDlConfig.PROVIDER
     override val label: String = "AutoDL.Art"
+    override val settingsSummary: String = "Hosted ComfyUI workflows · token billing"
     override val pathPrefix: String = AutoDlConfig.PATH_PREFIX
     override val baseUrl: String = AutoDlConfig.BASE_URL
 

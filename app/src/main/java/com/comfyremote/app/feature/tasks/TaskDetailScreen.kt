@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -49,9 +50,9 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
-import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.generation.ResultImage
@@ -69,6 +70,7 @@ import com.comfyremote.app.ui.components.EmptyState
 import com.comfyremote.app.ui.components.ErrorCard
 import com.comfyremote.app.ui.components.IconAction
 import com.comfyremote.app.ui.components.IrisCard
+import com.comfyremote.app.ui.components.TextAction
 import com.comfyremote.app.ui.components.IrisScaffold
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -79,6 +81,7 @@ fun TaskDetailScreen(
     taskId: String,
     onBack: () -> Unit,
     onReuse: (DraftTransfer) -> Unit,
+    onOpenStoryboard: (String) -> Unit = {},
 ) {
     val tasks by viewModel.tasks.collectAsState()
     val message by viewModel.message.collectAsState()
@@ -136,7 +139,7 @@ fun TaskDetailScreen(
                     task = task,
                     onCancel = {
                         when {
-                            task.request.provider == AutoDlConfig.PROVIDER -> confirmCloudCancel = true
+                            task.request.provider != "comfyui" -> confirmCloudCancel = true
                             task.phase == GenerationPhase.RUNNING -> confirmLocalInterrupt = true
                             else -> viewModel.cancel(task.taskId)
                         }
@@ -150,6 +153,25 @@ fun TaskDetailScreen(
                     },
                     onDelete = { confirmDelete = true },
                 )
+            }
+            task.request.storyboardProjectId?.let { projectId ->
+                item("storyboard") {
+                    IrisCard {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                viewModel.storyboardLabel(task) ?: projectId,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            TextAction(
+                                text = stringResource(R.string.tasks_open_storyboard),
+                                onClick = { onOpenStoryboard(projectId) },
+                            )
+                        }
+                    }
+                }
             }
             item("info") { TaskInfoCard(task, serverLabel = viewModel.serverLabel(task.request.serverUrl)) }
         }

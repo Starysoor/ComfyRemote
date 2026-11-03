@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.StarBorder
@@ -80,6 +81,7 @@ fun HistoryDetailDialog(
     onReuse: () -> Unit,
     onFavorite: () -> Unit,
     onSetTags: (String) -> Unit,
+    onAddToProject: (String) -> Unit,
 ) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
@@ -127,6 +129,7 @@ fun HistoryDetailDialog(
                             if (!nonImage) {
                                 IconAction(Icons.Outlined.AutoAwesome, stringResource(R.string.history_continue_ref), onClick = { onContinue(path) })
                                 IconAction(Icons.Outlined.Movie, stringResource(R.string.history_make_video), onClick = { onGenerateVideo(path) })
+                                IconAction(Icons.Outlined.PhotoLibrary, stringResource(R.string.history_add_to_project), onClick = { onAddToProject(path) })
                             }
                         }
                     }

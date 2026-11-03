@@ -14,12 +14,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -35,6 +37,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
 import com.comfyremote.app.data.cloud.AutoDlConfig
+import com.comfyremote.app.data.cloud.CloudHealthStatus
 import com.comfyremote.app.ui.IrisType
 import com.comfyremote.app.ui.Spacing
 import com.comfyremote.app.ui.components.BannerTone
@@ -62,6 +65,9 @@ fun CloudSettingsScreen(
     val state by viewModel.state.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     var videoMenu by remember { mutableStateOf(false) }
+    var confirmClearSpend by remember { mutableStateOf(false) }
+    var confirmClearCache by remember { mutableStateOf(false) }
+    val healthFallback = stringResource(R.string.cloud_status_error)
 
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() }
@@ -128,6 +134,33 @@ fun CloudSettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f),
                         )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                    ) {
+                        IrisTonalButton(
+                            text = stringResource(R.string.cloud_provider_test),
+                            onClick = viewModel::testConnection,
+                            enabled = !state.testing,
+                        )
+                        if (state.testing) IrisProgressBar(progress = null)
+                    }
+                    state.health?.let { result ->
+                        when (result.status) {
+                            CloudHealthStatus.READY -> InfoBanner(
+                                text = stringResource(R.string.cloud_status_ok, result.modelCount),
+                                tone = BannerTone.Success,
+                            )
+                            CloudHealthStatus.NOT_CONFIGURED -> InfoBanner(
+                                text = stringResource(R.string.cloud_provider_not_configured),
+                                tone = BannerTone.Warning,
+                            )
+                            else -> InfoBanner(
+                                text = result.message.ifBlank { healthFallback },
+                                tone = BannerTone.Error,
+                            )
+                        }
                     }
                     if (state.loading) IrisProgressBar(progress = null)
                     state.error?.let { InfoBanner(text = it, tone = BannerTone.Error) }
@@ -197,7 +230,7 @@ fun CloudSettingsScreen(
                 InfoBanner(text = stringResource(R.string.settings_cloud_spend_note), tone = BannerTone.Warning)
                 IrisSecondaryButton(
                     text = stringResource(R.string.settings_cloud_spend_clear),
-                    onClick = viewModel::clearSpend,
+                    onClick = { confirmClearSpend = true },
                     destructive = true,
                     icon = Icons.Outlined.DeleteOutline,
                     height = 48.dp,
@@ -208,7 +241,7 @@ fun CloudSettingsScreen(
             SettingsGroup(title = stringResource(R.string.settings_cloud_cache)) {
                 SettingRow(
                     title = stringResource(R.string.settings_cloud_clear_refs),
-                    onClick = { viewModel.clearCloudInputs() },
+                    onClick = { confirmClearCache = true },
                     trailing = {
                         Text(
                             stringResource(R.string.action_clear),
@@ -220,5 +253,46 @@ fun CloudSettingsScreen(
                 )
             }
         }
+    }
+
+    if (confirmClearSpend) {
+        AlertDialog(
+            onDismissRequest = { confirmClearSpend = false },
+            title = { Text(stringResource(R.string.cloud_clear_spend_confirm_title)) },
+            text = { Text(stringResource(R.string.cloud_clear_spend_confirm_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearSpend()
+                    confirmClearSpend = false
+                }) {
+                    Text(stringResource(R.string.action_clear), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearSpend = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+    if (confirmClearCache) {
+        AlertDialog(
+            onDismissRequest = { confirmClearCache = false },
+            title = { Text(stringResource(R.string.cloud_clear_cache_confirm_title)) },
+            text = { Text(stringResource(R.string.cloud_clear_cache_confirm_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearCloudInputs()
+                    confirmClearCache = false
+                }) {
+                    Text(stringResource(R.string.action_clear), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearCache = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
     }
 }

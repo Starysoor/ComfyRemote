@@ -33,8 +33,10 @@ class SecretStore(private val prefs: SharedPreferences) {
             // user re-enters the value.
         }
         val legacy = prefs.getString(key, null)?.takeIf { it.isNotBlank() } ?: return null
+        // put() removes the plaintext key only when encryption succeeded.
+        // If Keystore is unavailable, put() intentionally keeps the plaintext
+        // fallback; deleting it here would lose the token after the first read.
         put(key, legacy)
-        prefs.edit().remove(key).apply()
         return legacy
     }
 

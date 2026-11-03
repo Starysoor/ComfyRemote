@@ -1,6 +1,9 @@
 package com.comfyremote.app.data.repository
 
 import com.comfyremote.app.AiClient
+import com.comfyremote.app.AiImageInput
+import com.comfyremote.app.AiImagePayload
+import com.comfyremote.app.data.reference.ReferenceRole
 
 /** OpenAI-compatible AI operations kept out of feature ViewModels. */
 class AiRepository(
@@ -20,16 +23,43 @@ class AiRepository(
         imageBytes: ByteArray,
         mime: String = "image/jpeg",
     ): String {
+        return visionChat(
+            systemPrompt = systemPrompt,
+            userText = userText,
+            images = listOf(
+                AiImagePayload(
+                    bytes = imageBytes,
+                    mime = mime,
+                    role = ReferenceRole.AUTO,
+                )
+            ),
+        )
+    }
+
+    /** Sends every enabled reference image in one vision request, preserving role/order. */
+    suspend fun visionChat(
+        systemPrompt: String,
+        userText: String,
+        images: List<AiImagePayload>,
+    ): String {
         val s = settingsStore.load()
         require(s.configured) { "AI endpoint is not configured" }
-        val encoded = java.util.Base64.getEncoder().encodeToString(imageBytes)
-        return AiClient.chatWithImage(
+        val encoded = images.sortedBy { it.order }.map { image ->
+            AiImageInput(
+                dataUrl = "data:${image.mime};base64," +
+                    java.util.Base64.getEncoder().encodeToString(image.bytes),
+                role = image.role,
+                order = image.order,
+                label = image.label,
+            )
+        }
+        return AiClient.chatWithImages(
             baseUrl = s.baseUrl,
             apiKey = s.apiKey,
             model = s.visionModel.ifBlank { s.model },
             systemPrompt = systemPrompt,
             userText = userText,
-            imageDataUrl = "data:$mime;base64,$encoded",
+            images = encoded,
             t = s.asTunables(),
         )
     }

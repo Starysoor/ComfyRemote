@@ -2,13 +2,14 @@ package com.comfyremote.app.feature.storyboard
 
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.data.cloud.AutoDlConfig
-import com.comfyremote.app.data.cloud.CloudWorkflowSummary
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
+import com.comfyremote.app.data.reference.ReferenceRole
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.storyboard.StoryboardProject
 import com.comfyremote.app.data.storyboard.StoryboardShot
@@ -23,13 +24,25 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+data class StoryboardWorkflowOption(
+    val path: String,
+    val workflowId: String,
+    val name: String,
+    val providerId: String,
+    val providerLabel: String,
+    val kind: String,
+)
+
 class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     val projects: StateFlow<List<StoryboardProject>> = container.storyboardStore.projects
-    private val _workflows = MutableStateFlow<List<CloudWorkflowSummary>>(emptyList())
-    val workflows: StateFlow<List<CloudWorkflowSummary>> = _workflows.asStateFlow()
+    private val _workflows = MutableStateFlow<List<StoryboardWorkflowOption>>(emptyList())
+    val workflows: StateFlow<List<StoryboardWorkflowOption>> = _workflows.asStateFlow()
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
     private val syncing = mutableSetOf<String>()
+
+    /** Providers whose catalogue loaded at least once; lets us flag removed workflows. */
+    private val catalogReadyProviders = mutableSetOf<String>()
 
     init {
         refreshWorkflows()
@@ -40,22 +53,56 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
 
     fun refreshWorkflows() {
         viewModelScope.launch {
-            runCatching { container.autoDlRepository.catalog(force = false) }
-                .onSuccess { list ->
-                    _workflows.value = list.filter { it.kind == "video" }
-                        .sortedBy { it.name.lowercase() }
+            catalogReadyProviders.clear()
+            val (options, errors, ready) = withContext(Dispatchers.IO) {
+                val options = mutableListOf<StoryboardWorkflowOption>()
+                val errors = mutableListOf<String>()
+                val ready = mutableSetOf<String>()
+                container.cloudProviders.all.forEach { provider ->
+                    // An unconfigured provider cannot contribute usable shot models.
+                    if (!provider.configured()) return@forEach
+                    runCatching { provider.catalog(force = false) }
+                        .onSuccess { list ->
+                            ready += provider.id
+                            options += list.filter { it.kind == "video" }.map { summary ->
+                                StoryboardWorkflowOption(
+                                    path = provider.pathPrefix + summary.id,
+                                    workflowId = summary.id,
+                                    name = summary.name,
+                                    providerId = provider.id,
+                                    providerLabel = provider.label,
+                                    kind = summary.kind,
+                                )
+                            }
+                        }
+                        .onFailure { error ->
+                            errors += "${provider.label}: ${error.message ?: "error"}"
+                        }
                 }
-                .onFailure { e -> _message.value = e.message }
+                Triple(options, errors, ready)
+            }
+            catalogReadyProviders += ready
+            _workflows.value = options.distinctBy { it.path }.sortedWith(
+                compareBy<StoryboardWorkflowOption> { it.providerLabel.lowercase() }
+                    .thenBy { it.name.lowercase() }
+            )
+            if (options.isEmpty() && errors.isNotEmpty()) _message.value = errors.first()
         }
     }
 
-    fun createProject(title: String, workflowId: String, stylePrompt: String): StoryboardProject? {
-        val id = workflowId.trim()
-        if (id.isBlank()) {
+    fun createProject(title: String, workflowPath: String, stylePrompt: String): StoryboardProject? {
+        val option = _workflows.value.firstOrNull { it.path == workflowPath }
+        if (option == null) {
             _message.value = AppStrings.get(R.string.board_err_choose_workflow)
             return null
         }
-        return container.storyboardStore.create(title, id, stylePrompt)
+        return container.storyboardStore.create(
+            title = title,
+            workflowId = option.workflowId,
+            stylePrompt = stylePrompt,
+            workflowPath = option.path,
+            providerId = option.providerId,
+        )
     }
 
     fun deleteProject(id: String): Boolean {
@@ -69,6 +116,22 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun setStyle(projectId: String, style: String) = container.storyboardStore.setStyle(projectId, style)
+
+    fun setAspectRatio(projectId: String, ratio: String) =
+        container.storyboardStore.setAspectRatio(projectId, ratio)
+
+    fun updateProjectSettings(
+        projectId: String,
+        title: String,
+        workflowPath: String,
+        aspectRatio: String,
+        defaultValues: Map<String, String>,
+    ) {
+        val providerId = container.cloudProviders.forPath(workflowPath)?.id.orEmpty()
+        container.storyboardStore.updateSettings(
+            projectId, title, workflowPath, providerId, aspectRatio, defaultValues,
+        )
+    }
 
     fun addShot(projectId: String, prompt: String) {
         if (prompt.isBlank()) {
@@ -98,6 +161,84 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
             it.copy(prompt = prompt.trim())
         }
 
+    fun moveShot(projectId: String, shotId: String, delta: Int) =
+        container.storyboardStore.moveShot(projectId, shotId, delta)
+
+    fun duplicateShot(projectId: String, shotId: String) =
+        container.storyboardStore.duplicateShot(projectId, shotId)
+
+    fun insertShotAfter(projectId: String, shotId: String, prompt: String) =
+        container.storyboardStore.insertShotAfter(projectId, shotId, prompt)
+
+    fun assignAssetToShot(projectId: String, shotId: String, assetId: String) =
+        assignAssetsToShot(projectId, shotId, listOf(assetId))
+
+    fun assignAssetsToShot(projectId: String, shotId: String, assetIds: List<String>) {
+        val project = container.storyboardStore.project(projectId) ?: return
+        val assets = assetIds.mapNotNull { id -> project.assets.firstOrNull { it.id == id } }
+        container.storyboardStore.updateShot(projectId, shotId) {
+            it.copy(
+                referenceAssetIds = assetIds,
+                referencePath = assets.firstOrNull()?.path,
+                referenceManual = true,
+                referenceRole = assets.firstOrNull()?.role ?: ReferenceRole.AUTO,
+            )
+        }
+    }
+
+    fun clearShotReference(projectId: String, shotId: String) =
+        container.storyboardStore.updateShot(projectId, shotId) {
+            it.copy(
+                referencePath = null,
+                referenceAssetIds = emptyList(),
+                referenceManual = true,
+                referenceRole = ReferenceRole.AUTO,
+            )
+        }
+
+    /**
+     * Sets a provider workflow for one shot. A null path restores the project default.
+     * Cached parameter values belong to the previous workflow, so they are dropped.
+     */
+    fun setShotWorkflow(projectId: String, shotId: String, workflowPath: String?) {
+        val shot = shot(projectId, shotId) ?: return
+        if (shot.workflowPath == workflowPath?.takeIf { it.isNotBlank() }) return
+        if (workflowPath.isNullOrBlank()) {
+            container.storyboardStore.updateShot(projectId, shotId) {
+                it.copy(workflowId = null, workflowPath = null, providerId = null, values = emptyMap())
+            }
+            return
+        }
+        val option = _workflows.value.firstOrNull { it.path == workflowPath }
+        if (option == null) {
+            _message.value = AppStrings.get(R.string.board_err_choose_workflow)
+            return
+        }
+        container.storyboardStore.updateShot(projectId, shotId) {
+            it.copy(
+                workflowId = option.workflowId,
+                workflowPath = option.path,
+                providerId = option.providerId,
+                values = emptyMap(),
+            )
+        }
+    }
+
+    /** Copies a picked image into project-owned storage so it survives gallery changes. */
+    fun addAsset(projectId: String, role: ReferenceRole, uri: Uri) {
+        viewModelScope.launch {
+            runCatching { container.storyboardAssetStore.importUri(uri, role) }
+                .onSuccess { asset -> container.storyboardStore.addAsset(projectId, asset) }
+                .onFailure { e ->
+                    _message.value = AppStrings.get(R.string.board_err_add_asset, e.message ?: "error")
+                }
+        }
+    }
+
+    fun removeAsset(projectId: String, assetId: String) {
+        container.storyboardStore.removeAsset(projectId, assetId)
+    }
+
     fun project(projectId: String): StoryboardProject? =
         projects.value.firstOrNull { it.id == projectId }
 
@@ -115,28 +256,50 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         val shot = project.shots[index]
         if (shotRunning(shot)) return null
         val previous = project.shots.getOrNull(index - 1)
+        val assetReferences = shot.referenceAssetIds.mapNotNull { id ->
+            project.assets.firstOrNull { it.id == id }?.path
+        }
         val reference = if (shot.referenceManual) shot.referencePath
         else shot.referencePath ?: previous?.lastFramePath
         val prompt = listOf(project.stylePrompt, shot.prompt)
             .filter { it.isNotBlank() }
             .joinToString(", ")
         val name = "${project.title} · ${index + 1}"
+        val workflowPath = shot.workflowPath?.takeIf { it.isNotBlank() }
+            ?: project.workflowPath.takeIf { it.isNotBlank() }
+            ?: AutoDlConfig.PATH_PREFIX + (shot.workflowId ?: project.workflowId)
+        val provider = container.cloudProviders.forPath(workflowPath)
+        if (provider == null) {
+            _message.value = AppStrings.get(R.string.board_err_unknown_provider, workflowPath)
+            return null
+        }
+        if (!provider.configured()) {
+            _message.value = AppStrings.get(R.string.board_err_provider_not_configured, provider.label)
+            return null
+        }
+        if (provider.id in catalogReadyProviders && _workflows.value.none { it.path == workflowPath }) {
+            _message.value = AppStrings.get(R.string.board_err_workflow_missing, workflowPath)
+            return null
+        }
+        val values = project.defaultValues + shot.values +
+            (if (prompt.isBlank()) emptyMap() else mapOf("prompt" to prompt))
         container.storyboardStore.updateShot(projectId, shotId) {
             it.copy(status = if (it.status == "running") it.status else "draft", error = null)
         }
         container.draftTransferRepository.put(
             DraftTransfer(
-                workflowPath = AutoDlConfig.PATH_PREFIX + project.workflowId,
+                workflowPath = workflowPath,
                 workflowName = name,
-                values = if (prompt.isBlank()) emptyMap() else mapOf("prompt" to prompt),
+                values = values,
                 randomSeed = true,
                 serverUrl = null,
-                referenceLocalPath = reference,
+                referenceLocalPath = if (assetReferences.isEmpty()) reference else null,
+                referenceLocalPaths = assetReferences,
                 storyboardProjectId = project.id,
                 storyboardShotId = shot.id,
             )
         )
-        return AutoDlConfig.PATH_PREFIX + project.workflowId to name
+        return workflowPath to name
     }
 
     fun nextShot(projectId: String): StoryboardShot? = container.storyboardStore.nextShot(projectId)

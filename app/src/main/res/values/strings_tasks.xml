@@ -45,6 +45,7 @@
     <string name="tasks_copy_diag">Copy diagnostics</string>
     <string name="tasks_diag_copied">Diagnostics copied</string>
     <string name="tasks_delete_task">Delete task</string>
+    <string name="tasks_open_storyboard">Open storyboard</string>
     <string name="tasks_local_interrupt_title">Interrupt ComfyUI job?</string>
     <string name="tasks_local_interrupt_text">ComfyUI\'s /interrupt stops the server\'s current execution and may affect other clients using the same server. Iris cannot cancel only this running prompt.</string>
     <string name="tasks_msg_cancel_failed">Could not cancel: %1$s</string>

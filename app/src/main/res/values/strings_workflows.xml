@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Create tab (workflow list) -->
-    <string name="wf_subtitle_cloud_ready">AutoDL · READY</string>
-    <string name="wf_subtitle_cloud_token">AutoDL · TOKEN NEEDED</string>
+    <string name="wf_subtitle_cloud_ready">CLOUD · READY</string>
+    <string name="wf_subtitle_cloud_token">CLOUD · TOKEN NEEDED</string>
     <string name="wf_no_local_server">No local server</string>
     <string name="wf_server">Server</string>
     <string name="wf_search">Search workflows</string>
@@ -12,7 +12,7 @@
     <string name="wf_least_busy">Least busy</string>
     <string name="wf_not_checked">Not checked</string>
     <string name="wf_server_stats">run %1$d · q %2$d · app %3$d</string>
-    <string name="wf_cloud_token_hint">Browse cloud workflows now; add an AutoDL token before running</string>
+    <string name="wf_cloud_token_hint">Browse cloud workflows now; configure a provider token before running</string>
     <string name="wf_reuse_choose_title">Choose a workflow</string>
     <string name="wf_reuse_choose_detail">Parameters from \"%1$s\" will be applied to the workflow you pick</string>
     <string name="wf_go_settings">Settings</string>

@@ -26,6 +26,12 @@
     <string name="history_tags_hint">标签，用逗号分隔</string>
     <string name="history_reuse_params">复用参数</string>
     <string name="history_save_prompt">存提示词</string>
+    <string name="history_add_to_project">加入项目</string>
+    <string name="history_choose_project">选择项目</string>
+    <string name="history_no_projects">还没有分镜项目</string>
+    <string name="history_choose_role">选择素材角色</string>
+    <string name="history_msg_added_to_project">已加入项目素材</string>
+    <string name="history_msg_add_project_failed">加入项目失败：%1$s</string>
     <string name="history_save_tags">保存标签</string>
 
     <!-- 消息 -->

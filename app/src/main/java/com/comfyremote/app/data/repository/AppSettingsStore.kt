@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.asStateFlow
 data class AppSettings(
     val themeMode: String = "system",              // system | light | dark
     val compactUi: Boolean = true,
+    /** Play the Iris intro on a launcher cold start. */
+    val playIntro: Boolean = true,
     val recentResultsCount: Int = 2,               // 0..4
     val recentPresetsCount: Int = 2,               // 0..4
     val showServerWorkspace: Boolean = true,
@@ -20,6 +22,7 @@ data class AppSettings(
     val defaultLocalQueue: Boolean = true,
     val defaultRandomSeed: Boolean = true,
     val autoSaveDrafts: Boolean = true,
+    val autoRestoreDrafts: Boolean = true,
     val notifyOnFinish: Boolean = true,
     val maxImageDimension: Int = 1536,             // 1024 | 1536 | 2048
     val notesExpandedByDefault: Boolean = false,
@@ -38,6 +41,7 @@ class AppSettingsStore(private val prefs: SharedPreferences) {
     fun load(): AppSettings = AppSettings(
         themeMode = prefs.getString(KEY_THEME, "system") ?: "system",
         compactUi = prefs.getBoolean(KEY_COMPACT, true),
+        playIntro = prefs.getBoolean(KEY_PLAY_INTRO, true),
         recentResultsCount = prefs.getInt(KEY_RECENT_RESULTS, 2).coerceIn(0, 4),
         recentPresetsCount = prefs.getInt(KEY_RECENT_PRESETS, 2).coerceIn(0, 4),
         showServerWorkspace = prefs.getBoolean(KEY_SERVER_WORKSPACE, true),
@@ -45,6 +49,7 @@ class AppSettingsStore(private val prefs: SharedPreferences) {
         defaultLocalQueue = prefs.getBoolean(KEY_LOCAL_QUEUE, true),
         defaultRandomSeed = prefs.getBoolean(KEY_RANDOM_SEED, true),
         autoSaveDrafts = prefs.getBoolean(KEY_AUTO_SAVE, true),
+        autoRestoreDrafts = prefs.getBoolean(KEY_AUTO_RESTORE, true),
         notifyOnFinish = prefs.getBoolean(KEY_NOTIFY, true),
         maxImageDimension = prefs.getInt(KEY_IMAGE_DIM, 1536).coerceIn(1024, 2048),
         notesExpandedByDefault = prefs.getBoolean(KEY_NOTES_OPEN, false),
@@ -60,6 +65,7 @@ class AppSettingsStore(private val prefs: SharedPreferences) {
         prefs.edit()
             .putString(KEY_THEME, settings.themeMode)
             .putBoolean(KEY_COMPACT, settings.compactUi)
+            .putBoolean(KEY_PLAY_INTRO, settings.playIntro)
             .putInt(KEY_RECENT_RESULTS, settings.recentResultsCount.coerceIn(0, 4))
             .putInt(KEY_RECENT_PRESETS, settings.recentPresetsCount.coerceIn(0, 4))
             .putBoolean(KEY_SERVER_WORKSPACE, settings.showServerWorkspace)
@@ -67,6 +73,7 @@ class AppSettingsStore(private val prefs: SharedPreferences) {
             .putBoolean(KEY_LOCAL_QUEUE, settings.defaultLocalQueue)
             .putBoolean(KEY_RANDOM_SEED, settings.defaultRandomSeed)
             .putBoolean(KEY_AUTO_SAVE, settings.autoSaveDrafts)
+            .putBoolean(KEY_AUTO_RESTORE, settings.autoRestoreDrafts)
             .putBoolean(KEY_NOTIFY, settings.notifyOnFinish)
             .putInt(KEY_IMAGE_DIM, settings.maxImageDimension.coerceIn(1024, 2048))
             .putBoolean(KEY_NOTES_OPEN, settings.notesExpandedByDefault)
@@ -82,6 +89,7 @@ class AppSettingsStore(private val prefs: SharedPreferences) {
     companion object {
         private const val KEY_THEME = "appThemeMode"
         private const val KEY_COMPACT = "appCompactUi"
+        private const val KEY_PLAY_INTRO = "appPlayIntro"
         private const val KEY_RECENT_RESULTS = "appRecentResults"
         private const val KEY_RECENT_PRESETS = "appRecentPresets"
         private const val KEY_SERVER_WORKSPACE = "appServerWorkspace"
@@ -89,6 +97,7 @@ class AppSettingsStore(private val prefs: SharedPreferences) {
         private const val KEY_LOCAL_QUEUE = "appDefaultLocalQueue"
         private const val KEY_RANDOM_SEED = "appDefaultRandomSeed"
         private const val KEY_AUTO_SAVE = "appAutoSaveDrafts"
+        private const val KEY_AUTO_RESTORE = "appAutoRestoreDrafts"
         private const val KEY_NOTIFY = "appNotifyOnFinish"
         private const val KEY_IMAGE_DIM = "appMaxImageDimension"
         private const val KEY_NOTES_OPEN = "appNotesExpanded"

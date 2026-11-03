@@ -43,6 +43,7 @@
     <string name="tasks_copy_diag">复制诊断信息</string>
     <string name="tasks_diag_copied">诊断已复制</string>
     <string name="tasks_delete_task">删除任务</string>
+    <string name="tasks_open_storyboard">打开分镜</string>
     <string name="tasks_local_interrupt_title">中断 ComfyUI 任务？</string>
     <string name="tasks_local_interrupt_text">ComfyUI 的 /interrupt 是服务器级操作，会停止该服务器当前执行，可能影响使用同一服务器的其它客户端；Iris 无法只取消这一个运行中的提示词。</string>
     <string name="tasks_msg_cancel_failed">取消失败：%1$s</string>

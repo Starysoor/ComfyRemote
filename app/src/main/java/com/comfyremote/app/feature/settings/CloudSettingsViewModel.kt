@@ -3,15 +3,20 @@ package com.comfyremote.app.feature.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.comfyremote.app.AppContainer
+import com.comfyremote.app.data.cloud.AutoDlConfig
+import com.comfyremote.app.data.cloud.CloudHealth
+import com.comfyremote.app.data.cloud.CloudHealthStatus
 import com.comfyremote.app.data.cloud.CloudWorkflowSummary
 import com.comfyremote.app.R
 import com.comfyremote.app.ui.AppStrings
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class CloudSettingsUiState(
     val token: String = "",
@@ -22,6 +27,8 @@ data class CloudSettingsUiState(
     val defaultVideoId: String = "",
     val spendTotal: Int = 0,
     val spendCount: Int = 0,
+    val testing: Boolean = false,
+    val health: CloudHealth? = null,
     val message: String? = null,
 )
 
@@ -56,6 +63,7 @@ class CloudSettingsViewModel(private val container: AppContainer) : ViewModel() 
         _state.update {
             it.copy(
                 configured = container.autoDlRepository.configured(),
+                health = null,
                 message = AppStrings.get(R.string.settings_cloud_token_saved),
             )
         }
@@ -89,6 +97,20 @@ class CloudSettingsViewModel(private val container: AppContainer) : ViewModel() 
                         )
                     }
                 }
+        }
+    }
+
+    fun testConnection() {
+        if (_state.value.testing) return
+        _state.update { it.copy(testing = true, health = null) }
+        viewModelScope.launch {
+            val provider = container.cloudProviders.byId(AutoDlConfig.PROVIDER)
+            val result = if (provider == null) {
+                CloudHealth(CloudHealthStatus.ERROR, message = "AutoDL provider missing")
+            } else {
+                withContext(Dispatchers.IO) { provider.check() }
+            }
+            _state.update { it.copy(testing = false, health = result) }
         }
     }
 

@@ -14,9 +14,9 @@ class AiSkillMergeRegressionTest {
 
         assertEquals("edited system prompt", merged.first { it.id == AiSkillDef.DEFAULT_NATURAL_ID }.systemPrompt)
         assertTrue(merged.any { it.id == "custom_keep" && it.systemPrompt == "custom system prompt" && !it.builtin })
-        assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_EN_ID })
+        assertTrue(merged.none { it.id == AiSkillDef.DEFAULT_EN_ID })
         assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_NEG_ID })
-        assertTrue(merged.any { it.id == AiSkillDef.DEFAULT_TRANSLATE_ID })
+        assertTrue(merged.none { it.id == AiSkillDef.DEFAULT_TRANSLATE_ID })
     }
 
     @Test

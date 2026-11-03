@@ -43,6 +43,8 @@ data class WorkflowEntry(
     val priceType: String = "",
     /** Human-readable platform price, e.g. "40–100 / run" or "1 / sec, min 10". */
     val priceLabel: String = "",
+    /** Cloud provider display name for unified cards. */
+    val providerLabel: String = "",
 )
 
 data class OutputImage(

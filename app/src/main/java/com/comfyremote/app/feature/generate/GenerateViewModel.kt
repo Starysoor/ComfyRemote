@@ -4,8 +4,12 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.comfyremote.app.AiImagePayload
 import com.comfyremote.app.AiResult
 import com.comfyremote.app.AiSkillDef
+import com.comfyremote.app.SkillExecution
+import com.comfyremote.app.TagProfile
+import com.comfyremote.app.tagProfileInstruction
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.ComfyApi
 import com.comfyremote.app.ComfyException
@@ -16,6 +20,7 @@ import com.comfyremote.app.PromptField
 import com.comfyremote.app.WorkflowConverter
 import com.comfyremote.app.WorkflowEntry
 import com.comfyremote.app.data.cloud.AutoDlConfig
+import com.comfyremote.app.data.cloud.draftScopeKey
 import com.comfyremote.app.data.cloud.CloudInputStore
 import com.comfyremote.app.data.cloud.CloudWorkflowMapping
 import com.comfyremote.app.data.cloud.CloudWorkflowSpec
@@ -59,9 +64,9 @@ data class WorkflowDraft(
 ) {
     val isCloud: Boolean get() = cloud != null
 
-    /** Drafts are scoped per server; cloud drafts use a stable pseudo-server. */
+    /** Drafts are scoped per server; cloud drafts use a stable provider+endpoint key. */
     val storageServerUrl: String
-        get() = if (isCloud) cloudBaseUrl ?: AutoDlConfig.BASE_URL else ""
+        get() = if (isCloud) cloudBaseUrl ?: "cloud:unknown" else ""
 }
 
 enum class ImageUploadPhase { UPLOADING, FAILED }
@@ -153,7 +158,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     private var submitJob: Job? = null
     private var pendingStoryboardProjectId: String? = null
     private var pendingStoryboardShotId: String? = null
-    private var storyboardReferenceValueAtLoad: String? = null
+    private val storyboardReferenceValuesAtLoad = mutableMapOf<String, String>()
 
     init {
         viewModelScope.launch {
@@ -198,7 +203,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         loadedPath = path
         pendingStoryboardProjectId = null
         pendingStoryboardShotId = null
-        storyboardReferenceValueAtLoad = null
+        storyboardReferenceValuesAtLoad.clear()
         _state.update { it.copy(loading = true, error = null, draft = null, insight = null) }
         viewModelScope.launch {
             runCatching { buildDraft(path, name) }
@@ -208,11 +213,18 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                     pendingStoryboardProjectId = transfer?.storyboardProjectId
                     pendingStoryboardShotId = transfer?.storyboardShotId
                     val storyboard = pendingStoryboardProjectId != null && pendingStoryboardShotId != null
-                    val remembered = if (transfer == null) {
-                        container.workflowDraftStore.load(
-                            path,
-                            baseDraft.storageServerUrl.ifBlank { container.serverSession.url },
-                        )
+                    val remembered = if (transfer == null &&
+                        container.appSettingsStore.settings.value.autoRestoreDrafts
+                    ) {
+                        val primaryKey = baseDraft.storageServerUrl
+                            .ifBlank { container.serverSession.url }
+                        container.workflowDraftStore.load(path, primaryKey)
+                            ?: if (baseDraft.isCloud) {
+                                // Older builds scoped cloud drafts by class baseUrl or the local server.
+                                legacyCloudDraftKeys(path).firstNotNullOfOrNull { key ->
+                                    container.workflowDraftStore.load(path, key)
+                                }
+                            } else null
                     } else null
                     val mapped = transfer?.let { pending ->
                         if (pending.reuseAcrossWorkflows && pending.workflowPath != path) {
@@ -245,8 +257,14 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                             message = reuseMessage,
                         )
                     }
-                    transfer?.referenceLocalPath?.takeIf(String::isNotBlank)?.let { reference ->
-                        useLocalResultAsReference(reference, initial = storyboard)
+                    val multipleReferences = transfer?.referenceLocalPaths.orEmpty()
+                        .filter(String::isNotBlank)
+                    if (multipleReferences.isNotEmpty()) {
+                        applyReferencePaths(multipleReferences, initial = storyboard)
+                    } else {
+                        transfer?.referenceLocalPath?.takeIf(String::isNotBlank)?.let { reference ->
+                            useLocalResultAsReference(reference, initial = storyboard)
+                        }
                     }
                     consumeIncomingMedia()
                 }
@@ -255,6 +273,14 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 }
         }
     }
+
+    /** Pre-2.3.0 cloud drafts used a raw base URL or the active local server as their key. */
+    private fun legacyCloudDraftKeys(path: String): List<String> = buildList {
+        container.cloudProviders.forPath(path)?.baseUrl
+            ?.takeIf { it.isNotBlank() }
+            ?.let { add(it) }
+        container.serverSession.url.takeIf { it.isNotBlank() }?.let { add(it) }
+    }.distinct()
 
     private suspend fun buildDraft(path: String, name: String): Pair<WorkflowDraft, ConvertedWorkflow> {
         val cloudProvider = container.cloudProviders.forPath(path)
@@ -283,7 +309,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 warnings = warnings,
                 notes = notes,
                 cloud = spec,
-                cloudBaseUrl = cloudProvider.baseUrl,
+                cloudBaseUrl = cloudProvider.draftScopeKey(),
             ) to ConvertedWorkflow(prompt, fields, warnings, notes)
         }
         val conv = container.workflowRepository.convert(WorkflowEntry(path, name, ""))
@@ -366,6 +392,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 return
             }
             syncStoryboardReference(projectId, shotId, draft)
+            syncStoryboardValues(projectId, shotId, draft)
         }
 
         persistDraftNow(draft)
@@ -389,17 +416,40 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** Remembers the shot's workflow and portable params for the next Regenerate. */
+    private fun syncStoryboardValues(projectId: String, shotId: String, draft: WorkflowDraft) {
+        val values = draft.fields
+            .filter { it.kind == FieldKind.TEXT || it.kind == FieldKind.PARAM || it.kind == FieldKind.SEED }
+            .associate { field -> field.key to (draft.values[field.key] ?: field.value) }
+        val workflowPath = if (draft.isCloud) draft.workflowPath else ""
+        val workflowId = workflowPath.substringAfter(':').takeIf { workflowPath.isNotBlank() }
+        val providerId = container.cloudProviders.forPath(workflowPath)?.id.orEmpty()
+        container.storyboardStore.updateShot(projectId, shotId) {
+            it.copy(
+                values = values,
+                workflowPath = workflowPath.takeIf { it.isNotBlank() },
+                providerId = providerId.takeIf { it.isNotBlank() },
+                workflowId = workflowId,
+            )
+        }
+    }
+
     /** Persists a manually changed reference so Regenerate opens the same image. */
     private fun syncStoryboardReference(projectId: String, shotId: String, draft: WorkflowDraft) {
+        val shot = container.storyboardStore.project(projectId)
+            ?.shots?.firstOrNull { it.id == shotId } ?: return
+        // Multi-reference shots are already described by their project asset ids.
+        if (shot.referenceAssetIds.isNotEmpty()) return
         val imageField = draft.fields.firstOrNull { it.kind == FieldKind.IMAGE } ?: return
         val current = draft.values[imageField.key] ?: imageField.value
+        val initial = storyboardReferenceValuesAtLoad[imageField.key]
         if (current.isBlank()) {
-            if (storyboardReferenceValueAtLoad != null) {
+            if (initial != null) {
                 container.storyboardStore.setReference(projectId, shotId, null, manual = true)
             }
             return
         }
-        if (current == storyboardReferenceValueAtLoad) return
+        if (current == initial) return
         val localPath = container.cloudInputStore.localPath(current) ?: return
         container.storyboardStore.setReference(projectId, shotId, localPath, manual = true)
     }
@@ -439,7 +489,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         return GenerationRequest(
             id = UUID.randomUUID().toString(),
             provider = cloudProvider?.id ?: "comfyui",
-            serverUrl = cloudProvider?.baseUrl ?: container.serverSession.url,
+            serverUrl = cloudProvider?.endpoint() ?: container.serverSession.url,
             workflowPath = draft.workflowPath,
             workflowName = draft.workflowName,
             fieldValues = values,
@@ -449,6 +499,8 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             convertedPrompt = JSONObject(cv.prompt.toString()),
             createdAt = System.currentTimeMillis() + batchOffset,
             estimatedCloudCost = if (draft.isCloud) cloudCostEstimate(draft, values) else null,
+            storyboardProjectId = pendingStoryboardProjectId,
+            storyboardShotId = pendingStoryboardShotId,
         )
     }
 
@@ -501,8 +553,18 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         }
         val busy = "$fieldKey|${skill.id}"
         _state.update { it.copy(aiBusy = busy) }
+        val draft = _state.value.draft
+        val tagSkill = skill.id == AiSkillDef.DEFAULT_TAGS_ID || skill.id == AiSkillDef.DEFAULT_NSFW_TAGS_ID
+        val profile = TagProfile.entries.firstOrNull { it.name == settings.tagProfile } ?: TagProfile.AUTO
+        val systemPrompt = if (tagSkill) {
+            listOf(skill.systemPrompt, tagProfileInstruction(profile, draft?.workflowName.orEmpty()))
+                .filter(String::isNotBlank)
+                .joinToString("\n\n")
+        } else {
+            skill.systemPrompt
+        }
         viewModelScope.launch {
-            runCatching { container.aiRepository.chat(skill.systemPrompt, source) }
+            runCatching { container.aiRepository.chat(systemPrompt, source) }
                 .onSuccess { out -> _state.update { it.copy(aiBusy = null, aiResult = AiResult(fieldKey, out)) } }
                 .onFailure { e -> _state.update { it.copy(aiBusy = null, message = e.message ?: "AI error") } }
         }
@@ -691,9 +753,14 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun useLocalResultAsReference(localPath: String, initial: Boolean = false) {
+    fun useLocalResultAsReference(
+        localPath: String,
+        initial: Boolean = false,
+        fieldKey: String? = null,
+    ) {
         val draft = _state.value.draft ?: return
-        val field = draft.fields.firstOrNull { it.kind == FieldKind.IMAGE }
+        val field = fieldKey?.let { key -> draft.fields.firstOrNull { it.key == key } }
+            ?: draft.fields.firstOrNull { it.kind == FieldKind.IMAGE }
         if (field == null) {
             _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_no_reference_input)) }
             return
@@ -701,26 +768,53 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         if (!draft.isCloud && !container.serverSession.connected) return
         viewModelScope.launch {
             setUpload(field.key, ImageUploadStatus(ImageUploadPhase.UPLOADING))
-            runCatching {
-                if (draft.isCloud) {
-                    container.cloudInputStore.saveFromFile(localPath, cloudImageDimension())
-                } else {
-                    val file = File(localPath)
-                    val bytes = withContext(Dispatchers.IO) { file.readBytes() }
-                    val ext = file.extension.ifBlank { "png" }
-                    container.serverSession.require().uploadImage(bytes, "result_ref_${System.currentTimeMillis()}.$ext")
+            runCatching { referenceValueFor(draft, field, localPath) }
+                .onSuccess { name ->
+                    if (initial) storyboardReferenceValuesAtLoad[field.key] = name
+                    updateValue(field.key, name)
+                    clearUpload(field.key)
+                    if (!initial) {
+                        _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_result_as_reference)) }
+                    }
+                }.onFailure { e ->
+                    setUpload(field.key, ImageUploadStatus(ImageUploadPhase.FAILED, e.message))
                 }
-            }.onSuccess { name ->
-                if (initial) storyboardReferenceValueAtLoad = name
-                updateValue(field.key, name)
-                clearUpload(field.key)
-                if (!initial) {
-                    _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_result_as_reference)) }
-                }
-            }.onFailure { e ->
-                setUpload(field.key, ImageUploadStatus(ImageUploadPhase.FAILED, e.message))
+        }
+    }
+
+    /** Fills consecutive image inputs from a multi-reference storyboard shot. */
+    private fun applyReferencePaths(paths: List<String>, initial: Boolean) {
+        val draft = _state.value.draft ?: return
+        val fields = draft.fields.filter { it.kind == FieldKind.IMAGE }.take(paths.size)
+        if (fields.isEmpty()) return
+        viewModelScope.launch {
+            fields.zip(paths).forEach { (field, path) ->
+                setUpload(field.key, ImageUploadStatus(ImageUploadPhase.UPLOADING))
+                runCatching { referenceValueFor(draft, field, path) }
+                    .onSuccess { name ->
+                        if (initial) storyboardReferenceValuesAtLoad[field.key] = name
+                        updateValue(field.key, name)
+                        clearUpload(field.key)
+                    }.onFailure { e ->
+                        setUpload(field.key, ImageUploadStatus(ImageUploadPhase.FAILED, e.message))
+                    }
             }
         }
+    }
+
+    private suspend fun referenceValueFor(
+        draft: WorkflowDraft,
+        field: PromptField,
+        localPath: String,
+    ): String {
+        if (draft.isCloud) {
+            return container.cloudInputStore.saveFromFile(localPath, cloudImageDimension())
+        }
+        val file = File(localPath)
+        val bytes = withContext(Dispatchers.IO) { file.readBytes() }
+        val ext = file.extension.ifBlank { "png" }
+        return container.serverSession.require()
+            .uploadImage(bytes, "result_ref_${System.currentTimeMillis()}_${field.key.hashCode()}.$ext")
     }
 
     /** One-tap handoff from a generated image to the configured cloud video workflow. */
@@ -754,10 +848,6 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     fun visionRewrite(targetFieldKey: String?, imageValue: String, instruction: String) {
         if (_state.value.aiBusy != null) return
         val draft = _state.value.draft ?: return
-        if (imageValue.isBlank()) {
-            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_pick_image)) }
-            return
-        }
         val target = draft.fields.firstOrNull { it.key == targetFieldKey && it.kind == FieldKind.TEXT }
             ?: draft.fields.firstOrNull {
                 it.kind == FieldKind.TEXT && it.multiline && !it.looksLikeNegativePrompt()
@@ -772,38 +862,56 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_ai_not_configured)) }
             return
         }
+        val references = VisionContext.references(draft, draft.values, imageValue)
+        if (references.isEmpty()) {
+            _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_pick_image)) }
+            return
+        }
+        val mode = VisionContext.mode(draft)
         val skill = container.aiSkillStore.load().firstOrNull { it.id == AiSkillDef.DEFAULT_VISION_ID }
             ?: AiSkillDef.VISION_REWRITE_DEFAULT
         val busy = "vision:${target.key}"
         _state.update { it.copy(aiBusy = busy) }
         viewModelScope.launch {
             runCatching {
-                val bytes = loadVisionImageBytes(imageValue)
-                    ?: throw ComfyException(AppStrings.get(R.string.gen_vm_cannot_read_image))
-                val (prepared, ext) = withContext(Dispatchers.IO) {
-                    ImagePreprocessor.prepare(bytes, null, 1024, 84)
+                val payloads = mutableListOf<AiImagePayload>()
+                references.take(MAX_VISION_IMAGES).forEach { reference ->
+                    val bytes = loadVisionImageBytes(reference.value) ?: return@forEach
+                    val (prepared, ext) = withContext(Dispatchers.IO) {
+                        ImagePreprocessor.prepare(bytes, null, 1024, 84)
+                    }
+                    payloads += AiImagePayload(
+                        bytes = prepared,
+                        mime = CloudInputStore.mimeForExt(ext),
+                        role = reference.role,
+                        order = reference.order,
+                        label = reference.label,
+                    )
+                }
+                if (payloads.isEmpty()) {
+                    throw ComfyException(AppStrings.get(R.string.gen_vm_cannot_read_image))
                 }
                 val current = draft.values[target.key] ?: target.value
-                val userText = buildString {
-                    append(
-                        AppStrings.get(
-                            R.string.gen_vm_vision_change,
-                            instruction.trim().ifBlank { AppStrings.get(R.string.gen_vm_vision_default_instruction) },
-                        )
+                val requestText = VisionContext.userText(instruction, current, mode, references)
+                if (skill.execution == SkillExecution.MULTI_STAGE) {
+                    val analysis = container.aiRepository.visionChat(
+                        systemPrompt = SkillRuntime.visionAnalysisSystemPrompt(mode),
+                        userText = requestText,
+                        images = payloads,
                     )
-                    if (current.isNotBlank()) {
-                        append("\n")
-                        append(AppStrings.get(R.string.gen_vm_vision_current, current))
-                    }
-                    append("\n")
-                    append(AppStrings.get(R.string.gen_vm_vision_look))
+                    container.aiRepository.chat(
+                        systemPrompt = SkillRuntime.plannerSystemPrompt(skill.systemPrompt, mode, references),
+                        userText = SkillRuntime.plannerUserText(
+                            instruction, current, analysis, references,
+                        ),
+                    )
+                } else {
+                    container.aiRepository.visionChat(
+                        systemPrompt = VisionContext.systemPrompt(skill.systemPrompt, mode, references),
+                        userText = requestText,
+                        images = payloads,
+                    )
                 }
-                container.aiRepository.visionChat(
-                    systemPrompt = skill.systemPrompt,
-                    userText = userText,
-                    imageBytes = prepared,
-                    mime = CloudInputStore.mimeForExt(ext),
-                )
             }.onSuccess { out ->
                 _state.update { it.copy(aiBusy = null, aiResult = AiResult(target.key, out)) }
             }.onFailure { e ->
@@ -919,7 +1027,10 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         _state.update { it.copy(uploads = it.uploads - key) }
     }
 
-    companion object { internal const val MAX_BATCH = 16 }
+    companion object {
+        internal const val MAX_BATCH = 16
+        private const val MAX_VISION_IMAGES = 8
+    }
 }
 
 /** Storyboard shots bind exactly one task; ordinary workflows keep their configured batch. */

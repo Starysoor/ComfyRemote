@@ -6,7 +6,6 @@ import androidx.core.content.ContextCompat
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.ComfyApi
 import com.comfyremote.app.PromptValidationException
-import com.comfyremote.app.data.cloud.AutoDlConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -111,7 +110,7 @@ class GenerationManager(
             return CancelOutcome(taskId, false)
         }
 
-        val cloud = task.request.provider == AutoDlConfig.PROVIDER
+        val cloud = task.request.provider != "comfyui"
         return when (cancelActionFor(task.phase, cloud, task.localPending)) {
             CancelAction.LOCAL_PENDING -> {
                 patch(taskId) {
@@ -252,9 +251,10 @@ class GenerationManager(
         val firstCloudSubmit = updated.shouldRecordCloudSpend && spendRecordedIds.add(updated.taskId)
         if (firstCloudSubmit) {
             container.cloudSpendStore.record(
-                updated.request.workflowName,
-                updated.request.estimatedCloudCost,
-                updated.promptId,
+                workflowName = updated.request.workflowName,
+                points = updated.request.estimatedCloudCost,
+                remoteTaskId = updated.promptId,
+                providerId = updated.request.provider,
             )
         }
         patch(updated.taskId, allowTerminalExit) {
@@ -272,6 +272,7 @@ class GenerationManager(
                 persistProgress(updated)
             }
             persistProgress(final)
+            forgetIfTerminal(final)
         } catch (e: kotlinx.coroutines.CancellationException) {
             patch(task.taskId) {
                 it.copy(
@@ -282,6 +283,7 @@ class GenerationManager(
                     localPending = false,
                 )
             }
+            forgetIfTerminal(task.copy(phase = GenerationPhase.CANCELLED))
             throw e
         } catch (e: Exception) {
             patchFailure(task.taskId, e)
@@ -308,6 +310,7 @@ class GenerationManager(
         try {
             val final = runner.recover(task) { updated -> persistProgress(updated, allowTerminalExit = true) }
             persistProgress(final, allowTerminalExit = true)
+            forgetIfTerminal(final)
         } catch (e: kotlinx.coroutines.CancellationException) {
             patch(task.taskId, allowTerminalExit = true) {
                 it.copy(
@@ -318,6 +321,7 @@ class GenerationManager(
                     localPending = false,
                 )
             }
+            forgetIfTerminal(task.copy(phase = GenerationPhase.CANCELLED))
             throw e
         } catch (e: Exception) {
             patch(task.taskId, allowTerminalExit = true) {
@@ -334,6 +338,14 @@ class GenerationManager(
         }
     }
 
+    /** Provider recovery state is only needed while a task can still be resumed. */
+    private fun forgetIfTerminal(task: GenerationTask) {
+        if (task.request.provider == "comfyui") return
+        if (task.phase != GenerationPhase.SUCCEEDED && task.phase != GenerationPhase.CANCELLED) return
+        val promptId = task.promptId?.takeIf { it.isNotBlank() } ?: return
+        container.cloudProviders.byId(task.request.provider)?.forgetTask(promptId)
+    }
+
     private fun runnerFor(task: GenerationTask): GenerationRunner {
         val request = task.request
         val history = RepositoryGenerationHistorySink(container.historyRepository, request.serverUrl)
@@ -342,10 +354,19 @@ class GenerationManager(
             val provider = container.cloudProviders.byId(request.provider)
                 ?: error("Unknown cloud provider ${request.provider}")
             val workflowId = request.workflowPath.removePrefix(provider.pathPrefix)
+            val settings = container.cloudProviderSettingsStore
+            val pollMs = settings.pollIntervalSeconds(provider.id) * 1_000L
             GenerationRunner(
-                backend = CloudWorkflowBackend(provider, workflowId),
+                backend = CloudWorkflowBackend(
+                    repository = provider,
+                    workflowId = workflowId,
+                    providerLabel = provider.label,
+                    retryCount = settings.pollRetryCount(provider.id),
+                    retryDelayMs = pollMs,
+                ),
                 history = history,
-                timeoutMs = 60 * 60_000L,
+                pollDelayMs = pollMs,
+                timeoutMs = settings.taskTimeoutMinutes(provider.id) * 60_000L,
                 resolveCloudImage = resolver,
             )
         } else {

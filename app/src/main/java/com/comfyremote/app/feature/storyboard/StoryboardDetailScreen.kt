@@ -1,5 +1,9 @@
 package com.comfyremote.app.feature.storyboard
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,8 +16,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowDownward
@@ -23,6 +32,7 @@ import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -30,6 +40,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -46,6 +57,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
+import com.comfyremote.app.data.reference.ProjectAsset
+import com.comfyremote.app.data.reference.ReferenceRole
+import com.comfyremote.app.data.storyboard.StoryboardProject
 import com.comfyremote.app.data.storyboard.StoryboardShot
 import com.comfyremote.app.feature.generate.MediaThumbnail
 import com.comfyremote.app.ui.IrisType
@@ -79,7 +93,19 @@ fun StoryboardDetailScreen(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var addingShot by remember { mutableStateOf(false) }
+    var insertAfterShotId by remember { mutableStateOf<String?>(null) }
+    var assetRoleDialog by remember { mutableStateOf(false) }
+    var pendingAssetRole by remember { mutableStateOf<ReferenceRole?>(null) }
+    var assetShotId by remember { mutableStateOf<String?>(null) }
+    var selectedAssetIds by remember { mutableStateOf(setOf<String>()) }
     var menuOpen by remember { mutableStateOf(false) }
+    var projectSettings by remember { mutableStateOf(false) }
+    var shotWorkflowFor by remember { mutableStateOf<String?>(null) }
+    val assetPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val role = pendingAssetRole
+        if (uri != null && role != null) viewModel.addAsset(projectId, role, uri)
+        pendingAssetRole = null
+    }
     val allDoneText = stringResource(R.string.board_all_done)
     val runningText = stringResource(R.string.gen_vm_storyboard_running)
     val anyRunning = project?.shots?.any { it.status == "running" } == true
@@ -108,6 +134,13 @@ fun StoryboardDetailScreen(
                             Icon(Icons.Outlined.MoreVert, stringResource(R.string.action_more))
                         }
                         DropdownMenu(menuOpen, { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.board_project_settings)) },
+                                onClick = {
+                                    menuOpen = false
+                                    projectSettings = true
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.board_delete_project), color = MaterialTheme.colorScheme.error) },
                                 leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error) },
@@ -157,7 +190,10 @@ fun StoryboardDetailScreen(
             item("meta") {
                 IrisCard {
                     Text(
-                        workflows.firstOrNull { it.id == project.workflowId }?.name ?: project.workflowId,
+                        workflows.firstOrNull {
+                            it.path == project.workflowPath || it.workflowId == project.workflowId
+                        }?.let { "${it.providerLabel} · ${it.name}" }
+                            ?: project.workflowPath.ifBlank { project.workflowId },
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -170,6 +206,44 @@ fun StoryboardDetailScreen(
                         maxLines = 4,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                }
+            }
+
+            item("overview") {
+                val chips = listOf(
+                    Triple(stringResource(R.string.board_status_running), project.shots.count { it.status == "running" }, ChipTone.Accent),
+                    Triple(stringResource(R.string.board_status_draft), project.shots.count { it.status != "running" && it.status != "done" && it.status != "failed" }, ChipTone.Neutral),
+                    Triple(stringResource(R.string.board_status_failed), project.shots.count { it.status == "failed" }, ChipTone.Error),
+                    Triple(stringResource(R.string.board_status_done), project.shots.count { it.status == "done" }, ChipTone.Success),
+                )
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    chips.filter { it.second > 0 }.forEach { (label, count, tone) ->
+                        StatusChip("$label $count", tone = tone)
+                    }
+                }
+            }
+
+            item("assets-heading") {
+                SectionHeader(stringResource(R.string.board_assets)) {
+                    TextAction(stringResource(R.string.board_add_asset), onClick = { assetRoleDialog = true })
+                }
+            }
+            item("assets") {
+                if (project.assets.isEmpty()) {
+                    Text(
+                        stringResource(R.string.board_assets_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                        items(project.assets, key = { it.id }) { asset ->
+                            AssetCard(asset) { viewModel.removeAsset(project.id, asset.id) }
+                        }
+                    }
                 }
             }
 
@@ -196,21 +270,48 @@ fun StoryboardDetailScreen(
                     ShotTimelineItem(
                         index = index,
                         shot = shot,
+                        workflowLabel = shotWorkflowLabel(shot, project, workflows),
                         referenceFromPrevious = !shot.referenceManual && shot.referencePath != null &&
                             shot.referencePath == previous?.lastFramePath,
                         feedsNext = shot.lastFramePath != null && index < project.shots.lastIndex,
+                        canMoveUp = index > 0,
+                        canMoveDown = index < project.shots.lastIndex,
+                        canUseAssets = project.assets.isNotEmpty(),
                         onOpen = {
                             viewModel.openShot(project.id, shot.id)?.let { (path, name) ->
                                 onOpenShot(path, name)
                             }
                         },
                         onDelete = { viewModel.deleteShot(project.id, shot.id) },
+                        onMoveUp = { viewModel.moveShot(project.id, shot.id, -1) },
+                        onMoveDown = { viewModel.moveShot(project.id, shot.id, 1) },
+                        onDuplicate = { viewModel.duplicateShot(project.id, shot.id) },
+                        onInsertAfter = { insertAfterShotId = shot.id },
+                        onPickWorkflow = { shotWorkflowFor = shot.id },
+                        onPickAsset = {
+                            assetShotId = shot.id
+                            selectedAssetIds = shot.referenceAssetIds.toSet()
+                        },
+                        onClearReference = { viewModel.clearShotReference(project.id, shot.id) },
                     )
                 }
             }
         }
     }
 
+    if (projectSettings && project != null) {
+        ProjectSettingsDialog(
+            project = project,
+            workflows = workflows,
+            onDismiss = { projectSettings = false },
+            onSave = { title, workflowId, aspect, defaults ->
+                viewModel.updateProjectSettings(
+                    project.id, title, workflowId, aspect, defaults,
+                )
+                projectSettings = false
+            },
+        )
+    }
     if (addingShot) {
         AddShotDialog(
             onDismiss = { addingShot = false },
@@ -220,6 +321,274 @@ fun StoryboardDetailScreen(
             },
         )
     }
+    insertAfterShotId?.let { shotId ->
+        AddShotDialog(
+            onDismiss = { insertAfterShotId = null },
+            onAdd = { prompt ->
+                viewModel.insertShotAfter(projectId, shotId, prompt)
+                insertAfterShotId = null
+            },
+        )
+    }
+    if (assetRoleDialog) {
+        AlertDialog(
+            onDismissRequest = { assetRoleDialog = false },
+            title = { Text(stringResource(R.string.board_asset_role)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ReferenceRole.entries.forEach { role ->
+                        TextButton(onClick = {
+                            pendingAssetRole = role
+                            assetRoleDialog = false
+                            assetPicker.launch("image/*")
+                        }) { Text(referenceRoleLabel(role)) }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { assetRoleDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+    shotWorkflowFor?.let { shotId ->
+        val currentPath = project?.shots?.firstOrNull { it.id == shotId }?.workflowPath
+        AlertDialog(
+            onDismissRequest = { shotWorkflowFor = null },
+            title = { Text(stringResource(R.string.board_shot_workflow)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        stringResource(R.string.board_shot_workflow_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = {
+                        viewModel.setShotWorkflow(projectId, shotId, null)
+                        shotWorkflowFor = null
+                    }) {
+                        Text(
+                            (if (currentPath.isNullOrBlank()) "✓ " else "") +
+                                stringResource(R.string.board_follow_project),
+                        )
+                    }
+                    if (workflows.isEmpty()) {
+                        Text(
+                            stringResource(R.string.board_no_shot_workflows),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    workflows.forEach { wf ->
+                        TextButton(onClick = {
+                            viewModel.setShotWorkflow(projectId, shotId, wf.path)
+                            shotWorkflowFor = null
+                        }) {
+                            Text(
+                                (if (currentPath == wf.path) "✓ " else "") +
+                                    "${wf.providerLabel} · ${wf.name}",
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { shotWorkflowFor = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+    assetShotId?.let { shotId ->
+        val assets = project?.assets.orEmpty()
+        AlertDialog(
+            onDismissRequest = { assetShotId = null },
+            title = { Text(stringResource(R.string.board_use_asset)) },
+            text = {
+                if (assets.isEmpty()) {
+                    Text(stringResource(R.string.board_assets_empty))
+                } else {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        assets.forEach { asset ->
+                            val checked = asset.id in selectedAssetIds
+                            Row(
+                                Modifier.fillMaxWidth().clickable {
+                                    selectedAssetIds = if (checked) {
+                                        selectedAssetIds - asset.id
+                                    } else {
+                                        selectedAssetIds + asset.id
+                                    }
+                                },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(checked = checked, onCheckedChange = null)
+                                Text(
+                                    "${referenceRoleLabel(asset.role)} · " +
+                                        asset.label.ifBlank { asset.path.substringAfterLast('/') },
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (assets.isNotEmpty()) {
+                    TextButton(onClick = {
+                        viewModel.assignAssetsToShot(projectId, shotId, selectedAssetIds.toList())
+                        assetShotId = null
+                    }) { Text(stringResource(R.string.board_apply_assets)) }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { assetShotId = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
+}
+
+private fun shotWorkflowLabel(
+    shot: StoryboardShot,
+    project: StoryboardProject,
+    workflows: List<StoryboardWorkflowOption>,
+): String? {
+    val path = shot.workflowPath?.takeIf { it.isNotBlank() } ?: return null
+    if (path == project.workflowPath) return null
+    return workflows.firstOrNull { it.path == path }?.let { "${it.providerLabel} · ${it.name}" } ?: path
+}
+
+@Composable
+private fun ProjectSettingsDialog(
+    project: com.comfyremote.app.data.storyboard.StoryboardProject,
+    workflows: List<StoryboardWorkflowOption>,
+    onDismiss: () -> Unit,
+    onSave: (title: String, workflowPath: String, aspectRatio: String, defaults: Map<String, String>) -> Unit,
+) {
+    var title by remember(project.title) { mutableStateOf(project.title) }
+    var workflowPath by remember(project.workflowPath) {
+        mutableStateOf(project.workflowPath.ifBlank { project.workflowId })
+    }
+    var aspectRatio by remember(project.aspectRatio) { mutableStateOf(project.aspectRatio) }
+    var defaultsText by remember(project.defaultValues) {
+        mutableStateOf(project.defaultValues.entries.joinToString("\n") { "${it.key}=${it.value}" })
+    }
+    var workflowMenu by remember { mutableStateOf(false) }
+    val workflowName = workflows.firstOrNull {
+        it.path == workflowPath || it.workflowId == workflowPath
+    }?.let { "${it.providerLabel} · ${it.name}" } ?: workflowPath
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.board_project_settings)) },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+            ) {
+                IrisTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = stringResource(R.string.board_project_title),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Box {
+                    TextAction(
+                        text = workflowName.ifBlank { stringResource(R.string.board_project_workflow) },
+                        onClick = { workflowMenu = true },
+                    )
+                    DropdownMenu(workflowMenu, { workflowMenu = false }) {
+                        workflows.forEach { wf ->
+                            DropdownMenuItem(
+                                text = { Text("${wf.providerLabel} · ${wf.name}") },
+                                onClick = {
+                                    workflowPath = wf.path
+                                    workflowMenu = false
+                                },
+                            )
+                        }
+                    }
+                }
+                IrisTextField(
+                    value = aspectRatio,
+                    onValueChange = { aspectRatio = it },
+                    label = stringResource(R.string.board_aspect_ratio),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                IrisTextField(
+                    value = defaultsText,
+                    onValueChange = { defaultsText = it },
+                    label = stringResource(R.string.board_default_params),
+                    supportingText = stringResource(R.string.board_default_params_hint),
+                    minLines = 3,
+                    maxLines = 8,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val defaults = defaultsText.lineSequence().mapNotNull { line ->
+                    val index = line.indexOf('=')
+                    if (index <= 0) null else {
+                        val key = line.substring(0, index).trim()
+                        val value = line.substring(index + 1).trim()
+                        if (key.isBlank()) null else key to value
+                    }
+                }.toMap()
+                onSave(title, workflowPath, aspectRatio, defaults)
+            }) { Text(stringResource(R.string.board_save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun AssetCard(asset: ProjectAsset, onDelete: () -> Unit) {
+    Column(
+        Modifier.width(96.dp),
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+    ) {
+        Box {
+            MediaThumbnail(asset.path, 96.dp, Modifier.clip(MaterialTheme.shapes.medium))
+            IconButton(onClick = onDelete, modifier = Modifier.align(Alignment.TopEnd)) {
+                Icon(
+                    Icons.Outlined.Delete,
+                    stringResource(R.string.action_delete),
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+        Text(
+            referenceRoleLabel(asset.role),
+            style = IrisType.metaSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+internal fun referenceRoleLabel(role: ReferenceRole): String = when (role) {
+    ReferenceRole.AUTO -> stringResource(R.string.reference_role_auto)
+    ReferenceRole.START_FRAME -> stringResource(R.string.reference_role_start)
+    ReferenceRole.END_FRAME -> stringResource(R.string.reference_role_end)
+    ReferenceRole.CHARACTER_REFERENCE -> stringResource(R.string.reference_role_character)
+    ReferenceRole.SCENE_REFERENCE -> stringResource(R.string.reference_role_scene)
+    ReferenceRole.STYLE_REFERENCE -> stringResource(R.string.reference_role_style)
+    ReferenceRole.OUTFIT_REFERENCE -> stringResource(R.string.reference_role_outfit)
+    ReferenceRole.COMPOSITION_REFERENCE -> stringResource(R.string.reference_role_composition)
+    ReferenceRole.ACTION_REFERENCE -> stringResource(R.string.reference_role_action)
+    ReferenceRole.GENERIC_REFERENCE -> stringResource(R.string.reference_role_generic)
 }
 
 /** One shot on the timeline: accent rail, media, prompt, status and actions. */
@@ -227,11 +596,23 @@ fun StoryboardDetailScreen(
 private fun ShotTimelineItem(
     index: Int,
     shot: StoryboardShot,
+    workflowLabel: String?,
     referenceFromPrevious: Boolean,
     feedsNext: Boolean,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    canUseAssets: Boolean,
     onOpen: () -> Unit,
     onDelete: () -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onDuplicate: () -> Unit,
+    onInsertAfter: () -> Unit,
+    onPickWorkflow: () -> Unit,
+    onPickAsset: () -> Unit,
+    onClearReference: () -> Unit,
 ) {
+    var shotMenu by remember { mutableStateOf(false) }
     val (statusLabel, tone) = when (shot.status) {
         "done" -> stringResource(R.string.board_status_done) to ChipTone.Success
         "running" -> stringResource(R.string.board_status_running) to ChipTone.Accent
@@ -262,6 +643,15 @@ private fun ShotTimelineItem(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    workflowLabel?.let {
+                        Text(
+                            stringResource(R.string.board_shot_workflow_value, it),
+                            style = IrisType.metaSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     if (reference != null || shot.resultPath != null) {
                         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
                             reference?.let {
@@ -286,6 +676,48 @@ private fun ShotTimelineItem(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Spacer(Modifier.weight(1f))
                         val running = shot.status == "running"
+                        Box {
+                            IconButton(onClick = { shotMenu = true }) {
+                                Icon(Icons.Outlined.MoreVert, stringResource(R.string.action_more))
+                            }
+                            DropdownMenu(shotMenu, { shotMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_move_up)) },
+                                    enabled = canMoveUp && !running,
+                                    onClick = { shotMenu = false; onMoveUp() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_move_down)) },
+                                    enabled = canMoveDown && !running,
+                                    onClick = { shotMenu = false; onMoveDown() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_duplicate)) },
+                                    enabled = !running,
+                                    onClick = { shotMenu = false; onDuplicate() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_insert_after)) },
+                                    enabled = !running,
+                                    onClick = { shotMenu = false; onInsertAfter() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_shot_workflow)) },
+                                    enabled = !running,
+                                    onClick = { shotMenu = false; onPickWorkflow() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_use_asset)) },
+                                    enabled = canUseAssets && !running,
+                                    onClick = { shotMenu = false; onPickAsset() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_clear_reference)) },
+                                    enabled = shot.referencePath != null && !running,
+                                    onClick = { shotMenu = false; onClearReference() },
+                                )
+                            }
+                        }
                         TextAction(
                             text = when {
                                 shot.status == "done" -> stringResource(R.string.board_regenerate)

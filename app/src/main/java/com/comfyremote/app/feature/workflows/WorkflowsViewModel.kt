@@ -6,7 +6,6 @@ import com.comfyremote.app.AppContainer
 import com.comfyremote.app.HistoryItem
 import com.comfyremote.app.ServerEntry
 import com.comfyremote.app.WorkflowEntry
-import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.repository.PromptPreset
 import com.comfyremote.app.data.repository.ServerHealth
@@ -31,13 +30,16 @@ data class WorkflowsUiState(
     val cloudLoading: Boolean = false,
     val cloudError: String? = null,
     val cloudLoaded: Boolean = false,
-    val autoDlConfigured: Boolean = false,
+    val cloudConfigured: Boolean = false,
+    val cloudPrefixes: Set<String> = emptySet(),
+    val cloudBaseUrls: Set<String> = emptySet(),
     val reuseTransfer: DraftTransfer? = null,
     val query: String = "",
     val loading: Boolean = false,
     val error: String? = null,
     val recentPaths: List<String> = emptyList(),
     val favoritePaths: Set<String> = emptySet(),
+    val defaultPaths: Set<String> = emptySet(),
     val recentPresets: List<PromptPreset> = emptyList(),
     val recentResults: List<HistoryItem> = emptyList(),
     val session: ServerSession? = null,
@@ -60,6 +62,7 @@ data class WorkflowsUiState(
                 }
                 .sortedWith(
                     compareByDescending<WorkflowEntry> { it.path in favoritePaths }
+                        .thenByDescending { it.path in defaultPaths }
                         .thenBy { recentRank[it.path] ?: Int.MAX_VALUE }
                         .thenBy { it.name.lowercase() }
                 )
@@ -71,7 +74,8 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
     private val pendingAtStart = container.draftTransferRepository.peek()
         ?.takeIf { it.reuseAcrossWorkflows }
     private val initialSource = when {
-        pendingAtStart?.workflowPath?.startsWith(AutoDlConfig.PATH_PREFIX) == true -> WorkflowSource.CLOUD
+        pendingAtStart?.workflowPath?.let { container.cloudProviders.forPath(it) != null } == true ->
+            WorkflowSource.CLOUD
         pendingAtStart != null -> WorkflowSource.LOCAL
         container.serverSession.connected -> WorkflowSource.LOCAL
         else -> WorkflowSource.CLOUD
@@ -80,13 +84,21 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
         WorkflowsUiState(
             recentPaths = container.workflowUsageRepository.recentPaths(),
             favoritePaths = container.workflowUsageRepository.favorites(),
+            defaultPaths = defaultCloudPaths(),
             recentPresets = recentSetups(container.promptPresetRepository.load()),
             recentResults = recentResults(container.historyRepository.load()),
             session = container.serverSession.session.value,
             servers = container.serverRepository.load(),
             source = initialSource,
             reuseTransfer = pendingAtStart,
-            autoDlConfigured = container.autoDlRepository.configured(),
+            cloudConfigured = container.cloudProviders.all.any { it.configured() },
+            cloudPrefixes = container.cloudProviders.all.mapTo(hashSetOf()) { it.pathPrefix },
+            cloudBaseUrls = container.cloudProviders.all.flatMapTo(hashSetOf()) { provider ->
+                listOfNotNull(
+                    provider.baseUrl.takeIf { it.isNotBlank() },
+                    provider.endpoint().takeIf { it.isNotBlank() },
+                )
+            },
         )
     )
     val state: StateFlow<WorkflowsUiState> = _state.asStateFlow()
@@ -151,7 +163,7 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
             _state.update { it.copy(reuseTransfer = null) }
             return
         }
-        val source = if (pending.workflowPath.startsWith(AutoDlConfig.PATH_PREFIX)) {
+        val source = if (container.cloudProviders.forPath(pending.workflowPath) != null) {
             WorkflowSource.CLOUD
         } else {
             WorkflowSource.LOCAL
@@ -170,7 +182,9 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
         _state.update { it.copy(source = source, query = "") }
         if (source == WorkflowSource.CLOUD && !_state.value.cloudLoaded) loadCloud(force = false)
         if (source == WorkflowSource.LOCAL) {
-            _state.update { it.copy(autoDlConfigured = container.autoDlRepository.configured()) }
+            _state.update {
+                it.copy(cloudConfigured = container.cloudProviders.all.any { provider -> provider.configured() })
+            }
             loadInternal(force = false)
         }
     }
@@ -182,29 +196,59 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun loadCloud(force: Boolean = false) {
         if (_state.value.cloudLoading) return
-        _state.update { it.copy(cloudLoading = true, cloudError = null, autoDlConfigured = container.autoDlRepository.configured()) }
-        viewModelScope.launch {
-            runCatching { container.autoDlRepository.catalog(force) }
-                .onSuccess { list ->
-                    _state.update {
-                        it.copy(
-                            cloudLoading = false,
-                            cloudLoaded = true,
-                            cloudWorkflows = list.map { workflow -> workflow.toEntry() },
-                            autoDlConfigured = container.autoDlRepository.configured(),
-                        )
-                    }
-                }
-                .onFailure { e ->
-                    _state.update {
-                        it.copy(
-                            cloudLoading = false,
-                            cloudError = AppStrings.get(R.string.wf_err_cloud_load, e.message ?: "error"),
-                            autoDlConfigured = container.autoDlRepository.configured(),
-                        )
-                    }
-                }
+        val providers = container.cloudProviders.all
+        _state.update {
+            it.copy(
+                cloudLoading = true,
+                cloudError = null,
+                cloudConfigured = providers.any { provider -> provider.configured() },
+            )
         }
+        viewModelScope.launch {
+            val entries = mutableListOf<WorkflowEntry>()
+            val errors = mutableListOf<String>()
+            providers.forEach { provider ->
+                runCatching { provider.catalog(force) }
+                    .onSuccess { list ->
+                        entries += list.map { summary ->
+                            summary.toEntry(provider.pathPrefix, provider.label)
+                        }
+                    }
+                    .onFailure { error ->
+                        errors += "${provider.label}: ${error.message ?: "error"}"
+                    }
+            }
+            _state.update {
+                it.copy(
+                    cloudLoading = false,
+                    cloudLoaded = true,
+                    cloudWorkflows = entries,
+                    defaultPaths = defaultCloudPaths(),
+                    cloudBaseUrls = providers.flatMapTo(hashSetOf()) { provider ->
+                        listOfNotNull(
+                            provider.baseUrl.takeIf { it.isNotBlank() },
+                            provider.endpoint().takeIf { it.isNotBlank() },
+                        )
+                    },
+                    cloudError = if (entries.isEmpty() && errors.isNotEmpty()) {
+                        AppStrings.get(R.string.wf_err_cloud_load, errors.joinToString("; "))
+                    } else null,
+                    cloudConfigured = providers.any { provider -> provider.configured() },
+                )
+            }
+        }
+    }
+
+    private fun defaultCloudPaths(): Set<String> {
+        val paths = container.cloudProviders.all.mapNotNull { provider ->
+            container.cloudProviderSettingsStore.defaultModel(provider.id)
+                .takeIf { it.isNotBlank() }
+                ?.let { provider.pathPrefix + it }
+        }.toMutableSet()
+        container.appSettingsStore.settings.value.defaultVideoWorkflowId
+            .takeIf { it.isNotBlank() }
+            ?.let { paths += com.comfyremote.app.data.cloud.AutoDlConfig.PATH_PREFIX + it }
+        return paths
     }
 
     fun refreshServerHealth() {

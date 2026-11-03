@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.HistoryItem
 import com.comfyremote.app.data.cloud.AutoDlConfig
+import com.comfyremote.app.data.reference.ReferenceRole
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.repository.PromptPreset
 import com.comfyremote.app.R
@@ -43,6 +44,21 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
+
+    val storyboardProjects = container.storyboardStore.projects
+
+    fun addToProject(projectId: String, role: ReferenceRole, path: String, label: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { container.storyboardAssetStore.importFile(path, role, label) }
+                .onSuccess { asset ->
+                    container.storyboardStore.addAsset(projectId, asset)
+                    _message.value = AppStrings.get(R.string.history_msg_added_to_project)
+                }
+                .onFailure { e ->
+                    _message.value = AppStrings.get(R.string.history_msg_add_project_failed, e.message ?: "error")
+                }
+        }
+    }
 
     fun setQuery(value: String) { _query.value = value }
     fun toggleFavoritesOnly() { _favoritesOnly.value = !_favoritesOnly.value }

@@ -27,6 +27,12 @@
     <string name="history_tags_hint">Tags, comma separated</string>
     <string name="history_reuse_params">Reuse parameters</string>
     <string name="history_save_prompt">Save prompt</string>
+    <string name="history_add_to_project">Add to project</string>
+    <string name="history_choose_project">Choose project</string>
+    <string name="history_no_projects">No storyboard projects yet</string>
+    <string name="history_choose_role">Choose asset role</string>
+    <string name="history_msg_added_to_project">Added to project assets</string>
+    <string name="history_msg_add_project_failed">Could not add to project: %1$s</string>
     <string name="history_save_tags">Save tags</string>
 
     <!-- Messages -->

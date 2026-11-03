@@ -44,6 +44,7 @@ class AiSettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun updateTemp(v: String) = edit { it.copy(temperatureText = v.filter { c -> c.isDigit() || c == '.' }) }
     fun updateMaxTokens(v: String) = edit { it.copy(maxTokensText = v.filter(Char::isDigit)) }
     fun updateExtra(v: String) = edit { it.copy(extraJson = v) }
+    fun updateTagProfile(v: String) = edit { it.copy(tagProfile = v) }
 
     fun applyThinkingMode(mode: String) {
         val current = _state.value.settings
@@ -53,7 +54,7 @@ class AiSettingsViewModel(private val container: AppContainer) : ViewModel() {
         when (mode) {
             "glm_off" -> extra.put("thinking", JSONObject().put("type", "disabled"))
             "glm_on" -> extra.put("thinking", JSONObject().put("type", "enabled"))
-            "low", "medium", "high" -> extra.put("reasoning_effort", mode)
+            "low", "medium", "high", "max" -> extra.put("reasoning_effort", mode)
             else -> {
                 extra.remove("thinking")
                 extra.remove("reasoning_effort")

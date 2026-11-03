@@ -1,5 +1,55 @@
 # Changelog
 
+## 2.3.0 — 2026-11-04
+
+### Added
+
+- Phase A foundation: semantic `ReferenceRole` / `ProjectAsset` models, persisted through storyboards, history and task requests.
+- Reference-role defaults on local and cloud image fields, with provider rule metadata.
+- Skill Runtime metadata on `AiSkillDef`: scopes, input sources, execution and output policies.
+- Multi-image vision requests that send every reference with its role/order in one request.
+- AI vision rewrite now treats references as hidden context, fuses all enabled references, and describes start→end transitions instead of captioning images.
+- Multi-stage vision skill: hidden visual analysis → planner/rewrite, with the analysis never shown or quoted into the final prompt.
+- Skill editor exposes description, scopes, input sources, execution and output policies.
+- Tag profiles (AUTO / Danbooru / Illustrious / Pony / Custom) shape the AI tag skill's quality conventions.
+- AI reasoning controls are provider/model-aware; inapplicable protocol fields are stripped from requests.
+- Retired the built-in English-expand and translate skills; users can recreate them as custom skills.
+- Independent "auto-save drafts" and "auto-restore drafts" settings.
+- Project workspace core: project-owned assets with semantic roles, durable copies, and role labels.
+- Shot reordering, duplication and insertion; project assets can become a shot's manual reference or be cleared.
+- Storyboard project/shot ids persist on generation tasks; Task Detail links back to the board.
+- Project settings dialog: rename, default workflow, aspect ratio, key=value default parameters, and a live shot status overview.
+- Project aspect-ratio/default-value model fields; per-shot workflow and portable parameter memory for Regenerate.
+- Shot multi-reference: select several project assets and fill consecutive image inputs in one Generate session.
+- History results can be added to a storyboard project with a chosen semantic role.
+- Official provider adapters: OpenAI Images, Google Gemini image models, Replicate image/video models, SiliconFlow image/video models, and the AutoDL.Art model API (separate from ComfyUI workflow tokens).
+- OpenAI catalog updated to GPT Image 2.5 (flare/sunburst), Gemini to Gemini 3.1/3 Pro Image, SiliconFlow to Kolors/Qwen-Image/Wan2.2, and AutoDL model API to GPT Image 2.5 / Qwen-Image / Z-Image / nano-banana plus Wan3.0, Seedance 2.0/2.5, MiniMax H3/Hailuo and Kling video models using their official request/poll protocols.
+- Custom JSON-template provider with `{{field}}` placeholders, task/status/result path mapping, sample request/response inference and manual field definitions.
+- Replicate input parameters are discovered from each model's OpenAPI input schema.
+- Custom OpenAI-compatible provider with editable base URL, token and model list; image parameters are inferred automatically.
+- AI model presets refreshed for GPT-5.5, DeepSeek V4.1 Flash, GLM-5.3, Qwen3.8-Max and Kimi K2.6; reasoning controls know GLM-5.3 effort levels.
+- Cloud provider registry metadata and a Cloud services list with per-provider detail routing and credential settings.
+- Create's Cloud tab aggregates workflows from every registered provider and labels cards with the provider name.
+- Cloud confirmation, cancellation and spend tracking now treat every non-ComfyUI provider as hosted cloud work.
+- Launch intro: a 2.2 s "lens" animation on launcher cold starts (rack-focus pull-back, ring impact, dive through the pupil into the live UI). Tap or Back skips it; it never plays for notification/share launches or with system animations off, and can be turned off in App & interface.
+- Version `2.3.0` (versionCode 26).
+
+### Fixed and verified for release
+
+- All non-local cloud submissions now use the cloud prompt builder so user inputs, images and parameters reach the provider.
+- Cloud Provider tasks and paid output metadata survive process restart where the remote task ID and recovery record were durably saved; Replicate polling retains the submission-time Endpoint.
+- Storyboard asset removal and shot reorder update automatic references without overwriting manual references; cloud draft scopes are separated from local ComfyUI servers.
+- Custom JSON templates preserve number/boolean JSON types and provide honest remote-health status when no safe health probe exists.
+- Cloud cancellation remains cancellation rather than failure; provider errors name the actual service.
+- Recovery-record write failures are no longer silently treated as success. Token reads preserve the fallback credential when Android Keystore is unavailable.
+- Local mock HTTP tests exercise submit → poll → restart recovery → completion. Android 34 emulator QA verified cold start, force-stop/relaunch and crash-free app shell. Unit tests, Debug/Release builds and lint passed.
+
+### Known limitations
+
+- An I/O failure exactly after a remote task is accepted but before the task index is written can still prevent fully automatic recovery; the remote task ID is shown in submission errors when known.
+- Provider-specific paid end-to-end coverage is partial. API/model availability, pricing and remote cancellation depend on each provider; follow the current official documentation.
+- Device smoke tests verify launch/relaunch and the connection screen, not every generation UI and workflow.
+
 ## 2.2.4 — 2026-11-03
 
 ### Added

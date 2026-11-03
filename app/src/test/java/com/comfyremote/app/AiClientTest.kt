@@ -91,6 +91,45 @@ class AiClientTest {
     }
 
     @Test
+    fun multiImageVisionBodyCarriesRoleAndOrder() {
+        val body = AiClient.buildVisionChatBody(
+            model = "vision-model",
+            systemPrompt = "look",
+            userText = "animate",
+            images = listOf(
+                com.comfyremote.app.AiImageInput(
+                    dataUrl = "data:image/png;base64,AA==",
+                    role = com.comfyremote.app.data.reference.ReferenceRole.START_FRAME,
+                    order = 1,
+                    label = "start",
+                ),
+                com.comfyremote.app.AiImageInput(
+                    dataUrl = "data:image/png;base64,BB==",
+                    role = com.comfyremote.app.data.reference.ReferenceRole.END_FRAME,
+                    order = 2,
+                    label = "end",
+                ),
+            ),
+            t = AiTunables(),
+        )
+        val content = body.getJSONArray("messages").getJSONObject(1).getJSONArray("content")
+        assertTrue(content.toString().contains("start frame"))
+        assertTrue(content.toString().contains("end frame"))
+        assertEquals(2, (0 until content.length()).count { content.getJSONObject(it).getString("type") == "image_url" })
+    }
+
+    @Test
+    fun tagProfilesResolveAndAddQualityConventions() {
+        assertEquals(TagProfile.ILLUSTRIOUS, TagProfile.AUTO.resolve("Anima-Turbo极速文生图"))
+        assertEquals(TagProfile.ILLUSTRIOUS, TagProfile.AUTO.resolve("SDXL-动漫文生图"))
+        assertEquals(TagProfile.PONY, TagProfile.AUTO.resolve("Pony-V6"))
+        assertEquals(TagProfile.AUTO, TagProfile.AUTO.resolve("MOSS-A-加速文生图"))
+        assertTrue(tagProfileInstruction(TagProfile.PONY, "anything").contains("score_9"))
+        assertTrue(tagProfileInstruction(TagProfile.DANBOORU, "anything").contains("masterpiece"))
+        assertTrue(tagProfileInstruction(TagProfile.AUTO, "MOSS").isEmpty())
+    }
+
+    @Test
     fun applyThinkingModeWritesExpectedFields() {
         // mirrors MainViewModel.applyThinkingMode mapping via the same JSON contract
         val extra = JSONObject()

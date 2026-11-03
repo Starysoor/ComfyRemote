@@ -60,6 +60,12 @@ fun AppSettingsScreen(
                     checked = settings.compactUi,
                     onCheckedChange = { value -> viewModel.update { it.copy(compactUi = value) } },
                 )
+                SwitchRow(
+                    title = stringResource(R.string.settings_intro),
+                    detail = stringResource(R.string.settings_intro_detail),
+                    checked = settings.playIntro,
+                    onCheckedChange = { value -> viewModel.update { it.copy(playIntro = value) } },
+                )
                 StepperRow(
                     title = stringResource(R.string.settings_recent_results),
                     detail = stringResource(R.string.settings_recent_results_detail),
@@ -124,6 +130,12 @@ fun AppSettingsScreen(
                     detail = stringResource(R.string.settings_auto_save_detail),
                     checked = settings.autoSaveDrafts,
                     onCheckedChange = { value -> viewModel.update { it.copy(autoSaveDrafts = value) } },
+                )
+                SwitchRow(
+                    title = stringResource(R.string.settings_auto_restore),
+                    detail = stringResource(R.string.settings_auto_restore_detail),
+                    checked = settings.autoRestoreDrafts,
+                    onCheckedChange = { value -> viewModel.update { it.copy(autoRestoreDrafts = value) } },
                 )
                 SwitchRow(
                     title = stringResource(R.string.settings_reuse_choose_workflow),
