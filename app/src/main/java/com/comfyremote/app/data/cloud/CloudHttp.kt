@@ -39,6 +39,28 @@ object CloudHttp {
         }
     }
 
+    fun requestJson(
+        method: String,
+        url: String,
+        body: JSONObject?,
+        headers: Map<String, String> = emptyMap(),
+    ): JSONObject {
+        val builder = Request.Builder()
+            .url(url)
+            .apply { headers.forEach { (key, value) -> header(key, value) } }
+        when (method.uppercase()) {
+            "GET" -> builder.get()
+            "POST" -> builder.post((body ?: JSONObject()).toString().toRequestBody(jsonType))
+            "PUT" -> builder.put((body ?: JSONObject()).toString().toRequestBody(jsonType))
+            else -> throw ComfyException("Unsupported HTTP method $method")
+        }
+        client.newCall(builder.build()).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw ComfyException("HTTP ${response.code}: ${text.take(300)}")
+            return JSONObject(text)
+        }
+    }
+
     fun getJson(url: String, headers: Map<String, String> = emptyMap()): JSONObject {
         val request = Request.Builder()
             .url(url)

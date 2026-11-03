@@ -22,9 +22,12 @@
 - Project aspect-ratio/default-value model fields; per-shot workflow and portable parameter memory for Regenerate.
 - Shot multi-reference: select several project assets and fill consecutive image inputs in one Generate session.
 - History results can be added to a storyboard project with a chosen semantic role.
-- Official provider adapters: OpenAI Images (GPT Image 1, DALL·E 3), Google Gemini/Imagen image models, and Replicate image/video models.
+- Official provider adapters: OpenAI Images, Google Gemini image models, Replicate image/video models, and SiliconFlow image/video models.
+- OpenAI catalog updated to GPT Image 2.5 (flare/sunburst), Gemini to Gemini 3.1/3 Pro Image, SiliconFlow to Kolors/Qwen-Image/Wan2.2.
+- Custom JSON-template provider with `{{field}}` placeholders, task/status/result path mapping, sample request/response inference and manual field definitions.
 - Replicate input parameters are discovered from each model's OpenAPI input schema.
 - Custom OpenAI-compatible provider with editable base URL, token and model list; image parameters are inferred automatically.
+- AI model presets refreshed for GPT-5.5, DeepSeek V4.1 Flash, GLM-5.3, Qwen3.8-Max and Kimi K2.6; reasoning controls know GLM-5.3 effort levels.
 - Cloud provider registry metadata and a Cloud services list with per-provider detail routing and credential settings.
 - Create's Cloud tab aggregates workflows from every registered provider and labels cards with the provider name.
 - Cloud confirmation, cancellation and spend tracking now treat every non-ComfyUI provider as hosted cloud work.

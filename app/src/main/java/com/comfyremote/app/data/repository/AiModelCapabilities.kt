@@ -10,8 +10,9 @@ object AiModelCapabilities {
         val url = baseUrl.lowercase()
         val name = model.lowercase()
         return when {
+            "glm-5.3" in name || "glm-5.2" in name -> ReasoningKind.REASONING_EFFORT
             "glm" in name || "bigmodel" in url -> ReasoningKind.GLM_THINKING
-            listOf("o1", "o3", "o4", "r1", "qwq", "reason", "gpt-5", "thinking")
+            listOf("o1", "o3", "o4", "r1", "qwq", "reason", "gpt-5", "thinking", "deepseek-flash", "deepseek-v4")
                 .any { it in name } -> ReasoningKind.REASONING_EFFORT
             else -> ReasoningKind.NONE
         }

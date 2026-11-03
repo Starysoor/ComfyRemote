@@ -43,4 +43,11 @@ class CloudProviderSettingsStore(
             )
             .apply()
     }
+
+    fun extra(providerId: String): String =
+        prefs.getString("cloud_${providerId}_extra", "").orEmpty()
+
+    fun saveExtra(providerId: String, value: String) {
+        prefs.edit().putString("cloud_${providerId}_extra", value).apply()
+    }
 }

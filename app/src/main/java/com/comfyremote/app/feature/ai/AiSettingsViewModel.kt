@@ -54,7 +54,7 @@ class AiSettingsViewModel(private val container: AppContainer) : ViewModel() {
         when (mode) {
             "glm_off" -> extra.put("thinking", JSONObject().put("type", "disabled"))
             "glm_on" -> extra.put("thinking", JSONObject().put("type", "enabled"))
-            "low", "medium", "high" -> extra.put("reasoning_effort", mode)
+            "low", "medium", "high", "max" -> extra.put("reasoning_effort", mode)
             else -> {
                 extra.remove("thinking")
                 extra.remove("reasoning_effort")

@@ -315,13 +315,13 @@ private fun DropdownField(
 }
 
 private val GLM_THINKING_MODES = listOf("default", "glm_off", "glm_on")
-private val REASONING_MODES = listOf("default", "low", "medium", "high")
+private val REASONING_MODES = listOf("default", "low", "medium", "high", "max")
 
 @Composable
 private fun thinkingLabel(mode: String): String = when (mode) {
     "glm_off" -> stringResource(R.string.ai_thinking_glm_off)
     "glm_on" -> stringResource(R.string.ai_thinking_glm_on)
-    "low", "medium", "high" -> stringResource(R.string.ai_thinking_reasoning, mode)
+    "low", "medium", "high", "max" -> stringResource(R.string.ai_thinking_reasoning, mode)
     else -> stringResource(R.string.ai_thinking_default)
 }
 
@@ -333,10 +333,13 @@ private data class AiProviderPreset(
 )
 
 private val AI_PRESETS = listOf(
-    AiProviderPreset("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat"),
-    AiProviderPreset("智谱 GLM", "https://open.bigmodel.cn/api/paas/v4", "glm-4.5", "glm-4.5v"),
-    AiProviderPreset("OpenAI", "https://api.openai.com/v1", "gpt-4o-mini", "gpt-4o-mini"),
-    AiProviderPreset("Qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus", "qwen-vl-max"),
-    AiProviderPreset("Moonshot", "https://api.moonshot.cn/v1", "moonshot-v1-8k"),
-    AiProviderPreset("Ollama", "http://10.0.2.2:11434/v1", "qwen2.5", "llava"),
+    AiProviderPreset("DeepSeek", "https://api.deepseek.com/v1", "deepseek-flash", "deepseek-flash"),
+    AiProviderPreset("智谱 GLM", "https://open.bigmodel.cn/api/paas/v4", "glm-5.3", "glm-5.3-flash"),
+    AiProviderPreset("OpenAI", "https://api.openai.com/v1", "gpt-5.5", "gpt-5.5"),
+    AiProviderPreset(
+        "Qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "qwen3.8-max", "qwen3.5-397b-a17b",
+    ),
+    AiProviderPreset("Moonshot", "https://api.moonshot.cn/v1", "kimi-k2.6", "kimi-k2.6"),
+    AiProviderPreset("Ollama", "http://10.0.2.2:11434/v1", "qwen3.5", "qwen3.5"),
 )

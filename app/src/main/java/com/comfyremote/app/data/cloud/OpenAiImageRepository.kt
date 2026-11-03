@@ -104,7 +104,10 @@ class OpenAiImageRepository(
         val sizes = if (dallE) {
             listOf("1024x1024", "1792x1024", "1024x1792")
         } else {
-            listOf("1024x1024", "1536x1024", "1024x1536", "auto")
+            listOf(
+                "1024x1024", "1536x1024", "1024x1536",
+                "2048x2048", "2048x1152", "1152x2048", "auto",
+            )
         }
         val rules = mutableListOf(
             CloudInputRule("prompt", "prompt", required = true),
@@ -114,7 +117,8 @@ class OpenAiImageRepository(
                 "enum",
                 required = false,
                 defaultValue = if (dallE) "standard" else "auto",
-                options = if (dallE) listOf("standard", "hd") else listOf("auto", "low", "medium", "high"),
+                options = if (dallE) listOf("standard", "hd")
+                else listOf("auto", "low", "medium", "high", "xhigh", "max"),
             ),
             CloudInputRule(
                 "n",
@@ -143,9 +147,12 @@ class OpenAiImageRepository(
         return rules
     }
 
-    private fun displayName(model: String): String = when (model) {
-        "gpt-image-1" -> "GPT Image 1"
-        "dall-e-3" -> "DALL·E 3"
+    private fun displayName(model: String): String = when {
+        model.startsWith("gpt-image-2.5-flare") -> "GPT Image 2.5 Flare"
+        model.startsWith("gpt-image-2.5-sunburst") -> "GPT Image 2.5 Sunburst"
+        model.startsWith("gpt-image-2") -> "GPT Image 2"
+        model.startsWith("gpt-image-1.5") -> "GPT Image 1.5"
+        model == "dall-e-3" -> "DALL·E 3"
         else -> model
     }
 
@@ -155,6 +162,12 @@ class OpenAiImageRepository(
     companion object {
         const val PROVIDER = "openai"
         const val DEFAULT_BASE = "https://api.openai.com/v1"
-        val MODELS = listOf("gpt-image-1", "dall-e-3")
+        val MODELS = listOf(
+            "gpt-image-2.5-flare",
+            "gpt-image-2.5-sunburst",
+            "gpt-image-2",
+            "gpt-image-1.5",
+            "chatgpt-image-latest",
+        )
     }
 }

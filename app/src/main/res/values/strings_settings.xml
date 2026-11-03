@@ -18,6 +18,12 @@
     <string name="cloud_provider_api_key">API key / token</string>
     <string name="cloud_provider_models">Models</string>
     <string name="cloud_provider_models_hint">Comma-separated model IDs; leave blank to query /models</string>
+    <string name="cloud_template_config">Template config (JSON)</string>
+    <string name="cloud_template_config_hint">submitUrl, bodyTemplate with {{field}}, taskIdPath, statusUrlTemplate, resultUrlPath, fields</string>
+    <string name="cloud_template_sample_request">Sample request JSON (optional)</string>
+    <string name="cloud_template_sample_response">Sample response JSON (optional)</string>
+    <string name="cloud_template_infer">Infer fields from samples</string>
+    <string name="cloud_template_inferred">Config inferred; review and edit before saving</string>
     <string name="settings_update">Software update</string>
     <string name="settings_update_detail">Check and install GitHub Releases</string>
     <string name="settings_version">Version</string>

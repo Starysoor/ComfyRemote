@@ -18,6 +18,12 @@
     <string name="cloud_provider_api_key">API Key / Token</string>
     <string name="cloud_provider_models">模型列表</string>
     <string name="cloud_provider_models_hint">逗号分隔的模型 ID；留空则请求 /models</string>
+    <string name="cloud_template_config">模板配置（JSON）</string>
+    <string name="cloud_template_config_hint">submitUrl、带 {{field}} 的 bodyTemplate、taskIdPath、statusUrlTemplate、resultUrlPath、fields</string>
+    <string name="cloud_template_sample_request">示例请求 JSON（可选）</string>
+    <string name="cloud_template_sample_response">示例响应 JSON（可选）</string>
+    <string name="cloud_template_infer">从示例推断字段</string>
+    <string name="cloud_template_inferred">已生成配置，请检查后再保存</string>
     <string name="settings_update">软件更新</string>
     <string name="settings_update_detail">检查并安装 GitHub Release</string>
     <string name="settings_version">版本</string>

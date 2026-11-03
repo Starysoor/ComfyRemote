@@ -8,9 +8,11 @@ import com.comfyremote.app.data.cloud.CloudInputStore
 import com.comfyremote.app.data.cloud.CloudProviderSettingsStore
 import com.comfyremote.app.data.cloud.CloudSpendStore
 import com.comfyremote.app.data.cloud.CustomOpenAiRepository
+import com.comfyremote.app.data.cloud.CustomTemplateRepository
 import com.comfyremote.app.data.cloud.GeminiImageRepository
 import com.comfyremote.app.data.cloud.OpenAiImageRepository
 import com.comfyremote.app.data.cloud.ReplicateRepository
+import com.comfyremote.app.data.cloud.SiliconFlowRepository
 import com.comfyremote.app.data.discovery.LanServerDiscovery
 import com.comfyremote.app.data.generation.CloudSubmissionGate
 import com.comfyremote.app.data.generation.GenerationManager
@@ -53,14 +55,18 @@ class AppContainer(val app: Application) {
     val openAiImageRepository = OpenAiImageRepository(cloudProviderSettingsStore)
     val geminiImageRepository = GeminiImageRepository(cloudProviderSettingsStore)
     val replicateRepository = ReplicateRepository(cloudProviderSettingsStore)
+    val siliconFlowRepository = SiliconFlowRepository(cloudProviderSettingsStore)
     val customOpenAiRepository = CustomOpenAiRepository(cloudProviderSettingsStore)
+    val customTemplateRepository = CustomTemplateRepository(cloudProviderSettingsStore)
     val cloudProviders = com.comfyremote.app.data.cloud.CloudProviderRegistry(
         listOf(
             autoDlRepository,
             openAiImageRepository,
             geminiImageRepository,
             replicateRepository,
+            siliconFlowRepository,
             customOpenAiRepository,
+            customTemplateRepository,
         )
     )
     val cloudInputStore = CloudInputStore(app)

@@ -20,12 +20,15 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.comfyremote.app.R
 import com.comfyremote.app.data.cloud.CloudProvider
 import com.comfyremote.app.data.cloud.CloudProviderSettingsStore
+import com.comfyremote.app.data.cloud.CustomTemplateRepository
+import com.comfyremote.app.data.cloud.TemplateValues
 import com.comfyremote.app.ui.Spacing
 import com.comfyremote.app.ui.components.BottomActionBar
 import com.comfyremote.app.ui.components.DetailTopBar
 import com.comfyremote.app.ui.components.IrisPrimaryButton
 import com.comfyremote.app.ui.components.IrisScaffold
 import com.comfyremote.app.ui.components.IrisTextField
+import com.comfyremote.app.ui.components.TextAction
 
 @Composable
 fun CloudProviderSettingsScreen(
@@ -40,6 +43,12 @@ fun CloudProviderSettingsScreen(
     var token by remember(provider.id) { mutableStateOf(account.token) }
     var models by remember(provider.id) { mutableStateOf(account.models.joinToString(", ")) }
     var saved by remember(provider.id) { mutableStateOf(false) }
+    val isTemplate = provider.id == CustomTemplateRepository.PROVIDER
+    var configText by remember(provider.id) { mutableStateOf(settings.extra(provider.id)) }
+    var sampleRequest by remember(provider.id) { mutableStateOf("") }
+    var sampleResponse by remember(provider.id) { mutableStateOf("") }
+    var inferNote by remember(provider.id) { mutableStateOf<String?>(null) }
+    val inferredText = stringResource(R.string.cloud_template_inferred)
 
     IrisScaffold(
         topBar = { DetailTopBar(title = provider.label, onBack = onBack) },
@@ -54,6 +63,7 @@ fun CloudProviderSettingsScreen(
                             token,
                             models.split(',', '\n').map(String::trim).filter(String::isNotBlank),
                         )
+                        if (isTemplate) settings.saveExtra(provider.id, configText)
                         saved = true
                     },
                 )
@@ -73,14 +83,16 @@ fun CloudProviderSettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            IrisTextField(
-                value = baseUrl,
-                onValueChange = { baseUrl = it; saved = false },
-                label = stringResource(R.string.cloud_provider_base_url),
-                supportingText = stringResource(R.string.cloud_provider_base_url_hint),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (!isTemplate) {
+                IrisTextField(
+                    value = baseUrl,
+                    onValueChange = { baseUrl = it; saved = false },
+                    label = stringResource(R.string.cloud_provider_base_url),
+                    supportingText = stringResource(R.string.cloud_provider_base_url_hint),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             IrisTextField(
                 value = token,
                 onValueChange = { token = it; saved = false },
@@ -89,13 +101,53 @@ fun CloudProviderSettingsScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            IrisTextField(
-                value = models,
-                onValueChange = { models = it; saved = false },
-                label = stringResource(R.string.cloud_provider_models),
-                supportingText = stringResource(R.string.cloud_provider_models_hint),
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (isTemplate) {
+                IrisTextField(
+                    value = configText,
+                    onValueChange = { configText = it; saved = false; inferNote = null },
+                    label = stringResource(R.string.cloud_template_config),
+                    supportingText = stringResource(R.string.cloud_template_config_hint),
+                    minLines = 10,
+                    maxLines = 24,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                IrisTextField(
+                    value = sampleRequest,
+                    onValueChange = { sampleRequest = it; inferNote = null },
+                    label = stringResource(R.string.cloud_template_sample_request),
+                    minLines = 3,
+                    maxLines = 8,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                IrisTextField(
+                    value = sampleResponse,
+                    onValueChange = { sampleResponse = it; inferNote = null },
+                    label = stringResource(R.string.cloud_template_sample_response),
+                    minLines = 3,
+                    maxLines = 8,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                TextAction(
+                    text = stringResource(R.string.cloud_template_infer),
+                    onClick = {
+                        val inferred = TemplateValues.inferConfig(sampleRequest, sampleResponse).toString(2)
+                        configText = inferred
+                        inferNote = inferredText
+                        saved = false
+                    },
+                )
+                inferNote?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                }
+            } else {
+                IrisTextField(
+                    value = models,
+                    onValueChange = { models = it; saved = false },
+                    label = stringResource(R.string.cloud_provider_models),
+                    supportingText = stringResource(R.string.cloud_provider_models_hint),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             if (saved) {
                 Text(
                     stringResource(R.string.ai_saved),

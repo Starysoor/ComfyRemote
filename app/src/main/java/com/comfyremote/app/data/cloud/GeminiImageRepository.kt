@@ -50,53 +50,11 @@ class GeminiImageRepository(
         val prompt = body.optString("prompt").trim()
         if (prompt.isBlank()) throw ComfyException("Prompt is required")
         val aspect = body.optString("aspect_ratio").ifBlank { "1:1" }
-        val items = if (workflowId.startsWith("imagen")) {
-            submitImagen(base, workflowId, prompt, aspect, body, headers)
-        } else {
-            submitGemini(base, workflowId, prompt, aspect, headers)
-        }
+        val items = submitGemini(base, workflowId, prompt, aspect, body, headers)
         if (items.isEmpty()) throw ComfyException("Provider returned no images")
         val taskId = UUID.randomUUID().toString()
         results[taskId] = CloudTaskResult(taskId, "SUCCESS", items, "", 0)
         return taskId
-    }
-
-    private fun submitImagen(
-        base: String,
-        model: String,
-        prompt: String,
-        aspect: String,
-        body: JSONObject,
-        headers: Map<String, String>,
-    ): List<CloudResult> {
-        val parameters = JSONObject()
-            .put("sampleCount", body.optInt("sample_count", 1).coerceIn(1, 4))
-            .put("aspectRatio", aspect)
-        body.optString("person_generation").takeIf { it.isNotBlank() }?.let {
-            parameters.put("personGeneration", it)
-        }
-        val payload = JSONObject()
-            .put("instances", JSONArray().put(JSONObject().put("prompt", prompt)))
-            .put("parameters", parameters)
-        val response = CloudHttp.postJson(
-            "${base}/models/${model}:predict",
-            payload,
-            headers,
-        )
-        val predictions = response.optJSONArray("predictions")
-            ?: throw ComfyException(CloudHttp.errorMessage(response, "Imagen returned no predictions"))
-        return (0 until predictions.length()).mapNotNull { index ->
-            val item = predictions.optJSONObject(index) ?: return@mapNotNull null
-            val data = item.optString("bytesBase64Encoded").takeIf { it.isNotBlank() }
-                ?: return@mapNotNull null
-            val mime = item.optString("mimeType").ifBlank { "image/png" }
-            CloudResult(
-                url = "data:$mime;base64,$data",
-                type = "image",
-                fileType = mime.substringAfter('/', "png"),
-                outputType = "output",
-            )
-        }
     }
 
     private fun submitGemini(
@@ -104,8 +62,13 @@ class GeminiImageRepository(
         model: String,
         prompt: String,
         aspect: String,
+        body: JSONObject,
         headers: Map<String, String>,
     ): List<CloudResult> {
+        val imageConfig = JSONObject().put("aspectRatio", aspect)
+        body.optString("image_size").takeIf { it.isNotBlank() }?.let {
+            imageConfig.put("imageSize", it)
+        }
         val payload = JSONObject()
             .put(
                 "contents",
@@ -119,8 +82,8 @@ class GeminiImageRepository(
             .put(
                 "generationConfig",
                 JSONObject()
-                    .put("responseModalities", JSONArray().put("TEXT").put("IMAGE"))
-                    .put("imageConfig", JSONObject().put("aspectRatio", aspect)),
+                    .put("responseModalities", JSONArray().put("IMAGE"))
+                    .put("imageConfig", imageConfig),
             )
         val response = CloudHttp.postJson("${base}/models/${model}:generateContent", payload, headers)
         val parts = response.optJSONArray("candidates")
@@ -153,36 +116,34 @@ class GeminiImageRepository(
     }
 
     private fun rulesFor(model: String): List<CloudInputRule> {
-        val imagen = model.startsWith("imagen")
         val rules = mutableListOf(
             CloudInputRule("prompt", "prompt", required = true),
             CloudInputRule(
                 "aspect_ratio", "enum", required = false, defaultValue = "1:1",
-                options = listOf("1:1", "3:4", "4:3", "9:16", "16:9"),
+                options = listOf("1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9"),
             ),
         )
-        if (imagen) {
-            rules += CloudInputRule(
-                "sample_count", "integer", required = false, defaultValue = "1",
-                min = 1.0, max = 4.0,
-            )
-            rules += CloudInputRule(
-                "person_generation", "enum", required = false, defaultValue = "allow_adult",
-                options = listOf("dont_allow", "allow_adult"),
-            )
-        }
+        val sizes = if (model.contains("lite")) listOf("1K") else listOf("1K", "2K", "4K")
+        rules += CloudInputRule(
+            "image_size", "enum", required = false, defaultValue = sizes.first(), options = sizes,
+        )
         return rules
     }
 
     private fun displayName(model: String): String = when {
-        model.startsWith("imagen") -> "Imagen 4"
-        model.contains("flash-image") -> "Gemini Flash Image"
+        model == "gemini-3-pro-image" -> "Gemini 3 Pro Image (Nano Banana Pro)"
+        model.contains("flash-lite-image") -> "Gemini 3.1 Flash Lite Image"
+        model.contains("flash-image") -> "Gemini 3.1 Flash Image (Nano Banana 2)"
         else -> model
     }
 
     companion object {
         const val PROVIDER = "gemini"
         const val DEFAULT_BASE = "https://generativelanguage.googleapis.com/v1beta"
-        val MODELS = listOf("imagen-4.0-generate-001", "gemini-2.5-flash-image")
+        val MODELS = listOf(
+            "gemini-3.1-flash-image",
+            "gemini-3.1-flash-lite-image",
+            "gemini-3-pro-image",
+        )
     }
 }

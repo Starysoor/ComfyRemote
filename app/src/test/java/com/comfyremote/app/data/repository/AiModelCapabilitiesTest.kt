@@ -11,6 +11,10 @@ class AiModelCapabilitiesTest {
             ReasoningKind.GLM_THINKING,
             AiModelCapabilities.reasoningKind("https://open.bigmodel.cn/api/paas/v4", "glm-4.6"),
         )
+        assertEquals(
+            ReasoningKind.REASONING_EFFORT,
+            AiModelCapabilities.reasoningKind("https://open.bigmodel.cn/api/paas/v4", "glm-5.3"),
+        )
     }
 
     @Test
@@ -21,7 +25,11 @@ class AiModelCapabilitiesTest {
         )
         assertEquals(
             ReasoningKind.REASONING_EFFORT,
-            AiModelCapabilities.reasoningKind("https://api.openai.com/v1", "o3-mini"),
+            AiModelCapabilities.reasoningKind("https://api.openai.com/v1", "gpt-5.5"),
+        )
+        assertEquals(
+            ReasoningKind.REASONING_EFFORT,
+            AiModelCapabilities.reasoningKind("https://api.deepseek.com/v1", "deepseek-flash"),
         )
     }
 
