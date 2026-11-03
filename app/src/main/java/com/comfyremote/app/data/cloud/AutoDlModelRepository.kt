@@ -371,7 +371,10 @@ class AutoDlModelRepository(
             "Qwen-Image",
             "Z-Image-Turbo",
             "nano-banana-2",
+            "nano-banana-2.1",
             "doubao-seedream-5-0-flash",
+            "gemini-2.5-flash-image",
+            "gemini-3.1-flash-image-preview",
         )
         val VIDEO_MODELS = listOf(
             "wan3.0-video-prime",
