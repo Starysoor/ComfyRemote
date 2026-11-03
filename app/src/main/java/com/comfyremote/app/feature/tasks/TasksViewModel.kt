@@ -75,12 +75,24 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
 
     fun delete(id: String) { container.generationManager.deleteTask(id) }
     fun deleteFinished() { container.generationManager.deleteFinished() }
-    fun cancel(id: String) { viewModelScope.launch { container.generationManager.cancel(id) } }
+    fun cancel(id: String) {
+        viewModelScope.launch {
+            val outcome = container.generationManager.cancel(id)
+            if (!outcome.cancelled && outcome.error != null) {
+                _message.value = AppStrings.get(R.string.tasks_msg_cancel_failed, outcome.error)
+            }
+        }
+    }
 
     fun cancelQueued() {
         viewModelScope.launch {
-            container.generationManager.cancelQueued(_serverUrl.value)
-            _message.value = AppStrings.get(R.string.tasks_msg_queued_cancelled)
+            val outcomes = container.generationManager.cancelQueued(_serverUrl.value)
+            val failed = outcomes.count { !it.cancelled && it.error != null }
+            _message.value = if (failed > 0) {
+                AppStrings.get(R.string.tasks_msg_cancel_partial, failed)
+            } else {
+                AppStrings.get(R.string.tasks_msg_queued_cancelled)
+            }
         }
     }
 

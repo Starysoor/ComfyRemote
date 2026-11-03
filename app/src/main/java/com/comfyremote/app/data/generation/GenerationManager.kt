@@ -104,57 +104,93 @@ class GenerationManager(
         if (_localQueuePaused.value) resumeLocalQueue() else pauseLocalQueue()
     }
 
-    suspend fun cancel(taskId: String) {
-        val task = _tasks.value.firstOrNull { it.taskId == taskId } ?: return
-        if (!task.isActive || task.phase == GenerationPhase.CANCELLING) return
+    suspend fun cancel(taskId: String): CancelOutcome {
+        val task = _tasks.value.firstOrNull { it.taskId == taskId }
+            ?: return CancelOutcome(taskId, false, "Task not found")
+        if (!task.isActive || task.phase == GenerationPhase.CANCELLING) {
+            return CancelOutcome(taskId, false)
+        }
 
-        if (task.localPending) {
+        val cloud = task.request.provider == AutoDlConfig.PROVIDER
+        return when (cancelActionFor(task.phase, cloud, task.localPending)) {
+            CancelAction.LOCAL_PENDING -> {
+                patch(taskId) {
+                    it.copy(
+                        localPending = false,
+                        phase = GenerationPhase.CANCELLED,
+                        completedAt = System.currentTimeMillis(),
+                        recoveryNote = "Removed from local queue",
+                        queuePosition = null,
+                        progress = null,
+                        preview = null,
+                    )
+                }
+                pumpLocalQueue()
+                CancelOutcome(taskId, true)
+            }
+            CancelAction.CANCEL_JOB -> {
+                patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }
+                finishCancel(taskId)
+                CancelOutcome(taskId, true)
+            }
+            CancelAction.DELETE_QUEUE -> {
+                val promptId = task.promptId
+                if (promptId.isNullOrBlank()) {
+                    return CancelOutcome(taskId, false, "Missing server prompt id; task remains queued")
+                }
+                val result = runCatching { ComfyApi(task.request.serverUrl).deleteFromQueue(promptId) }
+                if (result.isFailure) {
+                    val message = result.exceptionOrNull()?.message ?: "Server queue delete failed"
+                    patch(taskId) { it.copy(recoveryNote = "Server queue delete failed: $message") }
+                    return CancelOutcome(taskId, false, message)
+                }
+                patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }
+                finishCancel(taskId)
+                CancelOutcome(taskId, true)
+            }
+            CancelAction.INTERRUPT_SERVER -> {
+                // ComfyUI /interrupt is server-scoped, not a per-prompt cancel.
+                val result = runCatching { ComfyApi(task.request.serverUrl).interrupt() }
+                if (result.isFailure) {
+                    val message = result.exceptionOrNull()?.message ?: "Server interrupt failed"
+                    patch(taskId) {
+                        it.copy(
+                            phase = GenerationPhase.RUNNING,
+                            recoveryNote = "Interrupt failed: $message",
+                        )
+                    }
+                    return CancelOutcome(taskId, false, message)
+                }
+                patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }
+                finishCancel(taskId)
+                CancelOutcome(taskId, true)
+            }
+            CancelAction.NOT_CANCELLABLE -> CancelOutcome(taskId, false)
+        }
+    }
+
+    private fun finishCancel(taskId: String) {
+        val job = jobs[taskId]
+        if (job != null) {
+            job.cancel()
+        } else {
             patch(taskId) {
                 it.copy(
-                    localPending = false,
                     phase = GenerationPhase.CANCELLED,
                     completedAt = System.currentTimeMillis(),
-                    recoveryNote = "Removed from local queue",
+                    localPending = false,
                     queuePosition = null,
                     progress = null,
                     preview = null,
                 )
             }
-            pumpLocalQueue()
-            return
-        }
-
-        patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }
-        val cloud = task.request.provider == AutoDlConfig.PROVIDER
-        when (task.phase) {
-            GenerationPhase.PREPARING, GenerationPhase.QUEUEING -> jobs[taskId]?.cancel()
-            GenerationPhase.QUEUED -> {
-                if (!cloud) {
-                    task.promptId?.let { promptId ->
-                        runCatching { ComfyApi(task.request.serverUrl).deleteFromQueue(promptId) }
-                    }
-                }
-                jobs[taskId]?.cancel()
-            }
-            GenerationPhase.RUNNING -> {
-                if (cloud) {
-                    // AutoDL's hosted API has no public per-task cancel endpoint.
-                    // Stop tracking locally; the remote job may still finish/bill.
-                    jobs[taskId]?.cancel()
-                } else {
-                    // ComfyUI interrupt is server-scoped. Always target this task's original server.
-                    runCatching { ComfyApi(task.request.serverUrl).interrupt() }
-                }
-            }
-            else -> Unit
         }
     }
 
-    suspend fun cancelMany(taskIds: Collection<String>) {
-        taskIds.distinct().forEach { cancel(it) }
-    }
+    suspend fun cancelMany(taskIds: Collection<String>): List<CancelOutcome> =
+        taskIds.distinct().map { cancel(it) }
 
-    suspend fun cancelQueued(serverUrl: String? = null) {
+    suspend fun cancelQueued(serverUrl: String? = null): List<CancelOutcome> {
         val ids = _tasks.value
             .filter { task ->
                 task.isActive &&
@@ -163,7 +199,7 @@ class GenerationManager(
                         task.phase == GenerationPhase.QUEUEING || task.phase == GenerationPhase.QUEUED)
             }
             .map { it.taskId }
-        cancelMany(ids)
+        return cancelMany(ids)
     }
 
     /** Removes a finished task from the list (user-visible delete). */

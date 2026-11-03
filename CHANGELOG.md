@@ -13,6 +13,7 @@
 
 - Cloud spend is recorded only after the provider returns a remote task id, with recovery deduplication.
 - Local ComfyUI video/audio downloads stream to disk; partial result downloads are reported.
+- Local QUEUED cancel only succeeds after ComfyUI confirms queue removal; RUNNING cancel warns that `/interrupt` is server-wide and surfaces failures instead of silently marking CANCELLED.
 - Result viewer, gallery save and share use one media-type resolver (AVI/3GP/MKV included); failed writes clean up their MediaStore entry.
 - API-format workflows expose INT/FLOAT/BOOLEAN/COMBO parameters and skip linked inputs.
 - Deleting a server clears its saved last URL; deleting a running storyboard shot/project is blocked and orphan frame files are collected.

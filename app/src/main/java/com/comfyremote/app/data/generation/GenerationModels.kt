@@ -47,6 +47,19 @@ data class GenerationError(
 
 class GenerationTimeoutException(message: String) : ComfyException(message)
 
+enum class CancelAction { LOCAL_PENDING, CANCEL_JOB, DELETE_QUEUE, INTERRUPT_SERVER, NOT_CANCELLABLE }
+
+/** Local QUEUED/RUNNING cancels need an explicit server action; cloud cancels can only stop tracking. */
+fun cancelActionFor(phase: GenerationPhase, cloud: Boolean, localPending: Boolean): CancelAction = when {
+    localPending -> CancelAction.LOCAL_PENDING
+    phase == GenerationPhase.PREPARING || phase == GenerationPhase.QUEUEING -> CancelAction.CANCEL_JOB
+    phase == GenerationPhase.QUEUED -> if (cloud) CancelAction.CANCEL_JOB else CancelAction.DELETE_QUEUE
+    phase == GenerationPhase.RUNNING -> if (cloud) CancelAction.CANCEL_JOB else CancelAction.INTERRUPT_SERVER
+    else -> CancelAction.NOT_CANCELLABLE
+}
+
+data class CancelOutcome(val taskId: String, val cancelled: Boolean, val error: String? = null)
+
 data class GenerationTask(
     val taskId: String,
     val request: GenerationRequest,

@@ -90,6 +90,7 @@ fun TaskDetailScreen(
     var viewingPath by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmCloudCancel by remember { mutableStateOf(false) }
+    var confirmLocalInterrupt by remember { mutableStateOf(false) }
 
     LaunchedEffect(message) {
         message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() }
@@ -134,8 +135,11 @@ fun TaskDetailScreen(
                 TaskActions(
                     task = task,
                     onCancel = {
-                        if (task.request.provider == AutoDlConfig.PROVIDER) confirmCloudCancel = true
-                        else viewModel.cancel(task.taskId)
+                        when {
+                            task.request.provider == AutoDlConfig.PROVIDER -> confirmCloudCancel = true
+                            task.phase == GenerationPhase.RUNNING -> confirmLocalInterrupt = true
+                            else -> viewModel.cancel(task.taskId)
+                        }
                     },
                     onRetry = { viewModel.retry(task.taskId) },
                     onReuse = { viewModel.prepareReuse(task.taskId)?.let(onReuse) },
@@ -164,6 +168,24 @@ fun TaskDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmCloudCancel = false }) { Text(stringResource(R.string.tasks_keep_waiting)) }
+            },
+        )
+    }
+    if (confirmLocalInterrupt) {
+        AlertDialog(
+            onDismissRequest = { confirmLocalInterrupt = false },
+            title = { Text(stringResource(R.string.tasks_local_interrupt_title)) },
+            text = { Text(stringResource(R.string.tasks_local_interrupt_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmLocalInterrupt = false
+                    task?.let { viewModel.cancel(it.taskId) }
+                }) { Text(stringResource(R.string.tasks_cancel_anyway), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmLocalInterrupt = false }) {
+                    Text(stringResource(R.string.tasks_keep_waiting))
+                }
             },
         )
     }
