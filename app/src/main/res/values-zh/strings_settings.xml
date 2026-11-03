@@ -44,6 +44,7 @@
     <string name="cloud_spend_today">今日</string>
     <string name="cloud_spend_month">本月</string>
     <string name="cloud_spend_units">%1$d 单位</string>
+    <string name="cloud_spend_provider_month">本月 · %1$d 单位</string>
     <string name="cloud_spend_summary_note">根据本地提交记录估算，不是厂商账单。</string>
     <string name="cloud_clear_spend_confirm_title">清除本地预估消耗？</string>
     <string name="cloud_clear_spend_confirm_body">只会删除本地记录，无法恢复。</string>

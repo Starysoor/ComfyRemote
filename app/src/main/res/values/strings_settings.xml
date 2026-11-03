@@ -44,6 +44,7 @@
     <string name="cloud_spend_today">Today</string>
     <string name="cloud_spend_month">This month</string>
     <string name="cloud_spend_units">%1$d units</string>
+    <string name="cloud_spend_provider_month">This month · %1$d units</string>
     <string name="cloud_spend_summary_note">Based on local submissions; not a provider bill.</string>
     <string name="cloud_clear_spend_confirm_title">Clear local spend estimate?</string>
     <string name="cloud_clear_spend_confirm_body">This removes local entries only and cannot be undone.</string>

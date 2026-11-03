@@ -115,7 +115,7 @@ fun CloudServicesScreen(
                             }
                         state.spendByProvider[provider.id]?.takeIf { it > 0 }?.let { spend ->
                             Text(
-                                stringResource(R.string.cloud_spend_units, spend),
+                                stringResource(R.string.cloud_spend_provider_month, spend),
                                 style = IrisType.metaSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
