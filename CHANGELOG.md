@@ -12,7 +12,7 @@
 
 ### Verified
 
-- Emulator with real AutoDL Models and SiliconFlow keys: AutoDL `gpt-image-2` and SiliconFlow `Kwai-Kolors/Kolors` both completed; AutoDL model list shows only six media models; no foreground-service crash on submit.
+- Emulator with real AutoDL Models and SiliconFlow keys: AutoDL `gpt-image-2` text/reference generation, SiliconFlow `Kwai-Kolors/Kolors` and reference-image `Qwen-Image-Edit-2509` all completed; AutoDL model list shows only six media models; no foreground-service crash on submit.
 - Version `2.3.2` (versionCode 28).
 
 ## 2.3.1 — 2026-11-04
