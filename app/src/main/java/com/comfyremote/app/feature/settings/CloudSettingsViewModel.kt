@@ -21,6 +21,7 @@ import kotlinx.coroutines.withContext
 data class CloudSettingsUiState(
     val token: String = "",
     val configured: Boolean = false,
+    val enabled: Boolean = true,
     val loading: Boolean = false,
     val error: String? = null,
     val workflows: List<CloudWorkflowSummary> = emptyList(),
@@ -37,6 +38,7 @@ class CloudSettingsViewModel(private val container: AppContainer) : ViewModel() 
         CloudSettingsUiState(
             token = container.autoDlSettingsStore.token().orEmpty(),
             configured = container.autoDlRepository.configured(),
+            enabled = container.cloudProviders.isEnabled(AutoDlConfig.PROVIDER),
             defaultVideoId = container.appSettingsStore.settings.value.defaultVideoWorkflowId,
         )
     )
@@ -59,12 +61,37 @@ class CloudSettingsViewModel(private val container: AppContainer) : ViewModel() 
     fun updateToken(value: String) = _state.update { it.copy(token = value, message = null) }
 
     fun saveToken() {
+        val wasConfigured = container.autoDlRepository.configured()
         container.autoDlSettingsStore.saveToken(_state.value.token)
+        if (!wasConfigured && container.autoDlRepository.configured()) {
+            container.cloudProviderSettingsStore.setProviderEnabled(AutoDlConfig.PROVIDER, true)
+        }
         _state.update {
             it.copy(
                 configured = container.autoDlRepository.configured(),
+                enabled = container.cloudProviders.isEnabled(AutoDlConfig.PROVIDER),
                 health = null,
                 message = AppStrings.get(R.string.settings_cloud_token_saved),
+            )
+        }
+    }
+
+    fun setEnabled(enabled: Boolean) {
+        container.cloudProviderSettingsStore.setProviderEnabled(AutoDlConfig.PROVIDER, enabled)
+        _state.update { it.copy(enabled = container.cloudProviders.isEnabled(AutoDlConfig.PROVIDER)) }
+    }
+
+    fun clearToken() {
+        container.autoDlSettingsStore.saveToken("")
+        container.cloudProviderSettingsStore.setProviderEnabled(AutoDlConfig.PROVIDER, false)
+        _state.update {
+            it.copy(
+                token = "",
+                configured = false,
+                enabled = false,
+                health = null,
+                workflows = emptyList(),
+                message = AppStrings.get(R.string.cloud_provider_disconnected),
             )
         }
     }
@@ -76,6 +103,18 @@ class CloudSettingsViewModel(private val container: AppContainer) : ViewModel() 
 
     fun refresh() {
         if (_state.value.loading) return
+        if (!container.autoDlRepository.configured()) {
+            _state.update {
+                it.copy(
+                    loading = false,
+                    workflows = emptyList(),
+                    configured = false,
+                    enabled = container.cloudProviders.isEnabled(AutoDlConfig.PROVIDER),
+                    error = null,
+                )
+            }
+            return
+        }
         _state.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
             runCatching { container.autoDlRepository.catalog(force = true) }

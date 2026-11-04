@@ -1,0 +1,165 @@
+package com.comfyremote.app.data.cloud
+
+/**
+ * The editable parameters a specific model really exposes. Model capabilities
+ * differ inside one vendor family, so rules are derived from the model id rather
+ * than from a provider-wide template.
+ */
+object CloudModelParameters {
+
+    private val referenceImagePatterns = listOf(
+        "gpt-image",
+        "chatgpt-image",
+        "nano-banana",
+        "qwen-image-edit",
+        "flux-kontext",
+        "seededit",
+        "seedream",
+        "hunyuan-image",
+        "image-edit",
+        "edit-image",
+        "image-to-image",
+        "img2img",
+        "i2i",
+    )
+
+    /** True when the model accepts a reference/input image in addition to text. */
+    fun supportsReferenceImage(model: String): Boolean {
+        val lower = model.lowercase()
+        if (lower.startsWith("gemini") && "image" in lower) return true
+        return referenceImagePatterns.any { it in lower }
+    }
+
+    fun kindOf(model: String): String {
+        val lower = model.lowercase()
+        return if (listOf("t2v", "i2v", "video", "wan2").any { it in lower }) "video" else "image"
+    }
+
+    /**
+     * OpenAI-compatible Images parameters. GPT Image models accept an input
+     * image through `/images/edits`; DALL·E 3 explicitly does not.
+     */
+    fun openAiRules(model: String): List<CloudInputRule> {
+        val gptImage = model.startsWith("gpt-image") || model.startsWith("chatgpt-image")
+        val dallE = model.startsWith("dall-e")
+        val rules = mutableListOf(CloudInputRule("prompt", "prompt", required = true))
+        if (supportsReferenceImage(model)) {
+            rules += CloudInputRule("image", "image", required = false)
+        }
+        if (!gptImage && !dallE) {
+            rules += CloudInputRule(
+                "size", "enum", required = false, defaultValue = "1024x1024",
+                options = listOf("1024x1024", "768x1024", "1024x768", "auto"),
+            )
+            rules += CloudInputRule("n", "integer", required = false, defaultValue = "1", min = 1.0, max = 4.0)
+            return rules
+        }
+        val sizes = if (dallE) {
+            listOf("1024x1024", "1792x1024", "1024x1792")
+        } else {
+            listOf(
+                "1024x1024", "1536x1024", "1024x1536",
+                "2048x2048", "2048x1152", "1152x2048", "auto",
+            )
+        }
+        rules += CloudInputRule("size", "enum", required = false, defaultValue = sizes.first(), options = sizes)
+        val qualities = if (dallE) {
+            listOf("standard", "hd")
+        } else if (model.contains("2.5")) {
+            listOf("auto", "low", "medium", "high", "xhigh", "max")
+        } else {
+            listOf("auto", "low", "medium", "high")
+        }
+        rules += CloudInputRule(
+            "quality", "enum", required = false,
+            defaultValue = if (dallE) "standard" else "auto",
+            options = qualities,
+        )
+        rules += CloudInputRule(
+            "n", "integer", required = false, defaultValue = "1",
+            min = 1.0, max = if (dallE) 1.0 else 4.0,
+        )
+        if (dallE) {
+            rules += CloudInputRule(
+                "style", "enum", required = false, defaultValue = "vivid",
+                options = listOf("vivid", "natural"),
+            )
+        } else {
+            rules += CloudInputRule(
+                "background", "enum", required = false, defaultValue = "opaque",
+                options = listOf("transparent", "opaque", "auto"),
+            )
+            rules += CloudInputRule(
+                "output_format", "enum", required = false, defaultValue = "png",
+                options = listOf("png", "jpeg", "webp"),
+            )
+        }
+        return rules
+    }
+
+    /**
+     * Gemini image models support reference images as inline parts. `imageSize`
+     * is only exposed by the Pro model; the flash/lite endpoints use their
+     * documented default instead of showing an option the API would ignore.
+     */
+    fun geminiRules(model: String): List<CloudInputRule> {
+        val rules = mutableListOf(
+            CloudInputRule("prompt", "prompt", required = true),
+            CloudInputRule(
+                "aspect_ratio", "enum", required = false, defaultValue = "1:1",
+                options = listOf("1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9"),
+            ),
+        )
+        if (supportsReferenceImage(model)) {
+            rules += CloudInputRule("image", "image", required = false)
+        }
+        if (model.contains("3-pro-image")) {
+            rules += CloudInputRule(
+                "image_size", "enum", required = false, defaultValue = "1K",
+                options = listOf("1K", "2K", "4K"),
+            )
+        }
+        rules += CloudInputRule("seed", "integer", required = false)
+        return rules
+    }
+
+    /** SiliconFlow image/video parameters, including edit and I2V inputs. */
+    fun siliconFlowRules(model: String): List<CloudInputRule> {
+        val kind = kindOf(model)
+        val lower = model.lowercase()
+        val editModel = supportsReferenceImage(model)
+        val rules = mutableListOf(CloudInputRule("prompt", "prompt", required = kind != "image" || !editModel))
+        if (kind == "video") {
+            rules += CloudInputRule(
+                "image_size", "enum", required = false, defaultValue = "1280x720",
+                options = listOf("1280x720", "720x1280", "960x960"),
+            )
+            if (lower.contains("i2v")) {
+                rules += CloudInputRule("image", "image", required = true)
+            }
+            rules += CloudInputRule("negative_prompt", "string", required = false)
+            rules += CloudInputRule("seed", "integer", required = false)
+            return rules
+        }
+        if (editModel) {
+            rules += CloudInputRule("image", "image", required = true)
+        }
+        rules += CloudInputRule(
+            "image_size", "enum", required = false, defaultValue = "1024x1024",
+            options = listOf("1024x1024", "768x1024", "1024x768", "512x512", "1280x720", "720x1280"),
+        )
+        rules += CloudInputRule("negative_prompt", "string", required = false)
+        rules += CloudInputRule(
+            "batch_size", "integer", required = false, defaultValue = "1", min = 1.0, max = 4.0,
+        )
+        rules += CloudInputRule(
+            "num_inference_steps", "integer", required = false, defaultValue = "20", min = 20.0, max = 50.0,
+        )
+        rules += CloudInputRule(
+            "guidance_scale", "number", required = false, defaultValue = "7.5", min = 1.0, max = 20.0,
+        )
+        rules += CloudInputRule("seed", "integer", required = false)
+        rules += CloudInputRule("prompt_enhancement", "boolean", required = false, defaultValue = "false")
+        return rules
+    }
+}

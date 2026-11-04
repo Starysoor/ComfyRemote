@@ -62,7 +62,7 @@ class AppContainer(val app: Application) {
     val customOpenAiRepository = CustomOpenAiRepository(cloudProviderSettingsStore, cloudTaskStore)
     val customTemplateRepository = CustomTemplateRepository(cloudProviderSettingsStore, cloudTaskStore)
     val cloudProviders = com.comfyremote.app.data.cloud.CloudProviderRegistry(
-        listOf(
+        providers = listOf(
             autoDlRepository,
             autoDlModelRepository,
             openAiImageRepository,
@@ -71,7 +71,12 @@ class AppContainer(val app: Application) {
             siliconFlowRepository,
             customOpenAiRepository,
             customTemplateRepository,
-        )
+        ),
+        // An explicit switch wins; otherwise a provider is visible only after it
+        // has credentials. This keeps unused providers out of the Cloud tab.
+        isProviderEnabled = { provider ->
+            cloudProviderSettingsStore.providerEnabledOverride(provider.id) ?: provider.configured()
+        },
     )
     val cloudInputStore = CloudInputStore(app)
     val cloudSpendStore = CloudSpendStore(prefs)

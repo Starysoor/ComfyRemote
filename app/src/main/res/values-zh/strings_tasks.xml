@@ -51,7 +51,7 @@
     <string name="tasks_bulk_cancel_cloud_title">取消排队任务？</string>
     <string name="tasks_bulk_cancel_cloud_text">其中 %1$d 个云端任务已提交，取消后可能继续运行并计费。</string>
     <string name="tasks_cloud_cancel_title">取消云端任务？</string>
-    <string name="tasks_cloud_cancel_text">这里只能停止手机端跟踪；AutoDL 平台侧任务可能继续执行并产生费用。</string>
+    <string name="tasks_cloud_cancel_text">这里只能停止手机端跟踪；厂商侧任务可能继续执行并产生费用。</string>
     <string name="tasks_cancel_anyway">仍然取消</string>
     <string name="tasks_keep_waiting">继续等待</string>
     <string name="tasks_delete_title">删除这个任务？</string>

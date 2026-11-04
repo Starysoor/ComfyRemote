@@ -14,6 +14,8 @@ class GenerationTaskCodecTest {
     fun roundTripPreservesRecoverableRequestAndRuntimeState() {
         val request = GenerationRequest(
             id = "task-1",
+            provider = "openai",
+            providerLabel = "OpenAI",
             serverUrl = "http://10.0.0.8:8188",
             workflowPath = "portrait.json",
             workflowName = "Portrait",
@@ -59,6 +61,8 @@ class GenerationTaskCodecTest {
         assertEquals(task.queuePosition, restored.queuePosition)
         assertEquals(task.seedValues, restored.seedValues)
         assertEquals(task.request.serverUrl, restored.request.serverUrl)
+        assertEquals("openai", restored.request.provider)
+        assertEquals("OpenAI", restored.request.providerLabel)
         assertEquals(task.request.fieldValues, restored.request.fieldValues)
         assertEquals(FieldKind.TEXT, restored.request.fields.first().kind)
         assertEquals("CLIPTextEncode", restored.request.convertedPrompt.getJSONObject("1").getString("class_type"))

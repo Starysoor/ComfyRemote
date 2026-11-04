@@ -14,15 +14,13 @@ class OpenAiCompatibleImageRepository(
     override val settingsSummary: String = "Official image models · API key",
     override val pathPrefix: String = "openai:",
     override val baseUrl: String = DEFAULT_BASE,
-    private val models: List<String> = MODELS,
 ) : CloudProvider {
-    override val defaultModels: List<String> get() = models
     override val supportsModelDiscovery: Boolean = true
     override val supportsCustomHeaders: Boolean = true
 
     private val results = ConcurrentHashMap<String, CloudTaskResult>()
 
-    private fun account() = settings.account(id, baseUrl, models)
+    private fun account() = settings.account(id, baseUrl)
 
     override fun configured(): Boolean = account().token.isNotBlank()
 
@@ -41,12 +39,14 @@ class OpenAiCompatibleImageRepository(
     }
 
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
-        val configuredModels = settings.enabledModels(id, account().models.ifEmpty { MODELS })
-        return configuredModels.map { model ->
+        val account = account()
+        if (account.token.isBlank()) return emptyList()
+        val models = pulledModels(settings, id, account.baseUrl, account.token) { discoverModels() }
+        return settings.enabledModels(id, models).map { model ->
             CloudWorkflowSummary(
                 id = model,
                 name = displayName(model),
-                description = "OpenAI ${displayName(model)} image generation",
+                description = "${label} ${displayName(model)} image generation",
                 kind = "image",
                 priceType = "official_api",
             )
@@ -63,22 +63,56 @@ class OpenAiCompatibleImageRepository(
 
     override suspend fun submit(workflowId: String, body: JSONObject): String {
         val account = account()
-        if (account.token.isBlank()) throw ComfyException("Configure an OpenAI API key first")
-        val payload = JSONObject()
-            .put("model", workflowId)
-            .put("prompt", body.optString("prompt"))
-        body.opt("size")?.toString()?.takeIf { it.isNotBlank() }?.let { payload.put("size", it) }
-        body.opt("quality")?.toString()?.takeIf { it.isNotBlank() }?.let { payload.put("quality", it) }
-        body.opt("background")?.toString()?.takeIf { it.isNotBlank() }?.let { payload.put("background", it) }
-        body.opt("output_format")?.toString()?.takeIf { it.isNotBlank() }?.let { payload.put("output_format", it) }
-        body.optInt("n", 1).takeIf { it > 0 }?.let { payload.put("n", it) }
-        val response = CloudHttp.postJson(
-            url = "${account.baseUrl.trimEnd('/')}/images/generations",
-            body = payload,
-            headers = settings.mergeHeaders(id, mapOf("Authorization" to "Bearer ${account.token}")),
-        )
+        if (account.token.isBlank()) throw ComfyException("Configure an ${label} API key first")
+        val headers = settings.mergeHeaders(id, mapOf("Authorization" to "Bearer ${account.token}"))
+        val base = account.baseUrl.trimEnd('/')
+        val reference = body.optString("image").takeIf { it.isNotBlank() }
+        val response = if (reference != null && CloudModelParameters.supportsReferenceImage(workflowId)) {
+            val payload = CloudHttp.imagePayload(reference, headers)
+                ?: throw ComfyException("The reference image could not be read")
+            val fields = linkedMapOf(
+                "model" to workflowId,
+                "prompt" to body.optString("prompt"),
+            )
+            listOf("size", "quality", "background", "output_format").forEach { key ->
+                body.opt(key)?.toString()?.takeIf { it.isNotBlank() }?.let { fields[key] = it }
+            }
+            body.optInt("n", 1).takeIf { it > 0 }?.let { fields["n"] = it.toString() }
+            val extension = when (payload.first) {
+                "image/jpeg" -> "jpg"
+                "image/webp" -> "webp"
+                else -> "png"
+            }
+            CloudHttp.postMultipart(
+                url = "$base/images/edits",
+                fields = fields,
+                files = listOf(
+                    CloudFilePart(
+                        fieldName = "image",
+                        fileName = "reference.$extension",
+                        mime = payload.first,
+                        bytes = payload.second,
+                    )
+                ),
+                headers = headers,
+            )
+        } else {
+            val payload = JSONObject()
+                .put("model", workflowId)
+                .put("prompt", body.optString("prompt"))
+            body.opt("size")?.toString()?.takeIf { it.isNotBlank() }?.let { payload.put("size", it) }
+            body.opt("quality")?.toString()?.takeIf { it.isNotBlank() }?.let { payload.put("quality", it) }
+            body.opt("background")?.toString()?.takeIf { it.isNotBlank() }?.let { payload.put("background", it) }
+            body.opt("output_format")?.toString()?.takeIf { it.isNotBlank() }?.let { payload.put("output_format", it) }
+            body.optInt("n", 1).takeIf { it > 0 }?.let { payload.put("n", it) }
+            CloudHttp.postJson(
+                url = "$base/images/generations",
+                body = payload,
+                headers = headers,
+            )
+        }
         val data = response.optJSONArray("data")
-            ?: throw ComfyException(CloudHttp.errorMessage(response, "OpenAI returned no image data"))
+            ?: throw ComfyException(CloudHttp.errorMessage(response, "${label} returned no image data"))
         val results = (0 until data.length()).mapNotNull { index ->
             val item = data.optJSONObject(index) ?: return@mapNotNull null
             val b64 = item.optString("b64_json").takeIf { it.isNotBlank() }
@@ -96,7 +130,7 @@ class OpenAiCompatibleImageRepository(
                 outputType = "output",
             )
         }
-        if (results.isEmpty()) throw ComfyException("OpenAI returned no images")
+        if (results.isEmpty()) throw ComfyException("${label} returned no images")
         val taskId = UUID.randomUUID().toString()
         val result = CloudTaskResult(
             taskId = taskId,
@@ -126,64 +160,8 @@ class OpenAiCompatibleImageRepository(
         CloudHttp.downloadTo(url, target)
     }
 
-    private fun rulesFor(model: String): List<CloudInputRule> {
-        val gptImage = model.startsWith("gpt-image") || model.startsWith("chatgpt-image")
-        val dallE = model.startsWith("dall-e")
-        if (!gptImage && !dallE) {
-            return listOf(
-                CloudInputRule("prompt", "prompt", required = true),
-                CloudInputRule(
-                    "size", "enum", required = false, defaultValue = "1024x1024",
-                    options = listOf("1024x1024", "768x1024", "1024x768", "auto"),
-                ),
-                CloudInputRule("n", "integer", required = false, defaultValue = "1", min = 1.0, max = 4.0),
-            )
-        }
-        val sizes = if (dallE) {
-            listOf("1024x1024", "1792x1024", "1024x1792")
-        } else {
-            listOf(
-                "1024x1024", "1536x1024", "1024x1536",
-                "2048x2048", "2048x1152", "1152x2048", "auto",
-            )
-        }
-        val rules = mutableListOf(
-            CloudInputRule("prompt", "prompt", required = true),
-            CloudInputRule("size", "enum", required = false, defaultValue = sizes.first(), options = sizes),
-            CloudInputRule(
-                "quality",
-                "enum",
-                required = false,
-                defaultValue = if (dallE) "standard" else "auto",
-                options = if (dallE) listOf("standard", "hd")
-                else listOf("auto", "low", "medium", "high", "xhigh", "max"),
-            ),
-            CloudInputRule(
-                "n",
-                "integer",
-                required = false,
-                defaultValue = "1",
-                min = 1.0,
-                max = if (dallE) 1.0 else 4.0,
-            ),
-        )
-        if (dallE) {
-            rules += CloudInputRule(
-                "style", "enum", required = false, defaultValue = "vivid",
-                options = listOf("vivid", "natural"),
-            )
-        } else {
-            rules += CloudInputRule(
-                "background", "enum", required = false, defaultValue = "opaque",
-                options = listOf("transparent", "opaque", "auto"),
-            )
-            rules += CloudInputRule(
-                "output_format", "enum", required = false, defaultValue = "png",
-                options = listOf("png", "jpeg", "webp"),
-            )
-        }
-        return rules
-    }
+    private fun rulesFor(model: String): List<CloudInputRule> =
+        CloudModelParameters.openAiRules(model)
 
     private fun displayName(model: String): String = when {
         model.startsWith("gpt-image-2.5-flare") -> "GPT Image 2.5 Flare"
@@ -205,12 +183,5 @@ class OpenAiCompatibleImageRepository(
     companion object {
         const val PROVIDER = "openai"
         const val DEFAULT_BASE = "https://api.openai.com/v1"
-        val MODELS = listOf(
-            "gpt-image-2.5-flare",
-            "gpt-image-2.5-sunburst",
-            "gpt-image-2",
-            "gpt-image-1.5",
-            "chatgpt-image-latest",
-        )
     }
 }

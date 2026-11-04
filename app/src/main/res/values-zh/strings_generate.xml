@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- 生成页：顶栏 / 底栏 -->
-    <string name="gen_cloud_subtitle">AUTODL · CLOUD</string>
+    <string name="gen_cloud_subtitle">%1$s · 云端</string>
+    <string name="gen_cloud_provider_generic">云服务厂商</string>
     <string name="gen_defaults">默认值</string>
     <string name="gen_task">任务</string>
     <string name="gen_generate">生成</string>
@@ -53,7 +54,7 @@
 
     <!-- 取消云端任务 -->
     <string name="gen_cancel_cloud_title">取消云端任务？</string>
-    <string name="gen_cancel_cloud_body">这里只能停止手机端跟踪；AutoDL 平台侧任务可能继续执行并产生费用。</string>
+    <string name="gen_cancel_cloud_body">这里只能停止手机端跟踪；厂商侧任务可能继续执行并产生费用。</string>
     <string name="gen_cancel_anyway">仍然取消</string>
     <string name="gen_keep_waiting">继续等待</string>
 
@@ -68,7 +69,7 @@
     <string name="gen_cloud_quantity">提交数量：%1$d</string>
     <string name="gen_cloud_total">预计合计：%1$d（平台单位）</string>
     <string name="gen_cloud_duration">时长 %1$ss</string>
-    <string name="gen_cloud_billing_note">实际扣费以 AutoDL 账单为准。提交后取消不一定停止平台侧执行，仍可能计费。</string>
+    <string name="gen_cloud_billing_note">实际扣费以 %1$s 的账单为准。提交后取消不一定停止平台侧执行，仍可能计费。</string>
     <string name="gen_submit">确认提交</string>
     <string name="gen_ai_result_title">AI 生成结果</string>
     <string name="gen_ai_result_hint">可修改后替换或追加到原提示词</string>
@@ -103,12 +104,13 @@
     <string name="gen_audio">音频</string>
 
     <!-- ViewModel 提示 -->
-    <string name="gen_vm_cloud_note">云端工作流 · 由 AutoDL.Art 执行</string>
+    <string name="gen_vm_cloud_note">云端工作流 · 由 %1$s 执行</string>
     <string name="gen_workflow_id">ID · %1$s</string>
     <string name="gen_vm_multi_ref_note">多图参考用于约束人物与风格，不保证首帧与参考图完全一致；需要固定首帧请使用首尾帧工作流。</string>
     <string name="gen_vm_defaults_restored">已恢复工作流默认值</string>
     <string name="gen_vm_server_disconnected">服务器已断开</string>
-    <string name="gen_vm_cloud_token_missing">请先在设置 → 云端服务中配置 Token</string>
+    <string name="gen_vm_cloud_token_missing">请先在设置 → 云端服务中配置 %1$s 的凭据</string>
+    <string name="gen_vm_cloud_provider_disabled">%1$s 已在云端服务中关闭，请先启用再提交。</string>
     <string name="gen_vm_fix_compat">请先修复兼容性问题：%1$s</string>
     <plurals name="gen_vm_batch_created">
         <item quantity="other">已创建 %1$d 个批量任务</item>

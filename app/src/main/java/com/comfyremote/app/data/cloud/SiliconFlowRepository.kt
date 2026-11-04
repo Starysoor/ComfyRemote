@@ -13,10 +13,9 @@ class SiliconFlowRepository(
 ) : CloudProvider {
     override val id: String = PROVIDER
     override val label: String = "SiliconFlow"
-    override val settingsSummary: String = "Kolors / Qwen-Image / Wan2.2 · API key"
+    override val settingsSummary: String = "Media models · API key"
     override val pathPrefix: String = "siliconflow:"
     override val baseUrl: String = DEFAULT_BASE
-    override val defaultModels: List<String> get() = MODELS
     override val supportsModelDiscovery: Boolean = true
     override val supportsCustomHeaders: Boolean = true
 
@@ -24,7 +23,7 @@ class SiliconFlowRepository(
     private val imageResults = ConcurrentHashMap<String, CloudTaskResult>()
     private val pending = ConcurrentHashMap<String, Pending>()
 
-    private fun account() = settings.account(id, DEFAULT_BASE, MODELS)
+    private fun account() = settings.account(id, DEFAULT_BASE)
 
     override fun configured(): Boolean = account().token.isNotBlank()
 
@@ -37,8 +36,11 @@ class SiliconFlowRepository(
         return modelIdsFromResponse(root.optJSONArray("data")).filter(::looksLikeMediaModel)
     }
 
-    override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> =
-        settings.enabledModels(id, account().models.ifEmpty { MODELS }).map { model ->
+    override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
+        val account = account()
+        if (account.token.isBlank()) return emptyList()
+        val models = pulledModels(settings, id, account.baseUrl, account.token) { discoverModels() }
+        return settings.enabledModels(id, models).map { model ->
             CloudWorkflowSummary(
                 id = model,
                 name = model.substringAfterLast('/'),
@@ -47,6 +49,7 @@ class SiliconFlowRepository(
                 priceType = "official_api",
             )
         }
+    }
 
     override suspend fun detail(workflowId: String): CloudWorkflowSpec = CloudWorkflowSpec(
         id = workflowId,
@@ -173,47 +176,10 @@ class SiliconFlowRepository(
         CloudHttp.downloadTo(url, target)
     }
 
-    private fun rulesFor(model: String): List<CloudInputRule> {
-        val kind = kindOf(model)
-        val rules = mutableListOf(CloudInputRule("prompt", "prompt", required = kind != "image" || !model.contains("Edit")))
-        if (kind == "video") {
-            rules += CloudInputRule(
-                "image_size", "enum", required = false, defaultValue = "1280x720",
-                options = listOf("1280x720", "720x1280", "960x960"),
-            )
-            if (model.contains("I2V", ignoreCase = true)) {
-                rules += CloudInputRule("image", "image", required = true)
-            }
-            rules += CloudInputRule("negative_prompt", "string", required = false)
-            rules += CloudInputRule("seed", "integer", required = false)
-            return rules
-        }
-        if (model.contains("Edit", ignoreCase = true)) {
-            rules += CloudInputRule("image", "image", required = true)
-        }
-        rules += CloudInputRule(
-            "image_size", "enum", required = false, defaultValue = "1024x1024",
-            options = listOf("1024x1024", "768x1024", "1024x768", "512x512", "1280x720", "720x1280"),
-        )
-        rules += CloudInputRule("negative_prompt", "string", required = false)
-        rules += CloudInputRule(
-            "batch_size", "integer", required = false, defaultValue = "1", min = 1.0, max = 4.0,
-        )
-        rules += CloudInputRule(
-            "num_inference_steps", "integer", required = false, defaultValue = "20", min = 20.0, max = 50.0,
-        )
-        rules += CloudInputRule(
-            "guidance_scale", "number", required = false, defaultValue = "7.5", min = 1.0, max = 20.0,
-        )
-        rules += CloudInputRule("seed", "integer", required = false)
-        rules += CloudInputRule("prompt_enhancement", "boolean", required = false, defaultValue = "false")
-        return rules
-    }
+    private fun rulesFor(model: String): List<CloudInputRule> =
+        CloudModelParameters.siliconFlowRules(model)
 
-    private fun kindOf(model: String): String {
-        val lower = model.lowercase()
-        return if (listOf("t2v", "i2v", "video", "wan2").any { it in lower }) "video" else "image"
-    }
+    private fun kindOf(model: String): String = CloudModelParameters.kindOf(model)
 
     private fun looksLikeMediaModel(model: String): Boolean {
         val lower = model.lowercase()
@@ -233,13 +199,5 @@ class SiliconFlowRepository(
     companion object {
         const val PROVIDER = "siliconflow"
         const val DEFAULT_BASE = "https://api.siliconflow.cn/v1"
-        val MODELS = listOf(
-            "Kwai-Kolors/Kolors",
-            "Qwen/Qwen-Image",
-            "Qwen/Qwen-Image-Edit-2509",
-            "Tongyi-MAI/Z-Image-Turbo",
-            "Wan-AI/Wan2.2-T2V-A14B",
-            "Wan-AI/Wan2.2-I2V-A14B",
-        )
     }
 }

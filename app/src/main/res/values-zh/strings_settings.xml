@@ -55,8 +55,16 @@
     <string name="cloud_provider_base_url">Base URL</string>
     <string name="cloud_provider_base_url_hint">请包含 API 版本段，例如 https://api.example.com/v1</string>
     <string name="cloud_provider_api_key">API Key / Token</string>
+    <string name="cloud_provider_enabled">显示在云端模型</string>
+    <string name="cloud_provider_enabled_hint">关闭后，该厂商及其模型不会出现在创作页和分镜中。</string>
     <string name="cloud_provider_models">模型列表</string>
-    <string name="cloud_provider_models_hint">逗号分隔的模型 ID；留空则请求 /models</string>
+    <string name="cloud_provider_models_hint">从厂商拉取；请使用「刷新模型」而不是手动填写预设。</string>
+    <string name="cloud_provider_models_empty">尚未拉取模型。保存凭据后点「刷新模型」。</string>
+    <string name="cloud_provider_models_clear">清空全部模型</string>
+    <string name="cloud_provider_disconnect">断开厂商配置</string>
+    <string name="cloud_provider_disconnect_confirm_title">断开此厂商？</string>
+    <string name="cloud_provider_disconnect_confirm_body">将删除 API Key、Endpoint 覆盖和已拉取的模型列表，之后可以重新配置。</string>
+    <string name="cloud_provider_disconnected">已断开厂商配置</string>
     <string name="cloud_provider_test">测试连接</string>
     <string name="cloud_provider_refresh_models">刷新模型</string>
     <string name="cloud_provider_advanced">高级设置</string>
@@ -76,6 +84,7 @@
     <string name="cloud_provider_retry_hint">瞬时轮询错误最多重试 0–5 次</string>
     <string name="cloud_provider_runtime_invalid">轮询间隔需为 2–60 秒，超时 1–240 分钟，重试 0–5 次。</string>
     <string name="cloud_provider_insecure">该 Endpoint 未使用 HTTPS，密钥和提示词可能以明文传输。</string>
+    <string name="cloud_provider_models_hidden">已隐藏</string>
     <string name="cloud_provider_models_manage">模型管理</string>
     <string name="cloud_provider_models_manage_hint">修改即时生效；隐藏的模型不会出现在创作页和 Storyboard。默认模型会排在最前。</string>
     <string name="cloud_provider_models_search">搜索模型</string>

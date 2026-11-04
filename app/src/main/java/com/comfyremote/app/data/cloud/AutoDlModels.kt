@@ -87,6 +87,7 @@ data class CloudWorkflowSummary(
     fun toEntry(
         pathPrefix: String = AutoDlConfig.PATH_PREFIX,
         providerLabel: String = "AutoDL.Art",
+        providerId: String = AutoDlConfig.PROVIDER,
     ): WorkflowEntry = WorkflowEntry(
         path = pathPrefix + id,
         name = name,
@@ -97,6 +98,7 @@ data class CloudWorkflowSummary(
         priceType = priceType,
         priceLabel = pricing?.label.orEmpty(),
         providerLabel = providerLabel,
+        providerId = providerId,
     )
 }
 

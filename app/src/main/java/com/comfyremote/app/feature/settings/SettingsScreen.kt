@@ -123,6 +123,7 @@ fun SettingsScreen(
             keywords = "$providerKeywords ${info.label} ${info.summary}",
             icon = Icons.Outlined.Cloud,
             onClick = { onOpenProvider(info.id) },
+            value = if (info.enabled) null else stringResource(R.string.cloud_provider_models_hidden),
         )
     }
     val allEntries = entries + providerEntries

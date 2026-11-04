@@ -42,5 +42,18 @@ The `redesign/` folder contains the light and dark Iris design-system screens:
 | `iris-appsettings.png` | App/interface settings |
 | `iris-launcher.png` | Launcher icon |
 
+## Cloud workspace fixes
+
+Captured on the `deck34` emulator with the real AutoDL.Art catalogue plus a
+local OpenAI-compatible mock provider (`10.0.2.2:18080`) used to verify model
+pulling and reference-image edits end to end.
+
+| File | What it shows |
+|---|---|
+| `iris-cloud-two-sections.png` | Cloud models grouped under `AutoDL.Art` and `Custom OpenAI API` sections, with provider cards above |
+| `iris-cloud-fix-services.png` | Per-provider enable switches; unused providers are marked Hidden |
+| `iris-reference-input.png` | An edit model exposes the Reference images upload slot and provider-specific subtitle/notes |
+| `iris-cloud-confirm.png` | Confirmation dialog names the real provider in the billing note |
+
 The AutoDL test used the user-provided test token; it is not stored in the
-repository. Actual billing is determined by AutoDL.Art.
+repository. Actual billing is determined by the provider that runs the job.

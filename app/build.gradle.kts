@@ -52,6 +52,10 @@ android {
         compose = true
         buildConfig = true
     }
+    testOptions {
+        // Android framework stubs (Log, etc.) return defaults in JVM tests.
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {

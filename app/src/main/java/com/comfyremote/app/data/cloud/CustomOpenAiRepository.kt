@@ -23,7 +23,7 @@ class CustomOpenAiRepository(
 
     private val results = ConcurrentHashMap<String, CloudTaskResult>()
 
-    private fun account() = settings.account(id, "", emptyList())
+    private fun account() = settings.account(id, "")
 
     override fun configured(): Boolean = account().baseUrl.isNotBlank()
 
@@ -42,21 +42,8 @@ class CustomOpenAiRepository(
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
         val account = account()
         if (account.baseUrl.isBlank()) return emptyList()
-        val configured = settings.enabledModels(id, account.models)
-        if (configured.isNotEmpty()) return configured.map(::summary)
-        return runCatching {
-            val root = CloudHttp.getJson(
-                "${account.baseUrl.trimEnd('/')}/models",
-                auth(account),
-            )
-            val data = root.optJSONArray("data") ?: return@runCatching emptyList()
-            settings.enabledModels(
-                id,
-                (0 until data.length()).mapNotNull { index ->
-                    data.optJSONObject(index)?.optString("id")?.takeIf { it.isNotBlank() }
-                },
-            ).map(::summary)
-        }.getOrDefault(emptyList())
+        val models = pulledModels(settings, id, account.baseUrl, account.token) { discoverModels() }
+        return settings.enabledModels(id, models).map(::summary)
     }
 
     override suspend fun detail(workflowId: String): CloudWorkflowSpec = CloudWorkflowSpec(
@@ -64,25 +51,45 @@ class CustomOpenAiRepository(
         name = workflowId,
         kind = "image",
         description = "Custom OpenAI-compatible image API",
-        rules = IMAGE_RULES,
+        rules = CloudModelParameters.openAiRules(workflowId),
     )
 
     override suspend fun submit(workflowId: String, body: JSONObject): String {
         val account = account()
         if (account.baseUrl.isBlank()) throw ComfyException("Configure the custom API base URL first")
-        val payload = JSONObject()
-            .put("model", workflowId)
-            .put("prompt", body.optString("prompt"))
-        listOf("size", "quality", "style", "response_format").forEach { key ->
-            body.optString(key).takeIf { it.isNotBlank() }?.let { payload.put(key, it) }
-        }
-        body.optInt("n", 1).takeIf { it > 0 }?.let { payload.put("n", it) }
         val headers = auth(account)
-        val response = CloudHttp.postJson(
-            "${account.baseUrl.trimEnd('/')}/images/generations",
-            payload,
-            headers,
-        )
+        val base = account.baseUrl.trimEnd('/')
+        val reference = body.optString("image").takeIf { it.isNotBlank() }
+        val response = if (reference != null && CloudModelParameters.supportsReferenceImage(workflowId)) {
+            val payload = CloudHttp.imagePayload(reference, headers)
+                ?: throw ComfyException("The reference image could not be read")
+            val fields = linkedMapOf(
+                "model" to workflowId,
+                "prompt" to body.optString("prompt"),
+            )
+            listOf("size", "quality", "style", "response_format").forEach { key ->
+                body.optString(key).takeIf { it.isNotBlank() }?.let { fields[key] = it }
+            }
+            body.optInt("n", 1).takeIf { it > 0 }?.let { fields["n"] = it.toString() }
+            val extension = if (payload.first == "image/jpeg") "jpg" else "png"
+            CloudHttp.postMultipart(
+                url = "$base/images/edits",
+                fields = fields,
+                files = listOf(
+                    CloudFilePart("image", "reference.$extension", payload.first, payload.second)
+                ),
+                headers = headers,
+            )
+        } else {
+            val payload = JSONObject()
+                .put("model", workflowId)
+                .put("prompt", body.optString("prompt"))
+            listOf("size", "quality", "style", "response_format").forEach { key ->
+                body.optString(key).takeIf { it.isNotBlank() }?.let { payload.put(key, it) }
+            }
+            body.optInt("n", 1).takeIf { it > 0 }?.let { payload.put("n", it) }
+            CloudHttp.postJson("$base/images/generations", payload, headers)
+        }
         val data = response.optJSONArray("data")
             ?: throw ComfyException(CloudHttp.errorMessage(response, "Custom API returned no image data"))
         val results = (0 until data.length()).mapNotNull { index ->
@@ -145,25 +152,5 @@ class CustomOpenAiRepository(
 
     companion object {
         const val PROVIDER = "custom"
-        private val IMAGE_RULES = listOf(
-            CloudInputRule("prompt", "prompt", required = true),
-            CloudInputRule(
-                "size", "enum", required = false, defaultValue = "1024x1024",
-                options = listOf("1024x1024", "512x512", "768x768", "1792x1024", "1024x1792", "auto"),
-            ),
-            CloudInputRule(
-                "quality", "enum", required = false, defaultValue = "standard",
-                options = listOf("standard", "hd", "auto"),
-            ),
-            CloudInputRule(
-                "style", "enum", required = false, defaultValue = "vivid",
-                options = listOf("vivid", "natural"),
-            ),
-            CloudInputRule(
-                "response_format", "enum", required = false, defaultValue = "url",
-                options = listOf("url", "b64_json"),
-            ),
-            CloudInputRule("n", "integer", required = false, defaultValue = "1", min = 1.0, max = 4.0),
-        )
     }
 }

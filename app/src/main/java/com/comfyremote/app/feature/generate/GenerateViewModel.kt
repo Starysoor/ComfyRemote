@@ -61,6 +61,8 @@ data class WorkflowDraft(
     /** Non-null for a hosted cloud workflow snapshot. */
     val cloud: CloudWorkflowSpec? = null,
     val cloudBaseUrl: String? = null,
+    /** The provider whose credential billed this workflow. */
+    val cloudProviderLabel: String = "",
 ) {
     val isCloud: Boolean get() = cloud != null
 
@@ -294,7 +296,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 AppStrings.get(R.string.gen_workflow_id, spec.id),
                 spec.description,
                 spec.content,
-                AppStrings.get(R.string.gen_vm_cloud_note),
+                AppStrings.get(R.string.gen_vm_cloud_note, cloudProvider.label),
                 if (spec.kind == "video" && spec.rules.any { it.name.startsWith("ref_image_") }) {
                     AppStrings.get(R.string.gen_vm_multi_ref_note)
                 } else {
@@ -310,6 +312,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
                 notes = notes,
                 cloud = spec,
                 cloudBaseUrl = cloudProvider.draftScopeKey(),
+                cloudProviderLabel = cloudProvider.label,
             ) to ConvertedWorkflow(prompt, fields, warnings, notes)
         }
         val conv = container.workflowRepository.convert(WorkflowEntry(path, name, ""))
@@ -363,8 +366,15 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         if (draft.isCloud) {
             val provider = container.cloudProviders.forPath(draft.workflowPath)
             if (provider == null || !provider.configured()) {
+                val name = provider?.label ?: draft.workflowName
                 _state.update {
-                    it.copy(message = AppStrings.get(R.string.gen_vm_cloud_token_missing))
+                    it.copy(message = AppStrings.get(R.string.gen_vm_cloud_token_missing, name))
+                }
+                return
+            }
+            if (!container.cloudProviders.isEnabled(provider.id)) {
+                _state.update {
+                    it.copy(message = AppStrings.get(R.string.gen_vm_cloud_provider_disabled, provider.label))
                 }
                 return
             }
@@ -489,6 +499,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         return GenerationRequest(
             id = UUID.randomUUID().toString(),
             provider = cloudProvider?.id ?: "comfyui",
+            providerLabel = cloudProvider?.label.orEmpty(),
             serverUrl = cloudProvider?.endpoint() ?: container.serverSession.url,
             workflowPath = draft.workflowPath,
             workflowName = draft.workflowName,
@@ -819,14 +830,28 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
 
     /** One-tap handoff from a generated image to the configured cloud video workflow. */
     fun prepareCloudVideo(localPath: String): Pair<String, String>? {
-        val workflowId = container.appSettingsStore.settings.value.defaultVideoWorkflowId.trim()
-        if (workflowId.isBlank()) {
+        val workflow = container.appSettingsStore.settings.value.defaultVideoWorkflowId.trim()
+        val path = when {
+            workflow.isBlank() -> null
+            // Newer settings store the provider-scoped path already.
+            ':' in workflow -> workflow
+            // Legacy setting: a bare AutoDL workflow id. Never route it to
+            // AutoDL when the user disabled that provider.
+            else -> {
+                val autoDl = container.cloudProviders.byId(AutoDlConfig.PROVIDER)
+                if (autoDl != null && autoDl.configured() && container.cloudProviders.isEnabled(autoDl.id)) {
+                    autoDl.pathPrefix + workflow
+                } else {
+                    null
+                }
+            }
+        }
+        if (path == null) {
             _state.update {
                 it.copy(message = AppStrings.get(R.string.gen_vm_no_video_workflow))
             }
             return null
         }
-        val path = AutoDlConfig.PATH_PREFIX + workflowId
         val name = AppStrings.get(R.string.gen_vm_cloud_video)
         container.draftTransferRepository.put(
             DraftTransfer(

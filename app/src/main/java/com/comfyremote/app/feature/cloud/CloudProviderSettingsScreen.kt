@@ -11,9 +11,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
 import com.comfyremote.app.data.cloud.CloudHealth
 import com.comfyremote.app.data.cloud.CloudHealthStatus
@@ -46,6 +49,8 @@ import com.comfyremote.app.ui.components.InfoBanner
 import com.comfyremote.app.ui.components.IrisPrimaryButton
 import com.comfyremote.app.ui.components.IrisProgressBar
 import com.comfyremote.app.ui.components.IrisScaffold
+import com.comfyremote.app.ui.components.IrisSecondaryButton
+import com.comfyremote.app.ui.components.IrisSwitch
 import com.comfyremote.app.ui.components.IrisTextField
 import com.comfyremote.app.ui.components.IrisTonalButton
 import com.comfyremote.app.ui.components.StatusChip
@@ -61,11 +66,16 @@ fun CloudProviderSettingsScreen(
     onBack: () -> Unit,
 ) {
     val account = remember(provider.id) {
-        settings.account(provider.id, provider.baseUrl, provider.defaultModels)
+        settings.account(provider.id, provider.baseUrl)
     }
     var baseUrl by remember(provider.id) { mutableStateOf(account.baseUrl) }
     var token by remember(provider.id) { mutableStateOf(account.token) }
     var models by remember(provider.id) { mutableStateOf(account.models.joinToString(", ")) }
+    var providerEnabled by remember(provider.id) {
+        mutableStateOf(settings.providerEnabledOverride(provider.id) ?: provider.configured())
+    }
+    var modelsCleared by remember(provider.id) { mutableStateOf(false) }
+    var confirmDisconnect by remember(provider.id) { mutableStateOf(false) }
     var saved by remember(provider.id) { mutableStateOf(false) }
     val isTemplate = provider.id == CustomTemplateRepository.PROVIDER
     var configText by remember(provider.id) { mutableStateOf(settings.extra(provider.id)) }
@@ -106,6 +116,7 @@ fun CloudProviderSettingsScreen(
             BottomActionBar {
                 IrisPrimaryButton(
                     text = stringResource(R.string.action_save),
+                    enabled = !busy,
                     onClick = {
                         val pollSeconds = pollSecondsText.trim().toIntOrNull()
                         val timeoutMinutes = timeoutMinutesText.trim().toIntOrNull()
@@ -119,6 +130,7 @@ fun CloudProviderSettingsScreen(
                             saved = false
                             failure = if (!headersOk) headersInvalid else runtimeInvalid
                         } else {
+                            val wasConfigured = provider.configured()
                             settings.save(
                                 provider.id,
                                 baseUrl,
@@ -132,12 +144,38 @@ fun CloudProviderSettingsScreen(
                                 retryCount,
                             )
                             if (isTemplate) settings.saveExtra(provider.id, configText)
+                            if (!wasConfigured && provider.configured()) {
+                                settings.setProviderEnabled(provider.id, true)
+                                providerEnabled = true
+                            }
                             headersText = settings.customHeadersRaw(provider.id)
                             saved = true
                             dirty = false
                             health = null
                             note = null
                             failure = null
+                            if (models.isBlank() && !modelsCleared && provider.supportsModelDiscovery) {
+                                busy = true
+                                scope.launch {
+                                    val discovered = runCatching {
+                                        withContext(Dispatchers.IO) { provider.discoverModels() }
+                                    }.getOrNull().orEmpty()
+                                    if (discovered.isNotEmpty()) {
+                                        settings.save(
+                                            provider.id,
+                                            baseUrl,
+                                            token,
+                                            discovered,
+                                        )
+                                        models = discovered.joinToString(", ")
+                                        note = context.getString(
+                                            R.string.cloud_status_discovered,
+                                            discovered.size,
+                                        )
+                                    }
+                                    busy = false
+                                }
+                            }
                         }
                     },
                 )
@@ -157,6 +195,29 @@ fun CloudProviderSettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        stringResource(R.string.cloud_provider_enabled),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        stringResource(R.string.cloud_provider_enabled_hint),
+                        style = IrisType.metaSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IrisSwitch(
+                    checked = providerEnabled,
+                    onCheckedChange = { enabled ->
+                        providerEnabled = enabled
+                        settings.setProviderEnabled(provider.id, enabled)
+                    },
+                )
+            }
             if (!isTemplate) {
                 IrisTextField(
                     value = baseUrl,
@@ -223,11 +284,18 @@ fun CloudProviderSettingsScreen(
             } else {
                 IrisTextField(
                     value = models,
-                    onValueChange = { models = it; saved = false; dirty = true },
+                    onValueChange = { models = it; modelsCleared = false; saved = false; dirty = true },
                     label = stringResource(R.string.cloud_provider_models),
                     supportingText = stringResource(R.string.cloud_provider_models_hint),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (modelList.isEmpty()) {
+                    Text(
+                        stringResource(R.string.cloud_provider_models_empty),
+                        style = IrisType.metaSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             if (!isTemplate && modelList.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -332,6 +400,24 @@ fun CloudProviderSettingsScreen(
                         scope.launch {
                             val result = withContext(Dispatchers.IO) { provider.check() }
                             health = result
+                            if (result.status == CloudHealthStatus.READY &&
+                                models.isBlank() &&
+                                !modelsCleared &&
+                                provider.supportsModelDiscovery
+                            ) {
+                                val discovered = runCatching {
+                                    withContext(Dispatchers.IO) { provider.discoverModels() }
+                                }.getOrNull().orEmpty()
+                                if (discovered.isNotEmpty()) {
+                                    settings.save(provider.id, baseUrl, token, discovered)
+                                    models = discovered.joinToString(", ")
+                                    dirty = false
+                                    note = context.getString(
+                                        R.string.cloud_status_discovered,
+                                        discovered.size,
+                                    )
+                                }
+                            }
                             busy = false
                         }
                     },
@@ -358,7 +444,11 @@ fun CloudProviderSettingsScreen(
                                     note = context.getString(R.string.cloud_status_discovery_empty)
                                 } else {
                                     models = discovered.joinToString(", ")
-                                    dirty = true
+                                    modelsCleared = false
+                                    // Pulling the catalogue is the save action for the
+                                    // model list; no extra tap should be required.
+                                    settings.save(provider.id, baseUrl, token, discovered)
+                                    dirty = false
                                     health = null
                                     note = context.getString(R.string.cloud_status_discovered, discovered.size)
                                 }
@@ -473,6 +563,30 @@ fun CloudProviderSettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+            if (!isTemplate) {
+                TextAction(
+                    text = stringResource(R.string.cloud_provider_models_clear),
+                    onClick = {
+                        val pollSeconds = pollSecondsText.trim().toIntOrNull() ?: 4
+                        val timeoutMinutes = timeoutMinutesText.trim().toIntOrNull() ?: 60
+                        val retryCount = retryCountText.trim().toIntOrNull() ?: 0
+                        settings.save(provider.id, baseUrl, token, emptyList())
+                        settings.saveRuntimeSettings(provider.id, pollSeconds, timeoutMinutes, retryCount)
+                        models = ""
+                        modelsCleared = true
+                        saved = false
+                        dirty = false
+                        health = null
+                        note = null
+                    },
+                )
+            }
+            IrisSecondaryButton(
+                text = stringResource(R.string.cloud_provider_disconnect),
+                onClick = { confirmDisconnect = true },
+                destructive = true,
+                height = 48.dp,
+            )
             if (saved) {
                 Text(
                     stringResource(R.string.ai_saved),
@@ -481,6 +595,41 @@ fun CloudProviderSettingsScreen(
                 )
             }
         }
+    }
+    if (confirmDisconnect) {
+        AlertDialog(
+            onDismissRequest = { confirmDisconnect = false },
+            title = { Text(stringResource(R.string.cloud_provider_disconnect_confirm_title)) },
+            text = { Text(stringResource(R.string.cloud_provider_disconnect_confirm_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDisconnect = false
+                        settings.clear(provider.id)
+                        baseUrl = provider.baseUrl
+                        token = ""
+                        models = ""
+                        modelsCleared = true
+                        providerEnabled = false
+                        saved = false
+                        dirty = false
+                        health = null
+                        note = null
+                        failure = null
+                    },
+                ) {
+                    Text(
+                        stringResource(R.string.cloud_provider_disconnect),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDisconnect = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
     }
 }
 

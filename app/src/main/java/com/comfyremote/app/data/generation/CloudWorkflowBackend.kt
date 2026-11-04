@@ -45,7 +45,15 @@ class CloudWorkflowBackend(
             }
             Log.d("IrisCloud", "submit workflow=$workflowId keys=${prompt.keys().asSequence().toList()} media=$media")
         }
-        val id = repository.submit(workflowId, prompt)
+        val id = try {
+            repository.submit(workflowId, prompt)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Exception) {
+            // Attribute the failure to the provider that actually handled this
+            // request; a provider must never surface another vendor's message.
+            throw ComfyException("$providerLabel submit failed: ${error.message ?: error.javaClass.simpleName}")
+        }
         taskId = id
         lastStatus = "QUEUED"
         return id
@@ -72,7 +80,9 @@ class CloudWorkflowBackend(
                 throw cancellation
             } catch (error: Exception) {
                 // Polling is idempotent; a transient network error must not fail the job.
-                if (attempt++ >= retryCount) throw error
+                if (attempt++ >= retryCount) {
+                    throw ComfyException("$providerLabel status check failed: ${error.message ?: error.javaClass.simpleName}")
+                }
                 delay(retryDelayMs)
             }
         }

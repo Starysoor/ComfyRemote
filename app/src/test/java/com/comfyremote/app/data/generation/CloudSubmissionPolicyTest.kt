@@ -13,11 +13,13 @@ class CloudSubmissionPolicyTest {
 
     private fun request(
         provider: String = "autodl",
+        providerLabel: String = "AutoDL.Art",
         cost: Int? = 10,
         fields: List<PromptField> = emptyList(),
         values: Map<String, String> = emptyMap(),
     ) = GenerationRequest(
         provider = provider,
+        providerLabel = providerLabel,
         serverUrl = "https://autodl.art",
         workflowPath = "autodl:wf",
         workflowName = "Cloud workflow",
@@ -45,6 +47,20 @@ class CloudSubmissionPolicyTest {
         assertEquals(30, confirmation.totalCost)
         assertEquals("per run", confirmation.priceLabel)
         assertEquals("Cloud workflow", confirmation.workflowName)
+        assertEquals("AutoDL.Art", confirmation.providerLabel)
+    }
+
+    @Test
+    fun confirmationNeverAttributesAMixedBatchToTheWrongVendor() {
+        val confirmation = CloudSubmissionPolicy.confirmation(
+            listOf(
+                request(provider = "openai", providerLabel = "OpenAI"),
+                request(provider = "gemini", providerLabel = "Google Gemini"),
+            ),
+            null,
+        )
+
+        assertEquals("", confirmation.providerLabel)
     }
 
     @Test

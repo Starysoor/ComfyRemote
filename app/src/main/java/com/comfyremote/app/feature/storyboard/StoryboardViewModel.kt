@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -49,6 +50,16 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             container.generationManager.tasks.collect { tasks -> syncTasks(tasks) }
         }
+        viewModelScope.launch {
+            var first = true
+            container.cloudProviderSettingsStore.revision.collect {
+                if (first) {
+                    first = false
+                    return@collect
+                }
+                refreshWorkflows()
+            }
+        }
     }
 
     fun refreshWorkflows() {
@@ -58,7 +69,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                 val options = mutableListOf<StoryboardWorkflowOption>()
                 val errors = mutableListOf<String>()
                 val ready = mutableSetOf<String>()
-                container.cloudProviders.all.forEach { provider ->
+                container.cloudProviders.enabled.forEach { provider ->
                     // An unconfigured provider cannot contribute usable shot models.
                     if (!provider.configured()) return@forEach
                     runCatching { provider.catalog(force = false) }

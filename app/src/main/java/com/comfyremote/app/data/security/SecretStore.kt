@@ -10,20 +10,26 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+/** Minimal credential vault so stores can be exercised without Android Keystore. */
+interface SecretVault {
+    fun get(key: String): String?
+    fun put(key: String, value: String?)
+}
+
 /**
  * Small AES/GCM wrapper backed by the Android Keystore. Secrets are stored as
  * `<key>_enc`; legacy plaintext values are migrated on first read so existing
  * installs keep working. If the Keystore is unavailable the class falls back to
  * the old plaintext key rather than losing the user's token.
  */
-class SecretStore(private val prefs: SharedPreferences) {
+class SecretStore(private val prefs: SharedPreferences) : SecretVault {
 
     init {
         // Migrate legacy plaintext keys as soon as the container is built.
         LEGACY_KEYS.forEach { key -> runCatching { get(key) } }
     }
 
-    fun get(key: String): String? {
+    override fun get(key: String): String? {
         val encrypted = prefs.getString(encKey(key), null)
         if (!encrypted.isNullOrBlank()) {
             val decrypted = runCatching { decrypt(encrypted) }.getOrNull()
@@ -40,7 +46,7 @@ class SecretStore(private val prefs: SharedPreferences) {
         return legacy
     }
 
-    fun put(key: String, value: String?) {
+    override fun put(key: String, value: String?) {
         val clean = value?.trim().orEmpty()
         if (clean.isBlank()) {
             prefs.edit().remove(encKey(key)).remove(key).apply()

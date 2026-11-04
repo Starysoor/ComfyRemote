@@ -67,6 +67,7 @@ fun CloudSettingsScreen(
     var videoMenu by remember { mutableStateOf(false) }
     var confirmClearSpend by remember { mutableStateOf(false) }
     var confirmClearCache by remember { mutableStateOf(false) }
+    var confirmClearToken by remember { mutableStateOf(false) }
     val healthFallback = stringResource(R.string.cloud_status_error)
 
     LaunchedEffect(state.message) {
@@ -75,7 +76,7 @@ fun CloudSettingsScreen(
 
     IrisScaffold(
         snackbarHostState = snackbar,
-        topBar = { DetailTopBar(title = stringResource(R.string.settings_cloud), onBack = onBack) },
+        topBar = { DetailTopBar(title = stringResource(R.string.settings_cloud_autodl), onBack = onBack) },
         bottomBar = {
             BottomActionBar {
                 IrisPrimaryButton(
@@ -106,6 +107,16 @@ fun CloudSettingsScreen(
                             if (state.configured) stringResource(R.string.settings_cloud_ready)
                             else stringResource(R.string.settings_cloud_no_token),
                             tone = if (state.configured) ChipTone.Success else ChipTone.Warning,
+                        )
+                    },
+                )
+                SettingRow(
+                    title = stringResource(R.string.cloud_provider_enabled),
+                    detail = stringResource(R.string.cloud_provider_enabled_hint),
+                    trailing = {
+                        com.comfyremote.app.ui.components.IrisSwitch(
+                            checked = state.enabled,
+                            onCheckedChange = viewModel::setEnabled,
                         )
                     },
                 )
@@ -168,6 +179,12 @@ fun CloudSettingsScreen(
                         stringResource(R.string.settings_cloud_audio_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    IrisSecondaryButton(
+                        text = stringResource(R.string.cloud_provider_disconnect),
+                        onClick = { confirmClearToken = true },
+                        destructive = true,
+                        height = 48.dp,
                     )
                 }
             }
@@ -255,6 +272,29 @@ fun CloudSettingsScreen(
         }
     }
 
+    if (confirmClearToken) {
+        AlertDialog(
+            onDismissRequest = { confirmClearToken = false },
+            title = { Text(stringResource(R.string.cloud_provider_disconnect_confirm_title)) },
+            text = { Text(stringResource(R.string.cloud_provider_disconnect_confirm_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearToken()
+                    confirmClearToken = false
+                }) {
+                    Text(
+                        stringResource(R.string.cloud_provider_disconnect),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearToken = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            },
+        )
+    }
     if (confirmClearSpend) {
         AlertDialog(
             onDismissRequest = { confirmClearSpend = false },

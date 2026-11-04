@@ -18,7 +18,6 @@ class AutoDlModelRepository(
     override val settingsSummary: String = "AutoDL model API · image and video models"
     override val pathPrefix: String = PREFIX
     override val baseUrl: String = BASE
-    override val defaultModels: List<String> get() = IMAGE_MODELS + VIDEO_MODELS
     override val supportsModelDiscovery: Boolean = true
     override val supportsCustomHeaders: Boolean = true
 
@@ -33,10 +32,9 @@ class AutoDlModelRepository(
         settingsSummary = settingsSummary,
         pathPrefix = PREFIX,
         baseUrl = BASE,
-        models = IMAGE_MODELS,
     )
 
-    private fun account() = settings.account(id, BASE, defaultModels)
+    private fun account() = settings.account(id, BASE)
 
     override fun configured(): Boolean = account().token.isNotBlank()
 
@@ -45,17 +43,23 @@ class AutoDlModelRepository(
     override suspend fun discoverModels(): List<String> = imageApi.discoverModels()
 
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
-        val images = imageApi.catalog(force).filter { familyOf(it.id) == "image" }
-        val videos = settings.enabledModels(id, VIDEO_MODELS).map { model ->
+        val account = account()
+        if (account.token.isBlank()) return emptyList()
+        val models = pulledModels(settings, id, account.baseUrl, account.token) { discoverModels() }
+        return settings.enabledModels(id, models).map { model ->
+            val family = familyOf(model)
             CloudWorkflowSummary(
                 id = model,
                 name = model,
-                description = "AutoDL ${familyOf(model)} video model",
-                kind = "video",
+                description = if (family == "image") {
+                    "AutoDL model API image model"
+                } else {
+                    "AutoDL model API ${family.uppercase()} video model"
+                },
+                kind = if (family == "image") "image" else "video",
                 priceType = "official_api",
             )
         }
-        return images + videos
     }
 
     override suspend fun detail(workflowId: String): CloudWorkflowSpec {
@@ -407,34 +411,5 @@ class AutoDlModelRepository(
         const val PROVIDER = "autodl_model"
         const val BASE = "https://www.autodl.art/api/v1"
         const val PREFIX = "autodl-model:"
-
-        val IMAGE_MODELS = listOf(
-            "gpt-image-2.5-flare",
-            "gpt-image-2.5-sunburst",
-            "gpt-image-2",
-            "Qwen-Image",
-            "Z-Image-Turbo",
-            "nano-banana-2",
-            "nano-banana-2.1",
-            "doubao-seedream-5-0-flash",
-            "gemini-2.5-flash-image",
-            "gemini-3.1-flash-image-preview",
-        )
-        val VIDEO_MODELS = listOf(
-            "wan3.0-video-prime",
-            "wan3.0-video",
-            "MiniMax-H3",
-            "doubao-seedance-2-5-260628",
-            "doubao-seedance-2-0-mini-260615",
-            "doubao-seedance-2-0-260128",
-            "doubao-seedance-2-0-fast-260128",
-            "MiniMax-Hailuo-02",
-            "MiniMax-Hailuo-2.3",
-            "MiniMax-Hailuo-2.3-Fast",
-            "kling-v3-omni",
-            "kling-video-o1",
-            "kling-v2-5-turbo",
-            "kling-v2-6",
-        )
     }
 }

@@ -35,9 +35,9 @@ class CloudModelCapabilitiesTest {
     }
 
     @Test
-    fun seedreamIsAnImageModelDespiteTheName() {
+    fun seedreamIsAnImageModelThatAlsoAcceptsReferences() {
         val tags = CloudModelCapabilities.of("doubao-seedream-5-0-flash")
-        assertEquals(listOf(CloudModelCapabilities.IMAGE), tags)
+        assertEquals(listOf(CloudModelCapabilities.IMAGE, CloudModelCapabilities.EDIT), tags)
     }
 
     @Test

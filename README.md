@@ -19,6 +19,7 @@ One lens, every model. Android client for local ComfyUI **and** hosted cloud wor
 **Iris** turns your phone into a remote for generation models running on your PC or in the cloud:
 
 - **Local + multi-provider cloud workflows** — browse local ComfyUI and AutoDL.Art workflows alongside OpenAI, Gemini, Replicate, SiliconFlow, AutoDL Models and configurable OpenAI-compatible / JSON-template APIs
+- **Cloud workspace** — provider cards group every model by vendor; model lists are pulled from each provider (never hard-coded), and a provider can be hidden without deleting its settings
 - **Workflow conversion** — converts ComfyUI canvas JSON to API format automatically and discovers prompts, seeds, reference images and advanced parameters
 - **Cloud video + audio** — image-to-video, first/last-frame, multi-image/multi-audio, lip-sync and TTS workflows; results are downloaded immediately because hosted URLs expire
 - **Cost guardrails** — platform price, per-run estimate and confirmation before a paid submit; local spend estimate and cancel warnings
@@ -39,6 +40,7 @@ One lens, every model. Android client for local ComfyUI **and** hosted cloud wor
 ### 核心能力
 
 - **本地 + 多厂商云端**：创作页统一管理本地 ComfyUI、AutoDL.Art 托管工作流，以及 OpenAI、Gemini、Replicate、SiliconFlow、AutoDL Models 和可自定义的兼容接口、JSON 模板 API
+- **云服务工作台**：按厂商分组展示模型，模型列表由厂商接口拉取而不是内置预设；可随时关闭某个厂商而不删除配置
 - **云端视频 + 音频**：图生视频、首尾帧、多图参考、多图多音频、对口型与 TTS；云端结果是临时链接，成功后立即下载到手机
 - **费用护栏**：提交前显示平台计价、本次预估并二次确认；本地记录预估消耗；取消云端任务会提示平台侧可能继续计费
 - **分镜**：把多个云端视频镜头串成项目，上一镜的尾帧自动成为下一镜参考图
@@ -64,7 +66,7 @@ ComfyUI 需以 `--listen 0.0.0.0` 启动。连接页可直接选择“仅使用�
 
 ### 云端计费与恢复提醒
 
-云端 Provider 根据其各自的计费规则收费。Iris 会在发起付费生成前显示可获得的价格/预估并请求确认；本地“预估消耗”不是厂商账单。取消本地跟踪不一定会取消远端任务，某些厂商仍可能继续执行及计费。云端结果链接可能过期，请及时保存。
+云端 Provider 根据其各自的计费规则收费。Iris 会在发起付费生成前显示实际厂商、可获得的价格/预估并请求确认；本地“预估消耗”不是厂商账单。取消本地跟踪不一定会取消远端任务，某些厂商仍可能继续执行及计费。云端结果链接可能过期，请及时保存。
 
 v2.3.0 增强了云端任务状态和结果的重启恢复；极端情况下，如果远端已接受任务而本机持久化同时失败，仍可能需要手工找回远端任务 ID。详见 [云服务配置与恢复说明](docs/CloudProviders.md)。
 

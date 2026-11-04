@@ -25,7 +25,11 @@ object CloudModelCapabilities {
         if (looksAudio) tags += AUDIO else if (looksVideo) tags += VIDEO
         if (tags.isEmpty()) tags += IMAGE
 
-        if ("edit" in lower) tags += EDIT
+        // Video reference inputs are already described by i2v/t2v; "edit" means
+        // an image model accepts a source image.
+        if (VIDEO !in tags && ("edit" in lower || CloudModelParameters.supportsReferenceImage(modelId))) {
+            tags += EDIT
+        }
         if ("i2v" in lower || "image-to-video" in lower || "image2video" in lower) {
             tags += IMAGE_TO_VIDEO
         }

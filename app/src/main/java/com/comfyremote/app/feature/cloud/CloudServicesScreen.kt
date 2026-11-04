@@ -25,6 +25,7 @@ import com.comfyremote.app.ui.components.ChipTone
 import com.comfyremote.app.ui.components.DetailTopBar
 import com.comfyremote.app.ui.components.IrisCard
 import com.comfyremote.app.ui.components.IrisScaffold
+import com.comfyremote.app.ui.components.IrisSwitch
 import com.comfyremote.app.ui.components.ListRow
 import com.comfyremote.app.ui.components.SectionHeader
 import com.comfyremote.app.ui.components.StatusChip
@@ -95,6 +96,14 @@ fun CloudServicesScreen(
             item("providers-heading") {
                 SectionHeader(stringResource(R.string.cloud_providers))
             }
+            item("providers-hint") {
+                Text(
+                    stringResource(R.string.cloud_provider_enabled_hint),
+                    style = IrisType.metaSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = Spacing.xs),
+                )
+            }
             items(state.providers, key = { it.id }) { provider ->
                 val status = provider.health?.status
                 ListRow(
@@ -103,8 +112,11 @@ fun CloudServicesScreen(
                     meta = {
                         StatusChip(
                             cloudStatusLabel(status),
-                            tone = cloudStatusTone(status),
+                            tone = if (provider.enabled) cloudStatusTone(status) else ChipTone.Neutral,
                         )
+                        if (!provider.enabled) {
+                            StatusChip(stringResource(R.string.cloud_provider_models_hidden), tone = ChipTone.Neutral)
+                        }
                         provider.health?.takeIf { it.status == CloudHealthStatus.READY && it.modelCount > 0 }
                             ?.let {
                                 Text(
@@ -132,6 +144,14 @@ fun CloudServicesScreen(
                                 maxLines = 2,
                             )
                         }
+                    },
+                    trailing = {
+                        IrisSwitch(
+                            checked = provider.enabled,
+                            onCheckedChange = { enabled ->
+                                viewModel.setProviderEnabled(provider.id, enabled)
+                            },
+                        )
                     },
                     onClick = { onOpenProvider(provider.id) },
                 )

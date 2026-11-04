@@ -2,6 +2,7 @@ package com.comfyremote.app.data.cloud
 
 import com.comfyremote.app.ComfyException
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -9,6 +10,14 @@ import org.json.JSONObject
 import java.io.File
 import java.util.Base64
 import java.util.concurrent.TimeUnit
+
+/** One binary part of a multipart request (reference images, masks, audio). */
+data class CloudFilePart(
+    val fieldName: String,
+    val fileName: String,
+    val mime: String,
+    val bytes: ByteArray,
+)
 
 /** Shared HTTP plumbing for official/custom cloud providers. */
 object CloudHttp {
@@ -87,6 +96,67 @@ object CloudHttp {
             if (!response.isSuccessful) throw ComfyException("HTTP ${response.code}: ${text.take(300)}")
             return JSONObject(text)
         }
+    }
+
+    /** Multipart POST used by OpenAI `/images/edits` and similar endpoints. */
+    fun postMultipart(
+        url: String,
+        fields: Map<String, String>,
+        files: List<CloudFilePart>,
+        headers: Map<String, String> = emptyMap(),
+    ): JSONObject {
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM).apply {
+            fields.forEach { (key, value) -> addFormDataPart(key, value) }
+            files.forEach { file ->
+                addFormDataPart(
+                    file.fieldName,
+                    file.fileName,
+                    file.bytes.toRequestBody(file.mime.toMediaType()),
+                )
+            }
+        }.build()
+        val request = Request.Builder()
+            .url(url)
+            .post(body)
+            .apply { headers.forEach { (key, value) -> header(key, value) } }
+            .build()
+        client.newCall(request).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw ComfyException("HTTP ${response.code}: ${text.take(300)}")
+            return JSONObject(text)
+        }
+    }
+
+    /** Decodes a `data:image/...;base64,...` value into MIME type and bytes. */
+    fun decodeDataUrl(value: String): Pair<String, ByteArray>? {
+        if (!value.startsWith("data:")) return null
+        val meta = value.substringAfter("data:").substringBefore(',')
+        val payload = value.substringAfter(',', "")
+        if (payload.isBlank()) return null
+        val mime = meta.substringBefore(';').ifBlank { "image/png" }
+        return runCatching { mime to Base64.getDecoder().decode(payload) }.getOrNull()
+    }
+
+    /**
+     * Resolves a reference image value to bytes. Local values are converted to
+     * data URLs by CloudInputStore, but remote URLs are supported too.
+     */
+    fun imagePayload(
+        value: String,
+        headers: Map<String, String> = emptyMap(),
+    ): Pair<String, ByteArray>? {
+        decodeDataUrl(value)?.let { return it }
+        if (value.startsWith("http://") || value.startsWith("https://")) {
+            val ext = value.substringBefore('?').substringAfterLast('.', "").lowercase()
+            val mime = when (ext) {
+                "jpg", "jpeg" -> "image/jpeg"
+                "webp" -> "image/webp"
+                "gif" -> "image/gif"
+                else -> "image/png"
+            }
+            return mime to download(value, headers)
+        }
+        return null
     }
 
     fun download(url: String, headers: Map<String, String> = emptyMap()): ByteArray {
