@@ -49,8 +49,10 @@ these also verify the one-time legacy tail-frame migration.
 
 | File | What it shows |
 |---|---|
+| `iris-board-create-dialog.png` | Relay can be chosen when the project is created |
 | `iris-board-detail-polished.png` | Optional tail-frame relay switch, tail frame added to project assets, result + tail frame on the shot card |
 | `iris-board-chain-off.png` | Relay disabled — automatic references are cleared, manual/asset references remain |
+| `iris-board-shot2-menu-open.png` | “Use previous shot's tail frame” and “Clear reference” actions |
 | `iris-board-next-shot.png` | Next shot opens with the returned tail frame as its reference |
 | `iris-board-results-tab.png` | The returned tail frame appears in the app Results library |
 

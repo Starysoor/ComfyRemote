@@ -8,8 +8,12 @@
 - Every finished shot now writes its tail frame into project assets and Results. Video tail frames get a durable History copy; existing projects are migrated once.
 - Shot cards show the result and the returned tail frame separately, with a "Use previous shot's tail frame" action.
 - The next-shot action now reflects project state (draft, running, all done), and project assets show their labels and semantic roles.
+- Tail-frame labels follow shots after reordering, and History copies use clean image filenames.
 
 ### Fixed
+
+- Removing a tail-frame asset no longer clears the next shot's automatic reference or forces it into manual mode.
+- Loading a project rebuilds the automatic frame chain from its relay setting, so legacy/rotated order stays consistent.
 
 - Cloud tab now has a provider workspace strip and groups every model under its real vendor, matching the local server workspace; tapping a provider filters the list.
 - Cloud providers can be enabled/disabled from Cloud services or the provider page. Hidden providers no longer contribute models, recent presets or recent results, and disabling a provider blocks new submissions through it.

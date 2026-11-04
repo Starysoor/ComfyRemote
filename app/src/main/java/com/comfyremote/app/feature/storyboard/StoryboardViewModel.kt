@@ -486,12 +486,16 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         index: Int,
         lastFramePath: String,
     ): Boolean {
-        val historyId = "storyboard-tail:${shot.id}:${File(lastFramePath).name}"
+        val sourceName = File(lastFramePath).nameWithoutExtension
+        val historyId = "storyboard-tail:${shot.id}:$sourceName"
         if (container.historyRepository.find(historyId) != null) return true
         // History owns its copy, so Storyboard GC can never delete an old result.
         val historyImage = withContext(Dispatchers.IO) {
             runCatching {
-                val target = container.historyRepository.newImageFile(historyId, 0)
+                val target = container.historyRepository.newImageFile(
+                    "storyboard-tail-${shot.id}-$sourceName",
+                    0,
+                )
                 target.parentFile?.mkdirs()
                 File(lastFramePath).copyTo(target, overwrite = true)
                 target.absolutePath

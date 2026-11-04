@@ -278,7 +278,10 @@ fun StoryboardDetailScreen(
                 } else {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         items(project.assets, key = { it.id }) { asset ->
-                            AssetCard(asset) { viewModel.removeAsset(project.id, asset.id) }
+                            AssetCard(
+                                asset = asset,
+                                label = assetDisplayLabel(project, asset),
+                            ) { viewModel.removeAsset(project.id, asset.id) }
                         }
                     }
                 }
@@ -472,7 +475,9 @@ fun StoryboardDetailScreen(
                                 Checkbox(checked = checked, onCheckedChange = null)
                                 Text(
                                     "${referenceRoleLabel(asset.role)} · " +
-                                        asset.label.ifBlank { asset.path.substringAfterLast('/') },
+                                        project?.let { assetDisplayLabel(it, asset) }
+                                            ?.ifBlank { asset.path.substringAfterLast('/') }
+                                        ?: asset.label.ifBlank { asset.path.substringAfterLast('/') },
                                 )
                             }
                         }
@@ -595,8 +600,20 @@ private fun ProjectSettingsDialog(
     )
 }
 
+/** Tail-frame assets follow their shot when the timeline is reordered. */
 @Composable
-private fun AssetCard(asset: ProjectAsset, onDelete: () -> Unit) {
+private fun assetDisplayLabel(project: StoryboardProject, asset: ProjectAsset): String {
+    val shotId = asset.id.removePrefix("tail:").takeIf { asset.id.startsWith("tail:") }
+    val index = shotId?.let { id -> project.shots.indexOfFirst { it.id == id } } ?: -1
+    return if (index >= 0) {
+        stringResource(R.string.board_tail_asset_label, index + 1)
+    } else {
+        asset.label.ifBlank { referenceRoleLabel(asset.role) }
+    }
+}
+
+@Composable
+private fun AssetCard(asset: ProjectAsset, label: String, onDelete: () -> Unit) {
     Column(
         Modifier.width(96.dp),
         verticalArrangement = Arrangement.spacedBy(Spacing.xs),
@@ -613,14 +630,15 @@ private fun AssetCard(asset: ProjectAsset, onDelete: () -> Unit) {
             }
         }
         Text(
-            asset.label.ifBlank { referenceRoleLabel(asset.role) },
+            label,
             style = MaterialTheme.typography.labelMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (asset.label.isNotBlank()) {
+        val roleLabel = referenceRoleLabel(asset.role)
+        if (label != roleLabel) {
             Text(
-                referenceRoleLabel(asset.role),
+                roleLabel,
                 style = IrisType.metaSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

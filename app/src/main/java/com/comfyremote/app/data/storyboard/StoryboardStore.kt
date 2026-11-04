@@ -201,7 +201,12 @@ class StoryboardStore internal constructor(private val file: File) {
             val cleaned = project.shots.map { shot ->
                 val referencedById = assetId in shot.referenceAssetIds
                 val referencedByPath = shot.referencePath == asset.path
-                if (!referencedById && !referencedByPath) return@map shot
+                // A tail frame assets the next shot's automatic reference by path,
+                // not by id. Removing it from the asset strip must not break the
+                // relay or turn the automatic reference into a manual empty one.
+                val referencedByAutoChain = referencedByPath &&
+                    !shot.referenceManual && shot.referenceAssetIds.isEmpty()
+                if (!referencedById && (!referencedByPath || referencedByAutoChain)) return@map shot
 
                 val ids = shot.referenceAssetIds - assetId
                 val nextAsset = ids.firstNotNullOfOrNull { id ->
