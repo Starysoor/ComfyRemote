@@ -5,6 +5,10 @@ import com.comfyremote.app.data.reference.ReferenceRole
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /** One past generation stored locally on the phone. */
 data class HistoryItem(
@@ -29,13 +33,22 @@ data class HistoryItem(
 class HistoryStore(
     private val dir: File,
     /** Files still referenced by storyboards (or other stores) must survive delete/prune. */
+    /** Injected in tests to simulate an index commit failure without risking user media. */
+    private val replaceIndex: (File, File) -> Unit = { source, target ->
+        try {
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        } catch (unsupported: java.nio.file.AtomicMoveNotSupportedException) {
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+        Unit
+    },
     private val protectedMedia: () -> Set<String> = { emptySet() },
 ) {
 
     constructor(
         context: Context,
         protectedMedia: () -> Set<String> = { emptySet() },
-    ) : this(File(context.getExternalFilesDir(null), "history").apply { mkdirs() }, protectedMedia)
+    ) : this(File(context.getExternalFilesDir(null), "history").apply { mkdirs() }, protectedMedia = protectedMedia)
 
     private val indexFile = File(dir, "index.json")
 
@@ -91,20 +104,27 @@ class HistoryStore(
 
     fun deleteMany(ids: Collection<String>) {
         val idSet = ids.toSet()
-        val victims = load().filter { it.id in idSet }
-        val protected = protectedMedia()
-        victims.flatMap { it.images }
-            .filter { it !in protected }
-            .forEach { runCatching { File(it).delete() } }
-        writeItems(load().filter { it.id !in idSet })
+        if (idSet.isEmpty()) return
+        val existing = load()
+        val victims = existing.filter { it.id in idSet }
+        if (victims.isEmpty()) return
+        val kept = existing.filterNot { it.id in idSet }
+        val stillReferenced = protectedMedia() + kept.flatMap { it.images }
+        // Commit the new index first; failed I/O must not destroy existing results.
+        writeItems(kept)
+        val ownedDir = dir.canonicalFile.toPath()
+        victims.flatMap { it.images }.distinct()
+            .filterNot { it in stillReferenced }
+            .forEach { path ->
+                runCatching {
+                    val media = File(path).canonicalFile
+                    // Only delete app-owned results, never arbitrary imported source files.
+                    if (media.isFile && media.toPath().startsWith(ownedDir)) media.delete()
+                }
+            }
     }
 
-    fun delete(id: String) {
-        val victim = load().firstOrNull { it.id == id }
-        val protected = protectedMedia()
-        victim?.images?.filter { it !in protected }?.forEach { runCatching { File(it).delete() } }
-        writeItems(load().filter { it.id != id })
-    }
+    fun delete(id: String) = deleteMany(listOf(id))
 
     fun newImageFile(id: String, idx: Int): File = File(dir, "${id}_${idx}.png")
 
@@ -114,11 +134,24 @@ class HistoryStore(
     }
 
     private fun writeItems(items: List<HistoryItem>) {
+        if (!dir.isDirectory && !dir.mkdirs()) throw IOException("Cannot create history directory: $dir")
+        // A corrupted index must not be silently overwritten with an empty library.
+        if (indexFile.isFile) {
+            try {
+                JSONArray(indexFile.readText())
+            } catch (error: Exception) {
+                throw IOException("History index is unreadable; refusing to overwrite it", error)
+            }
+        }
         val raw = JSONArray().apply { items.forEach { put(it.toJson()) } }.toString()
-        val tmp = File(dir, "index.json.tmp")
-        tmp.writeText(raw)
-        if (!tmp.renameTo(indexFile)) {
-            indexFile.writeText(raw)
+        val tmp = File.createTempFile("index.json.", ".tmp", dir)
+        try {
+            FileOutputStream(tmp).use { stream ->
+                stream.write(raw.toByteArray(Charsets.UTF_8))
+                stream.fd.sync()
+            }
+            replaceIndex(tmp, indexFile)
+        } finally {
             tmp.delete()
         }
     }

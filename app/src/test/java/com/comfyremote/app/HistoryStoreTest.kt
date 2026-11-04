@@ -7,6 +7,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 class HistoryStoreTest {
 
@@ -99,4 +102,46 @@ class HistoryStoreTest {
         // A runner may have written this file but not indexed it yet.
         assertTrue(freshOrphan.exists())
     }
+    @Test
+    fun deletingOneHistoryItemNeverDeletesMediaReferencedByAnother() {
+        val dir = directory()
+        val shared = File(dir, "shared.png").apply { writeText("important image") }
+        val store = HistoryStore(dir)
+        store.add(item("first", dir, listOf(shared)))
+        store.add(item("second", dir, listOf(shared)))
+        store.delete("first")
+        assertEquals(listOf("second"), store.load().map { it.id })
+        assertTrue(shared.isFile)
+    }
+
+    @Test
+    fun aFailedIndexCommitNeverDeletesMediaOrItsRecord() {
+        val dir = directory()
+        var failReplacement = false
+        val store = HistoryStore(dir, replaceIndex = { source, target ->
+            if (failReplacement) throw IOException("Injected failed index commit")
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            Unit
+        })
+        val first = File(dir, "one.png").apply { writeText("first") }
+        val second = File(dir, "two.png").apply { writeText("second") }
+        store.add(item("one", dir, listOf(first)))
+        store.add(item("two", dir, listOf(second)))
+        failReplacement = true
+        assertTrue(runCatching { store.delete("one") }.exceptionOrNull() is IOException)
+        assertTrue(runCatching { store.deleteMany(listOf("one", "two")) }.exceptionOrNull() is IOException)
+        assertTrue(first.exists())
+        assertTrue(second.exists())
+        assertEquals(setOf("one", "two"), store.load().map { it.id }.toSet())
+    }
+
+    @Test
+    fun corruptedHistoryIndexIsNotOverwrittenByASave() {
+        val dir = directory()
+        val store = HistoryStore(dir)
+        val index = File(dir, "index.json").apply { writeText("{corrupted json") }
+        assertTrue(runCatching { store.add(item("new", dir)) }.exceptionOrNull() is IOException)
+        assertEquals("{corrupted json", index.readText())
+    }
+
 }

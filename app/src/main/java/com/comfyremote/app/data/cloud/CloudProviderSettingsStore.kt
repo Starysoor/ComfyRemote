@@ -29,29 +29,14 @@ class CloudProviderSettingsStore(
     }
 
     /**
-     * Earlier builds filled official provider model lists from hard-coded
-     * presets when settings were saved. Remove only those known legacy preset
-     * ids; manually chosen or discovered model ids must survive an upgrade.
-     * An explicitly saved empty list also stays empty.
+     * Never erase saved model IDs during upgrade. In schema v2 any model list
+     * could already have come from manual selection or a real provider pull.
+     * A known older preset ID is indistinguishable from a user's choice.
      */
     private fun migratePresetCatalogs() {
-        val version = prefs.getInt(CATALOG_SCHEMA_KEY, 0)
-        if (version >= CATALOG_SCHEMA_VERSION) return
-        val editor = prefs.edit()
-        LEGACY_PRESETS.forEach { (providerId, legacy) ->
-            val key = "cloud_${providerId}_models"
-            val raw = prefs.getString(key, null) ?: return@forEach
-            if (raw.isBlank()) return@forEach
-            val stored = raw.split(',', '\n').map(String::trim).filter(String::isNotBlank)
-            val cleaned = stored.filterNot { it in legacy }.distinct()
-            if (cleaned.isEmpty()) {
-                // The list was entirely preset data; a later pull can replace it.
-                editor.remove(key)
-            } else if (cleaned != stored) {
-                editor.putString(key, cleaned.joinToString(","))
-            }
+        if (prefs.getInt(CATALOG_SCHEMA_KEY, 0) < CATALOG_SCHEMA_VERSION) {
+            prefs.edit().putInt(CATALOG_SCHEMA_KEY, CATALOG_SCHEMA_VERSION).apply()
         }
-        editor.putInt(CATALOG_SCHEMA_KEY, CATALOG_SCHEMA_VERSION).apply()
     }
 
     private fun bump() {
@@ -226,36 +211,6 @@ class CloudProviderSettingsStore(
     }
 
     companion object {
-        /** Hard-coded catalogues shipped by earlier builds. Never delete user ids. */
-        private val LEGACY_PRESETS = mapOf(
-            "openai" to setOf(
-                "gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2",
-                "gpt-image-1.5", "chatgpt-image-latest",
-            ),
-            "gemini" to setOf(
-                "gemini-3.1-flash-image", "gemini-3.1-flash-lite-image", "gemini-3-pro-image",
-            ),
-            "replicate" to setOf(
-                "black-forest-labs/flux-schnell", "black-forest-labs/flux-dev",
-                "minimax/video-01", "tencent/hunyuan-video",
-            ),
-            "siliconflow" to setOf(
-                "Kwai-Kolors/Kolors", "Qwen/Qwen-Image", "Qwen/Qwen-Image-Edit-2509",
-                "Tongyi-MAI/Z-Image-Turbo", "Wan-AI/Wan2.2-T2V-A14B",
-                "Wan-AI/Wan2.2-I2V-A14B",
-            ),
-            "autodl_model" to setOf(
-                "gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2",
-                "Qwen-Image", "Z-Image-Turbo", "nano-banana-2", "nano-banana-2.1",
-                "doubao-seedream-5-0-flash", "gemini-2.5-flash-image",
-                "gemini-3.1-flash-image-preview", "wan3.0-video-prime", "wan3.0-video",
-                "MiniMax-H3", "doubao-seedance-2-5-260628", "doubao-seedance-2-0-mini-260615",
-                "doubao-seedance-2-0-260128", "doubao-seedance-2-0-fast-260128",
-                "MiniMax-Hailuo-02", "MiniMax-Hailuo-2.3", "MiniMax-Hailuo-2.3-Fast",
-                "kling-v3-omni", "kling-video-o1", "kling-v2-5-turbo", "kling-v2-6",
-            ),
-        )
-
         private const val CATALOG_SCHEMA_KEY = "cloud_catalog_schema"
         private const val CATALOG_SCHEMA_VERSION = 3
 

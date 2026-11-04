@@ -38,7 +38,7 @@ class CloudProviderSettingsStoreTest {
     }
 
     @Test
-    fun legacyPresetsAreRemovedButManuallySavedModelsSurvive() {
+    fun anUpgradePreservesManuallySavedAndOldPresetModelIds() {
         val prefs = MemoryPrefs().apply {
             values["cloud_openai_models"] = "gpt-image-2.5-sunburst,my-custom-model"
             values["cloud_custom_models"] = "my-own-model"
@@ -47,20 +47,34 @@ class CloudProviderSettingsStoreTest {
         val store = CloudProviderSettingsStore(prefs, MemoryVault())
 
         assertTrue(store.hasSavedModels("openai"))
-        assertEquals(listOf("my-custom-model"), store.account("openai", "").models)
+        assertEquals(listOf("gpt-image-2.5-sunburst", "my-custom-model"), store.account("openai", "").models)
         assertEquals(listOf("my-own-model"), store.account("custom", "").models)
     }
 
     @Test
-    fun aListMadeOnlyOfLegacyPresetsIsClearedForDiscovery() {
+    fun modelsMatchingKnownPresetsArePreservedWhenUserSaved() {
         val prefs = MemoryPrefs().apply {
             values["cloud_siliconflow_models"] = "Kwai-Kolors/Kolors,Qwen/Qwen-Image"
         }
 
         val store = CloudProviderSettingsStore(prefs, MemoryVault())
 
-        assertFalse(store.hasSavedModels("siliconflow"))
-        assertEquals(emptyList<String>(), store.account("siliconflow", "").models)
+        assertTrue(store.hasSavedModels("siliconflow"))
+        assertEquals(listOf("Kwai-Kolors/Kolors", "Qwen/Qwen-Image"), store.account("siliconflow", "").models)
+    }
+
+    @Test
+    fun upgradingFromSchemaTwoKeepsExactUserModelList() {
+        val prefs = MemoryPrefs().apply {
+            values["cloud_catalog_schema"] = 2
+            values["cloud_gemini_models"] = "gemini-3-pro-image,gemini-my-custom-image"
+        }
+        val store = CloudProviderSettingsStore(prefs, MemoryVault())
+        assertEquals(
+            listOf("gemini-3-pro-image", "gemini-my-custom-image"),
+            store.account("gemini", "").models,
+        )
+        assertEquals(3, prefs.getInt("cloud_catalog_schema", -1))
     }
 
     @Test
