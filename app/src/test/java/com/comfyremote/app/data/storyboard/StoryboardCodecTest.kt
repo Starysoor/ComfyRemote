@@ -1,6 +1,7 @@
 package com.comfyremote.app.data.storyboard
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -12,6 +13,7 @@ class StoryboardCodecTest {
             id = "shot-1",
             prompt = "wide shot",
             lastFramePath = "/files/last.png",
+            tailFrameStored = true,
             status = "done",
             taskId = "task-1",
             resultPath = "/files/result.mp4",
@@ -33,6 +35,7 @@ class StoryboardCodecTest {
             stylePrompt = "cinematic",
             aspectRatio = "9:16",
             defaultValues = mapOf("resolution" to "768p竖"),
+            chainFrames = false,
             shots = listOf(shot1, shot2),
             assets = listOf(
                 com.comfyremote.app.data.reference.ProjectAsset(
@@ -55,6 +58,7 @@ class StoryboardCodecTest {
         assertEquals(2, restored.shots.size)
         assertEquals("done", restored.shots[0].status)
         assertEquals("/files/result.mp4", restored.shots[0].resultPath)
+        assertTrue(restored.shots[0].tailFrameStored)
         assertEquals("/files/last.png", restored.shots[1].referencePath)
         assertTrue(restored.shots[1].referenceManual)
         assertEquals(
@@ -63,6 +67,8 @@ class StoryboardCodecTest {
         )
         assertEquals("9:16", restored.aspectRatio)
         assertEquals("768p竖", restored.defaultValues["resolution"])
+        assertFalse(restored.chainFrames)
+        assertTrue(restored.shots[0].tailFrameStored)
         assertEquals(listOf("asset-hero", "asset-scene"), restored.shots[1].referenceAssetIds)
         assertEquals("minimax_h3_lightx2v_v5", restored.shots[1].workflowId)
         assertEquals("5", restored.shots[1].values["duration"])
@@ -84,6 +90,8 @@ class StoryboardCodecTest {
         assertEquals("autodl", project.providerId)
         assertEquals("autodl:minimax_h3_lightx2v_v5", project.shots.single().workflowPath)
         assertEquals("autodl", project.shots.single().providerId)
+        assertTrue(project.chainFrames)
+        assertFalse(project.shots.single().tailFrameStored)
     }
 
     @Test

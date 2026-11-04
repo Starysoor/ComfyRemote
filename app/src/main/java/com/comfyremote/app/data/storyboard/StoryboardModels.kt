@@ -29,6 +29,8 @@ data class StoryboardShot(
     val values: Map<String, String> = emptyMap(),
     /** Last frame extracted from a successful result; feeds the next shot. */
     val lastFramePath: String? = null,
+    /** True once this frame has been written to project assets (and History for videos). */
+    val tailFrameStored: Boolean = false,
     val status: String = "draft", // draft | running | done | failed
     val taskId: String? = null,
     val resultPath: String? = null,
@@ -47,6 +49,8 @@ data class StoryboardProject(
     val stylePrompt: String = "",
     val aspectRatio: String = "",
     val defaultValues: Map<String, String> = emptyMap(),
+    /** Optional "tail frame relay" gameplay; off leaves each shot's reference manual. */
+    val chainFrames: Boolean = true,
     val shots: List<StoryboardShot> = emptyList(),
     val assets: List<ProjectAsset> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
@@ -75,6 +79,7 @@ object StoryboardCodec {
         .put("stylePrompt", project.stylePrompt)
         .put("aspectRatio", project.aspectRatio)
         .put("defaultValues", JSONObject(project.defaultValues))
+        .put("chainFrames", project.chainFrames)
         .put("createdAt", project.createdAt)
         .put("updatedAt", project.updatedAt)
         .put("shots", JSONArray().apply { project.shots.forEach { put(shotToJson(it)) } })
@@ -107,6 +112,7 @@ object StoryboardCodec {
             stylePrompt = o.optString("stylePrompt"),
             aspectRatio = o.optString("aspectRatio"),
             defaultValues = stringMap(o.optJSONObject("defaultValues")),
+            chainFrames = o.optBoolean("chainFrames", true),
             shots = shots,
             assets = assets,
             createdAt = o.optLong("createdAt"),
@@ -126,6 +132,7 @@ object StoryboardCodec {
         .put("workflowId", shot.workflowId ?: JSONObject.NULL)
         .put("values", JSONObject(shot.values))
         .put("lastFramePath", shot.lastFramePath ?: JSONObject.NULL)
+        .put("tailFrameStored", shot.tailFrameStored)
         .put("status", shot.status)
         .put("taskId", shot.taskId ?: JSONObject.NULL)
         .put("resultPath", shot.resultPath ?: JSONObject.NULL)
@@ -152,6 +159,7 @@ object StoryboardCodec {
             workflowId = legacyWorkflowId,
             values = stringMap(o.optJSONObject("values")),
             lastFramePath = nullableString(o, "lastFramePath"),
+            tailFrameStored = o.optBoolean("tailFrameStored", false),
             status = o.optString("status", "draft"),
             taskId = nullableString(o, "taskId"),
             resultPath = nullableString(o, "resultPath"),

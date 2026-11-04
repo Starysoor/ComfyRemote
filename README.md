@@ -23,7 +23,7 @@ One lens, every model. Android client for local ComfyUI **and** hosted cloud wor
 - **Workflow conversion** — converts ComfyUI canvas JSON to API format automatically and discovers prompts, seeds, reference images and advanced parameters
 - **Cloud video + audio** — image-to-video, first/last-frame, multi-image/multi-audio, lip-sync and TTS workflows; results are downloaded immediately because hosted URLs expire
 - **Cost guardrails** — platform price, per-run estimate and confirmation before a paid submit; local spend estimate and cancel warnings
-- **Storyboard** — chain multiple cloud video shots; the previous shot's last frame automatically becomes the next shot's reference
+- **Storyboard** — build multi-shot cloud video projects with reusable project assets. Tail-frame relay is an optional per-project mode; returned frames are added to project assets and Results automatically
 - **Vision-aware AI** — the built-in “AI vision rewrite” actually sends your image to a multimodal model, then rewrites the prompt around what it sees
 - **AI prompt skills** — expand / tag / translate / negative / vision skills via any OpenAI-compatible endpoint (DeepSeek, Zhipu, OpenAI, Qwen, Moonshot, Ollama); custom skills and per-workflow bindings
 - **Live progress** — foreground service, node-level progress, latent preview, cancel, task recovery after process death, local batch queue
@@ -43,7 +43,7 @@ One lens, every model. Android client for local ComfyUI **and** hosted cloud wor
 - **云服务工作台**：按厂商分组展示模型，模型列表由厂商接口拉取而不是内置预设；可随时关闭某个厂商而不删除配置
 - **云端视频 + 音频**：图生视频、首尾帧、多图参考、多图多音频、对口型与 TTS；云端结果是临时链接，成功后立即下载到手机
 - **费用护栏**：提交前显示平台计价、本次预估并二次确认；本地记录预估消耗；取消云端任务会提示平台侧可能继续计费
-- **分镜**：把多个云端视频镜头串成项目，上一镜的尾帧自动成为下一镜参考图
+- **分镜**：把多个云端视频镜头串成项目，支持复用项目素材；尾帧接力是可选的整项目玩法，返回的尾帧会自动进入项目素材和结果库
 - **真正看图改写的 AI**：内置「AI 看图改写」会把参考图作为图片输入发给多模态模型，再结合你的修改要求重写提示词；不是纯文本猜测
 - **AI 提示词技能**：扩写、标签、翻译、负面、看图改写等，兼容任意 OpenAI 风格接口（DeepSeek、智谱、OpenAI、Qwen、Moonshot、Ollama），支持自定义技能与按工作流绑定
 - **实时反馈**：前台服务保活、节点进度、latent 预览、取消、进程重启恢复、本地批量队列

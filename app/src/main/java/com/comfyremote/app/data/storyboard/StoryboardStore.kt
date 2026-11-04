@@ -19,7 +19,11 @@ class StoryboardStore internal constructor(private val file: File) {
     fun load(): List<StoryboardProject> = synchronized(lock) {
         runCatching {
             if (!file.isFile) emptyList() else StoryboardCodec.decode(file.readText())
-        }.getOrDefault(emptyList()).sortedByDescending { it.updatedAt }
+        }.getOrDefault(emptyList())
+            // Keep the persisted chain consistent with the project's relay setting,
+            // including projects created before the optional relay existed.
+            .map { project -> project.copy(shots = rebaseAutoReferences(project.shots, project.chainFrames)) }
+            .sortedByDescending { it.updatedAt }
     }
 
     fun create(
@@ -28,6 +32,7 @@ class StoryboardStore internal constructor(private val file: File) {
         stylePrompt: String = "",
         workflowPath: String = "",
         providerId: String = "",
+        chainFrames: Boolean = true,
     ): StoryboardProject = synchronized(lock) {
         val path = workflowPath.trim().ifBlank {
             workflowId.trim().takeIf { it.isNotBlank() }
@@ -41,6 +46,7 @@ class StoryboardStore internal constructor(private val file: File) {
             workflowPath = path,
             providerId = providerId.trim(),
             stylePrompt = stylePrompt.trim(),
+            chainFrames = chainFrames,
         )
         write(listOf(project) + _projects.value)
         project
@@ -57,6 +63,15 @@ class StoryboardStore internal constructor(private val file: File) {
 
     fun setAspectRatio(projectId: String, ratio: String) = update(projectId) {
         it.copy(aspectRatio = ratio.trim(), updatedAt = System.currentTimeMillis())
+    }
+
+    /** Toggles the optional tail-frame relay. Turning it off clears automatic refs only. */
+    fun setChainFrames(projectId: String, enabled: Boolean) = update(projectId) { project ->
+        project.copy(
+            chainFrames = enabled,
+            shots = rebaseAutoReferences(project.shots, enabled),
+            updatedAt = System.currentTimeMillis(),
+        )
     }
 
     fun updateSettings(
@@ -93,7 +108,7 @@ class StoryboardStore internal constructor(private val file: File) {
             val shot = StoryboardShot(prompt = prompt.trim())
             created = shot
             project.copy(
-                shots = rebaseAutoReferences(project.shots + shot),
+                shots = rebaseAutoReferences(project.shots + shot, project.chainFrames),
                 updatedAt = System.currentTimeMillis(),
             )
         }
@@ -109,7 +124,7 @@ class StoryboardStore internal constructor(private val file: File) {
             created = shot
             val shots = project.shots.toMutableList().apply { add(index + 1, shot) }
             project.copy(
-                shots = rebaseAutoReferences(shots),
+                shots = rebaseAutoReferences(shots, project.chainFrames),
                 updatedAt = System.currentTimeMillis(),
             )
         }
@@ -127,12 +142,13 @@ class StoryboardStore internal constructor(private val file: File) {
                 taskId = null,
                 resultPath = null,
                 lastFramePath = null,
+                tailFrameStored = false,
                 error = null,
             )
             created = copy
             val shots = project.shots.toMutableList().apply { add(index + 1, copy) }
             project.copy(
-                shots = rebaseAutoReferences(shots),
+                shots = rebaseAutoReferences(shots, project.chainFrames),
                 updatedAt = System.currentTimeMillis(),
             )
         }
@@ -150,18 +166,25 @@ class StoryboardStore internal constructor(private val file: File) {
             shots.add(target, shot)
             moved = true
             project.copy(
-                shots = rebaseAutoReferences(shots),
+                shots = rebaseAutoReferences(shots, project.chainFrames),
                 updatedAt = System.currentTimeMillis(),
             )
         }
         moved
     }
 
+    /** Adds or replaces an asset by id (tail frames reuse one stable asset id per shot). */
     fun addAsset(projectId: String, asset: ProjectAsset): Boolean = synchronized(lock) {
         var added = false
         update(projectId) { project ->
             added = true
-            project.copy(assets = project.assets + asset, updatedAt = System.currentTimeMillis())
+            val existing = project.assets.any { it.id == asset.id }
+            val assets = if (existing) {
+                project.assets.map { if (it.id == asset.id) asset else it }
+            } else {
+                project.assets + asset
+            }
+            project.copy(assets = assets, updatedAt = System.currentTimeMillis())
         }
         added
     }
@@ -202,7 +225,7 @@ class StoryboardStore internal constructor(private val file: File) {
             }
             project.copy(
                 assets = remaining,
-                shots = rebaseAutoReferences(cleaned),
+                shots = rebaseAutoReferences(cleaned, project.chainFrames),
                 updatedAt = System.currentTimeMillis(),
             )
         }
@@ -231,7 +254,7 @@ class StoryboardStore internal constructor(private val file: File) {
             if (index < 0) return@updateLocked project
             val remaining = project.shots.toMutableList().apply { removeAt(index) }
             project.copy(
-                shots = rebaseAutoReferences(remaining),
+                shots = rebaseAutoReferences(remaining, project.chainFrames),
                 updatedAt = System.currentTimeMillis(),
             )
         }.also { gcOrphanMediaLocked() }
@@ -259,11 +282,13 @@ class StoryboardStore internal constructor(private val file: File) {
                         status = "done",
                         resultPath = resultPath,
                         lastFramePath = lastFramePath ?: shot.lastFramePath,
+                        // A newly extracted frame still needs to enter assets/results.
+                        tailFrameStored = if (lastFramePath != null) false else shot.tailFrameStored,
                         error = null,
                     )
                 }
                 project.copy(
-                    shots = rebaseAutoReferences(shots),
+                    shots = rebaseAutoReferences(shots, project.chainFrames),
                     updatedAt = System.currentTimeMillis(),
                 )
             }
@@ -303,7 +328,24 @@ class StoryboardStore internal constructor(private val file: File) {
      * project-asset references always win; the most recent preceding last frame is
      * carried forward until a shot produces a newer one.
      */
-    private fun rebaseAutoReferences(shots: List<StoryboardShot>): List<StoryboardShot> {
+    private fun rebaseAutoReferences(
+        shots: List<StoryboardShot>,
+        chainFrames: Boolean,
+    ): List<StoryboardShot> {
+        if (!chainFrames) {
+            var cleared = false
+            val result = shots.map { shot ->
+                if (!shot.referenceManual && shot.referenceAssetIds.isEmpty() &&
+                    shot.referencePath != null
+                ) {
+                    cleared = true
+                    shot.copy(referencePath = null)
+                } else {
+                    shot
+                }
+            }
+            return if (cleared) result else shots
+        }
         var inherited: String? = null
         var changed = false
         val result = shots.map { shot ->

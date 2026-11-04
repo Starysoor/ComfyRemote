@@ -35,6 +35,81 @@ class StoryboardStoreTest {
     }
 
     @Test
+    fun tailFrameRelayIsAnOptionalGameplay() {
+        val store = store()
+        val project = store.create("Board", "wf")
+        val first = store.addShot(project.id, "first")!!
+        val second = store.addShot(project.id, "second")!!
+
+        store.markDone(project.id, first.id, "/tmp/first.mp4", "/tmp/first.png")
+        assertEquals("/tmp/first.png", store.project(project.id)!!.shots[1].referencePath)
+
+        store.setChainFrames(project.id, false)
+
+        val chainedOff = store.project(project.id)!!
+        assertFalse(chainedOff.chainFrames)
+        assertNull(chainedOff.shots[1].referencePath)
+
+        store.setReference(project.id, second.id, "/tmp/manual.png", manual = true)
+        store.setChainFrames(project.id, true)
+
+        val chainedOn = store.project(project.id)!!
+        assertTrue(chainedOn.chainFrames)
+        assertEquals("/tmp/manual.png", chainedOn.shots[1].referencePath)
+        assertTrue(chainedOn.shots[1].referenceManual)
+    }
+
+    @Test
+    fun addingTheSameAssetIdUpdatesItInsteadOfDuplicating() {
+        val store = store()
+        val project = store.create("Board", "wf")
+        val first = com.comfyremote.app.data.reference.ProjectAsset(
+            id = "tail:shot-1",
+            role = com.comfyremote.app.data.reference.ReferenceRole.END_FRAME,
+            path = "/tmp/tail-1.png",
+            label = "first tail",
+        )
+        val second = first.copy(path = "/tmp/tail-2.png", label = "second tail")
+
+        store.addAsset(project.id, first)
+        store.addAsset(project.id, second)
+
+        val assets = store.project(project.id)!!.assets
+        assertEquals(1, assets.size)
+        assertEquals("/tmp/tail-2.png", assets.single().path)
+        assertEquals("second tail", assets.single().label)
+    }
+
+    @Test
+    fun aNewTailFrameIsMarkedForAssetAndResultImportAgain() {
+        val store = store()
+        val project = store.create("Board", "wf")
+        val shot = store.addShot(project.id, "shot")!!
+        store.markDone(project.id, shot.id, "/tmp/result-1.mp4", "/tmp/tail-1.png")
+        store.updateShot(project.id, shot.id) { it.copy(tailFrameStored = true) }
+
+        store.markDone(project.id, shot.id, "/tmp/result-2.mp4", "/tmp/tail-2.png")
+
+        val updated = store.project(project.id)!!.shots.single()
+        assertEquals("/tmp/tail-2.png", updated.lastFramePath)
+        assertFalse(updated.tailFrameStored)
+    }
+
+    @Test
+    fun duplicatingAShotDoesNotInheritImportedTailState() {
+        val store = store()
+        val project = store.create("Board", "wf")
+        val shot = store.addShot(project.id, "shot")!!
+        store.markDone(project.id, shot.id, "/tmp/result.mp4", "/tmp/tail.png")
+        store.updateShot(project.id, shot.id) { it.copy(tailFrameStored = true) }
+
+        val copy = store.duplicateShot(project.id, shot.id)!!
+
+        assertFalse(copy.tailFrameStored)
+        assertNull(copy.lastFramePath)
+    }
+
+    @Test
     fun attachTaskDoesNotOverwriteARunningShot() {
         val store = store()
         val project = store.create("Board", "wf")

@@ -42,6 +42,18 @@ The `redesign/` folder contains the light and dark Iris design-system screens:
 | `iris-appsettings.png` | App/interface settings |
 | `iris-launcher.png` | Launcher icon |
 
+## Storyboard workspace polish
+
+Captured on `deck34` against a previously completed real storyboard project, so
+these also verify the one-time legacy tail-frame migration.
+
+| File | What it shows |
+|---|---|
+| `iris-board-detail-polished.png` | Optional tail-frame relay switch, tail frame added to project assets, result + tail frame on the shot card |
+| `iris-board-chain-off.png` | Relay disabled — automatic references are cleared, manual/asset references remain |
+| `iris-board-next-shot.png` | Next shot opens with the returned tail frame as its reference |
+| `iris-board-results-tab.png` | The returned tail frame appears in the app Results library |
+
 ## Cloud workspace fixes
 
 Captured on the `deck34` emulator with the real AutoDL.Art catalogue plus a

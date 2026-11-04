@@ -2,6 +2,13 @@
 
 ## 2.3.1 — 2026-11-04
 
+### Added
+
+- Storyboard tail-frame relay is now an optional per-project gameplay, selectable when creating a project and toggleable in the workspace; turning it off clears only automatic references.
+- Every finished shot now writes its tail frame into project assets and Results. Video tail frames get a durable History copy; existing projects are migrated once.
+- Shot cards show the result and the returned tail frame separately, with a "Use previous shot's tail frame" action.
+- The next-shot action now reflects project state (draft, running, all done), and project assets show their labels and semantic roles.
+
 ### Fixed
 
 - Cloud tab now has a provider workspace strip and groups every model under its real vendor, matching the local server workspace; tapping a provider filters the list.
@@ -16,6 +23,7 @@
 ### Tests
 
 - Added regression coverage for provider grouping, provider enable/disable, pulled-vs-preset catalogues, model-specific reference-image rules, provider-labelled failures, request codec round-trips and real multipart edit payloads.
+- Added storyboard regression coverage for optional tail-frame relay, codec migration, tail-frame asset upserts, shot duplication and persisted tail-frame import state.
 
 - Version `2.3.1` (versionCode 27).
 
