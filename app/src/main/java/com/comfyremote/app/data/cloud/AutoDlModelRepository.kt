@@ -106,12 +106,13 @@ class AutoDlModelRepository(
             else -> null
         }?.takeIf { it.isNotBlank() }
             ?: throw ComfyException(CloudHttp.errorMessage(response, "AutoDL returned no task id"))
-        pending[taskId] = Pending(family, submitUrl, base)
-        taskStore.savePending(
+        taskStore.saveAcceptedTask(
             id,
             taskId,
             JSONObject().put("family", family).put("submitUrl", submitUrl).put("base", base),
+            label,
         )
+        pending[taskId] = Pending(family, submitUrl, base)
         return taskId
     }
 

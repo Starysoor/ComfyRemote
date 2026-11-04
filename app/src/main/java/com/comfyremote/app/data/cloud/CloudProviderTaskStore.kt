@@ -23,6 +23,23 @@ class CloudProviderTaskStore internal constructor(private val dir: File) {
     fun savePending(providerId: String, taskId: String, payload: JSONObject) =
         write(providerId, taskId, PENDING, payload)
 
+    /**
+     * Use only after an asynchronous paid API has returned its remote task ID.
+     * If this write fails the task may still be billable: expose its ID and
+     * prohibit an automatic resubmission that could double-charge the user.
+     */
+    fun saveAcceptedTask(providerId: String, taskId: String, payload: JSONObject, providerLabel: String) {
+        try {
+            savePending(providerId, taskId, payload)
+        } catch (error: Exception) {
+            throw IOException(
+                "$providerLabel accepted remote task $taskId, but local recovery could not be saved; " +
+                    "check this task with the provider before submitting again",
+                error,
+            )
+        }
+    }
+
     fun pending(providerId: String, taskId: String): JSONObject? =
         read(providerId, taskId, PENDING)
 

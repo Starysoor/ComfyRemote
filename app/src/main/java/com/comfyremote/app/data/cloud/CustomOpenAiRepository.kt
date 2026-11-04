@@ -36,8 +36,10 @@ class CustomOpenAiRepository(
             "${account.baseUrl.trimEnd('/')}/models",
             auth(account),
         )
-        return modelIdsFromResponse(root.optJSONArray("data"))
-            .filter(CloudModelParameters::looksLikeMediaModel)
+        return mergeCustomModels(
+            account.models,
+            modelIdsFromResponse(root.optJSONArray("data")),
+        )
     }
 
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
@@ -168,3 +170,14 @@ class CustomOpenAiRepository(
         const val PROVIDER = "custom"
     }
 }
+
+/**
+ * A custom image endpoint may use opaque IDs without "image" in their names.
+ * The user-saved list always wins over heuristic discovery filtering, even
+ * when "Refresh models" is pressed in settings.
+ */
+internal fun mergeCustomModels(saved: List<String>, discovered: List<String>): List<String> =
+    (saved + discovered.filter(CloudModelParameters::looksLikeMediaModel))
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .distinct()

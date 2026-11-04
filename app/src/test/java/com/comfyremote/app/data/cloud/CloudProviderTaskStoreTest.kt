@@ -86,4 +86,20 @@ class CloudProviderTaskStoreTest {
         assertNull(store.pending("provider-a", "same-task"))
         assertNotNull(store.pending("provider-b", "same-task"))
     }
+    @Test
+    fun acceptedPaidTaskWriteFailureIncludesRemoteIdForManualRecovery() {
+        val blocked = temp.newFile("blocked-tasks")
+        val store = CloudProviderTaskStore(blocked)
+        val error = assertThrows(IOException::class.java) {
+            store.saveAcceptedTask(
+                "siliconflow",
+                "real-remote-id-123",
+                JSONObject().put("base", "https://provider.example"),
+                "SiliconFlow",
+            )
+        }
+        assertTrue(error.message.orEmpty().contains("real-remote-id-123"))
+        assertTrue(error.message.orEmpty().contains("before submitting again"))
+    }
+
 }

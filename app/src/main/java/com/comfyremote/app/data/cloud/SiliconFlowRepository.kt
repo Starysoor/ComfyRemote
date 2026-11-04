@@ -72,8 +72,8 @@ class SiliconFlowRepository(
                 .takeIf { it.isNotBlank() }
                 ?: response.optJSONObject("data")?.optString("requestId")?.takeIf { it.isNotBlank() }
                 ?: throw ComfyException(CloudHttp.errorMessage(response, "SiliconFlow returned no requestId"))
+            taskStore.saveAcceptedTask(id, requestId, JSONObject().put("base", base), label)
             pending[requestId] = Pending(workflowId, "video", base)
-            taskStore.savePending(id, requestId, JSONObject().put("base", base))
             requestId
         } else {
             val payload = buildSiliconFlowImagePayload(workflowId, body)
