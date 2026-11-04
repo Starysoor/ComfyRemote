@@ -23,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -160,7 +161,53 @@ fun WorkflowsScreen(
                 }
             }
 
-            if (cloud && !state.cloudConfigured) {
+            if (cloud && state.query.isBlank()) {
+                item("cloud-workspace-heading") {
+                    SectionHeader(stringResource(R.string.wf_cloud_workspace)) {
+                        TextAction(
+                            text = stringResource(R.string.wf_cloud_manage),
+                            onClick = onCloudSettings,
+                        )
+                    }
+                }
+                if (state.cloudProviderCards.isEmpty()) {
+                    item("cloud-no-providers") {
+                        InfoBanner(
+                            title = stringResource(R.string.wf_cloud_no_providers),
+                            text = stringResource(R.string.wf_cloud_no_providers_detail),
+                            tone = BannerTone.Warning,
+                            actionLabel = stringResource(R.string.wf_go_settings),
+                            onAction = onCloudSettings,
+                        )
+                    }
+                } else {
+                    item("cloud-providers") {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            item("cloud-provider-all") {
+                                AllCloudProviderCard(
+                                    modelCount = state.cloudProviderCards.sumOf { it.modelCount },
+                                    selected = state.selectedCloudProviderId == null,
+                                    onClick = { viewModel.selectCloudProvider(null) },
+                                )
+                            }
+                            items(state.cloudProviderCards, key = { "cloud-provider:${it.id}" }) { provider ->
+                                CloudProviderCardItem(
+                                    provider = provider,
+                                    active = state.cloudActiveByProvider[provider.id] ?: 0,
+                                    selected = state.selectedCloudProviderId == provider.id,
+                                    onClick = {
+                                        viewModel.selectCloudProvider(
+                                            if (state.selectedCloudProviderId == provider.id) null else provider.id,
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (cloud && !state.cloudConfigured && state.cloudProviderCards.isNotEmpty()) {
                 item("cloud-token") {
                     InfoBanner(
                         text = stringResource(R.string.wf_cloud_token_hint),
@@ -173,20 +220,28 @@ fun WorkflowsScreen(
 
             if (state.query.isBlank()) {
                 val presets = state.recentPresets.filter { preset ->
-                    val providerPath = preset.workflowPath?.let { path ->
+                    val anyCloudPath = preset.workflowPath?.let { path ->
+                        state.allCloudPrefixes.any { prefix -> path.startsWith(prefix) }
+                    } == true
+                    val visibleCloudPath = preset.workflowPath?.let { path ->
                         state.cloudPrefixes.any { prefix -> path.startsWith(prefix) }
                     } == true
                     if (cloud) {
-                        providerPath
+                        visibleCloudPath
                     } else {
-                        !providerPath &&
+                        !anyCloudPath &&
                             (preset.serverUrl.isNullOrBlank() || preset.serverUrl == state.session?.url)
                     }
                 }
                 val results = state.recentResults.filter { item ->
-                    if (cloud) item.serverUrl in state.cloudBaseUrls
-                    else state.session == null || item.serverUrl.isBlank() ||
-                        item.serverUrl == state.session?.url
+                    if (cloud) {
+                        item.serverUrl in state.cloudBaseUrls
+                    } else {
+                        item.serverUrl !in state.allCloudBaseUrls && (
+                            state.session == null || item.serverUrl.isBlank() ||
+                                item.serverUrl == state.session?.url
+                            )
+                    }
                 }
                 if (settings.recentResultsCount > 0 && results.isNotEmpty()) {
                     val shown = results.take(settings.recentResultsCount)
@@ -214,10 +269,6 @@ fun WorkflowsScreen(
                 }
             }
 
-            item("workflow-heading") {
-                SectionHeader(stringResource(if (cloud) R.string.wf_cloud_workflows else R.string.wf_workflows))
-            }
-
             val loading = if (cloud) state.cloudLoading else state.loading
             val error = if (cloud) state.cloudError else state.error
             when {
@@ -237,12 +288,49 @@ fun WorkflowsScreen(
                 }
                 state.visible.isEmpty() -> item("empty") {
                     EmptyState(
-                        title = stringResource(if (cloud) R.string.wf_empty_cloud else R.string.wf_empty),
-                        detail = stringResource(R.string.wf_empty_detail),
+                        title = stringResource(
+                            when {
+                                !cloud -> R.string.wf_empty
+                                state.cloudProviderCards.isEmpty() -> R.string.wf_cloud_no_providers
+                                else -> R.string.wf_empty_cloud
+                            }
+                        ),
+                        detail = stringResource(
+                            if (cloud) R.string.wf_cloud_empty_detail else R.string.wf_empty_detail
+                        ),
                         icon = if (cloud) Icons.Outlined.CloudQueue else Icons.Outlined.AutoAwesome,
                     )
                 }
+                cloud -> {
+                    state.cloudSections.forEach { section ->
+                        item("cloud-section:${section.providerId}") {
+                            SectionHeader(section.providerLabel) {
+                                Text(
+                                    stringResource(R.string.wf_cloud_section_count, section.workflows.size),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        val recent = state.recentPaths.toSet()
+                        items(section.workflows, key = { it.path }) { wf ->
+                            WorkflowRow(
+                                workflow = wf,
+                                favorite = wf.path in state.favoritePaths,
+                                recent = wf.path in recent,
+                                onToggleFavorite = { viewModel.toggleFavorite(wf.path) },
+                                onClick = {
+                                    viewModel.opened(wf)
+                                    onOpenWorkflow(wf)
+                                },
+                            )
+                        }
+                    }
+                }
                 else -> {
+                    item("workflow-heading") {
+                        SectionHeader(stringResource(R.string.wf_workflows))
+                    }
                     val recent = state.recentPaths.toSet()
                     items(state.visible, key = { it.path }) { wf ->
                         WorkflowRow(

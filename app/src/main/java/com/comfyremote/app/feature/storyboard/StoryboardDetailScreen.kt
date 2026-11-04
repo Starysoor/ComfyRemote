@@ -73,6 +73,7 @@ import com.comfyremote.app.ui.components.EmptyState
 import com.comfyremote.app.ui.components.IrisCard
 import com.comfyremote.app.ui.components.IrisPrimaryButton
 import com.comfyremote.app.ui.components.IrisScaffold
+import com.comfyremote.app.ui.components.IrisSwitch
 import com.comfyremote.app.ui.components.IrisTextField
 import com.comfyremote.app.ui.components.SectionHeader
 import com.comfyremote.app.ui.components.StatusChip
@@ -109,6 +110,7 @@ fun StoryboardDetailScreen(
     val allDoneText = stringResource(R.string.board_all_done)
     val runningText = stringResource(R.string.gen_vm_storyboard_running)
     val anyRunning = project?.shots?.any { it.status == "running" } == true
+    val allDone = project?.shots?.isNotEmpty() == true && project.shots.all { it.status == "done" }
 
     LaunchedEffect(message) {
         message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() }
@@ -157,18 +159,23 @@ fun StoryboardDetailScreen(
         bottomBar = if (project == null) null else ({
             BottomActionBar {
                 IrisPrimaryButton(
-                    text = stringResource(R.string.board_next_shot),
+                    text = when {
+                        allDone -> allDoneText
+                        anyRunning -> stringResource(R.string.board_status_running)
+                        else -> stringResource(R.string.board_next_shot)
+                    },
                     icon = Icons.Outlined.PlayArrow,
+                    enabled = project.shots.isNotEmpty() && !anyRunning && !allDone,
                     onClick = {
-                        if (anyRunning) {
-                            scope.launch { snackbar.showSnackbar(runningText) }
-                        } else {
-                            viewModel.nextShot(project.id)?.let { shot ->
-                                viewModel.openShot(project.id, shot.id)?.let { (path, name) ->
-                                    onOpenShot(path, name)
-                                }
-                            } ?: run {
-                                scope.launch { snackbar.showSnackbar(allDoneText) }
+                        viewModel.nextShot(project.id)?.let { shot ->
+                            viewModel.openShot(project.id, shot.id)?.let { (path, name) ->
+                                onOpenShot(path, name)
+                            }
+                        } ?: run {
+                            scope.launch {
+                                snackbar.showSnackbar(
+                                    if (allDone) allDoneText else runningText,
+                                )
                             }
                         }
                     },
@@ -206,6 +213,28 @@ fun StoryboardDetailScreen(
                         maxLines = 4,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                stringResource(R.string.board_chain_frames),
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Text(
+                                stringResource(R.string.board_chain_frames_hint),
+                                style = IrisType.metaSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IrisSwitch(
+                            checked = project.chainFrames,
+                            onCheckedChange = { enabled ->
+                                viewModel.setChainFrames(project.id, enabled)
+                            },
+                        )
+                    }
                 }
             }
 
@@ -228,20 +257,31 @@ fun StoryboardDetailScreen(
 
             item("assets-heading") {
                 SectionHeader(stringResource(R.string.board_assets)) {
+                    if (project.assets.isNotEmpty()) {
+                        Text(
+                            project.assets.size.toString(),
+                            style = IrisType.meta,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = Spacing.xs),
+                        )
+                    }
                     TextAction(stringResource(R.string.board_add_asset), onClick = { assetRoleDialog = true })
                 }
             }
             item("assets") {
                 if (project.assets.isEmpty()) {
                     Text(
-                        stringResource(R.string.board_assets_empty),
+                        stringResource(R.string.board_assets_empty_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         items(project.assets, key = { it.id }) { asset ->
-                            AssetCard(asset) { viewModel.removeAsset(project.id, asset.id) }
+                            AssetCard(
+                                asset = asset,
+                                label = assetDisplayLabel(project, asset),
+                            ) { viewModel.removeAsset(project.id, asset.id) }
                         }
                     }
                 }
@@ -267,16 +307,24 @@ fun StoryboardDetailScreen(
             } else {
                 itemsIndexed(project.shots, key = { _, shot -> shot.id }) { index, shot ->
                     val previous = project.shots.getOrNull(index - 1)
+                    val next = project.shots.getOrNull(index + 1)
                     ShotTimelineItem(
                         index = index,
                         shot = shot,
                         workflowLabel = shotWorkflowLabel(shot, project, workflows),
                         referenceFromPrevious = !shot.referenceManual && shot.referencePath != null &&
                             shot.referencePath == previous?.lastFramePath,
-                        feedsNext = shot.lastFramePath != null && index < project.shots.lastIndex,
+                        feedsNext = project.chainFrames && shot.lastFramePath != null &&
+                            next != null && !next.referenceManual &&
+                            next.referenceAssetIds.isEmpty() &&
+                            next.referencePath == shot.lastFramePath,
                         canMoveUp = index > 0,
                         canMoveDown = index < project.shots.lastIndex,
                         canUseAssets = project.assets.isNotEmpty(),
+                        previousFramePath = previous?.lastFramePath,
+                        onUsePreviousFrame = {
+                            viewModel.usePreviousFrame(project.id, shot.id, previous?.lastFramePath)
+                        },
                         onOpen = {
                             viewModel.openShot(project.id, shot.id)?.let { (path, name) ->
                                 onOpenShot(path, name)
@@ -427,7 +475,9 @@ fun StoryboardDetailScreen(
                                 Checkbox(checked = checked, onCheckedChange = null)
                                 Text(
                                     "${referenceRoleLabel(asset.role)} · " +
-                                        asset.label.ifBlank { asset.path.substringAfterLast('/') },
+                                        project?.let { assetDisplayLabel(it, asset) }
+                                            ?.ifBlank { asset.path.substringAfterLast('/') }
+                                        ?: asset.label.ifBlank { asset.path.substringAfterLast('/') },
                                 )
                             }
                         }
@@ -550,8 +600,20 @@ private fun ProjectSettingsDialog(
     )
 }
 
+/** Tail-frame assets follow their shot when the timeline is reordered. */
 @Composable
-private fun AssetCard(asset: ProjectAsset, onDelete: () -> Unit) {
+private fun assetDisplayLabel(project: StoryboardProject, asset: ProjectAsset): String {
+    val shotId = asset.id.removePrefix("tail:").takeIf { asset.id.startsWith("tail:") }
+    val index = shotId?.let { id -> project.shots.indexOfFirst { it.id == id } } ?: -1
+    return if (index >= 0) {
+        stringResource(R.string.board_tail_asset_label, index + 1)
+    } else {
+        asset.label.ifBlank { referenceRoleLabel(asset.role) }
+    }
+}
+
+@Composable
+private fun AssetCard(asset: ProjectAsset, label: String, onDelete: () -> Unit) {
     Column(
         Modifier.width(96.dp),
         verticalArrangement = Arrangement.spacedBy(Spacing.xs),
@@ -568,12 +630,20 @@ private fun AssetCard(asset: ProjectAsset, onDelete: () -> Unit) {
             }
         }
         Text(
-            referenceRoleLabel(asset.role),
-            style = IrisType.metaSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            label,
+            style = MaterialTheme.typography.labelMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        val roleLabel = referenceRoleLabel(asset.role)
+        if (label != roleLabel) {
+            Text(
+                roleLabel,
+                style = IrisType.metaSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -602,6 +672,8 @@ private fun ShotTimelineItem(
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     canUseAssets: Boolean,
+    previousFramePath: String?,
+    onUsePreviousFrame: () -> Unit,
     onOpen: () -> Unit,
     onDelete: () -> Unit,
     onMoveUp: () -> Unit,
@@ -619,7 +691,10 @@ private fun ShotTimelineItem(
         "failed" -> stringResource(R.string.board_status_failed) to ChipTone.Error
         else -> stringResource(R.string.board_status_draft) to ChipTone.Neutral
     }
-    val reference = shot.referencePath ?: shot.lastFramePath
+    val reference = shot.referencePath
+    val tailFrame = shot.lastFramePath?.takeIf {
+        it != shot.resultPath && it != reference
+    }
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         IrisCard {
             Row(
@@ -652,12 +727,11 @@ private fun ShotTimelineItem(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    if (reference != null || shot.resultPath != null) {
+                    if (reference != null || shot.resultPath != null || tailFrame != null) {
                         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                            reference?.let {
-                                ShotMedia(it, if (shot.referencePath != null) stringResource(R.string.board_reference) else null)
-                            }
+                            reference?.let { ShotMedia(it, stringResource(R.string.board_reference)) }
                             shot.resultPath?.let { ShotMedia(it, stringResource(R.string.board_result)) }
+                            tailFrame?.let { ShotMedia(it, stringResource(R.string.board_tail_frame)) }
                         }
                     }
                     if (referenceFromPrevious) {
@@ -710,6 +784,11 @@ private fun ShotTimelineItem(
                                     text = { Text(stringResource(R.string.board_use_asset)) },
                                     enabled = canUseAssets && !running,
                                     onClick = { shotMenu = false; onPickAsset() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.board_use_previous_frame)) },
+                                    enabled = previousFramePath != null && !running,
+                                    onClick = { shotMenu = false; onUsePreviousFrame() },
                                 )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.board_clear_reference)) },

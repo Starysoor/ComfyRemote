@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -19,6 +20,7 @@ data class CloudProviderRow(
     val label: String,
     val summary: String,
     val configured: Boolean,
+    val enabled: Boolean = true,
     val checking: Boolean = false,
     val health: CloudHealth? = null,
 )
@@ -42,6 +44,7 @@ class CloudServicesViewModel(private val container: AppContainer) : ViewModel() 
                     label = info.label,
                     summary = info.summary,
                     configured = info.configured,
+                    enabled = info.enabled,
                 )
             },
         )
@@ -70,10 +73,48 @@ class CloudServicesViewModel(private val container: AppContainer) : ViewModel() 
                 }
             }
         }
+        viewModelScope.launch {
+            var first = true
+            container.cloudProviderSettingsStore.revision.collect {
+                if (first) {
+                    first = false
+                    return@collect
+                }
+                refreshProviders()
+            }
+        }
         checkAll()
     }
 
-    fun checkAll() = _state.value.providers.forEach { check(it.id) }
+    /** Re-reads configured/enabled state after returning from a provider page. */
+    fun refreshProviders() {
+        val info = container.cloudProviders.info()
+        _state.update { state ->
+            state.copy(
+                providers = info.map { provider ->
+                    val previous = state.providers.firstOrNull { it.id == provider.id }
+                    val configurationChanged = previous != null && previous.configured != provider.configured
+                    CloudProviderRow(
+                        id = provider.id,
+                        label = provider.label,
+                        summary = provider.summary,
+                        configured = provider.configured,
+                        enabled = provider.enabled,
+                        checking = if (configurationChanged) false else previous?.checking ?: false,
+                        health = if (configurationChanged) null else previous?.health,
+                    )
+                },
+            )
+        }
+    }
+
+    fun setProviderEnabled(providerId: String, enabled: Boolean) {
+        container.cloudProviderSettingsStore.setProviderEnabled(providerId, enabled)
+        refreshProviders()
+        if (enabled) check(providerId)
+    }
+
+    fun checkAll() = _state.value.providers.filter { it.enabled }.forEach { check(it.id) }
 
     fun check(providerId: String) {
         val provider = container.cloudProviders.byId(providerId) ?: return

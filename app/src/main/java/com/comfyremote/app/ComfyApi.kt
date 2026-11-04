@@ -45,6 +45,8 @@ data class WorkflowEntry(
     val priceLabel: String = "",
     /** Cloud provider display name for unified cards. */
     val providerLabel: String = "",
+    /** Stable provider id so the Cloud tab can group models by vendor. */
+    val providerId: String = "",
 )
 
 data class OutputImage(

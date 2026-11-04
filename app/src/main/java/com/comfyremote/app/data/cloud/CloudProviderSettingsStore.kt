@@ -1,7 +1,10 @@
 package com.comfyremote.app.data.cloud
 
 import android.content.SharedPreferences
-import com.comfyremote.app.data.security.SecretStore
+import com.comfyremote.app.data.security.SecretVault
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
 
 data class CloudProviderAccount(
@@ -14,18 +17,48 @@ data class CloudProviderAccount(
 /** Per-provider endpoint, credential and model list for the multi-cloud settings pages. */
 class CloudProviderSettingsStore(
     private val prefs: SharedPreferences,
-    private val secrets: SecretStore,
+    private val secrets: SecretVault,
 ) {
-    fun account(providerId: String, defaultBaseUrl: String, defaultModels: List<String> = emptyList()): CloudProviderAccount {
+    private val _revision = MutableStateFlow(0)
+
+    /** Emits whenever provider visibility, credentials or model selection changes. */
+    val revision: StateFlow<Int> = _revision.asStateFlow()
+
+    init {
+        migratePresetCatalogs()
+    }
+
+    /**
+     * Earlier builds filled official provider model lists from hard-coded
+     * presets when settings were saved. Drop those lists once so every model in
+     * the picker is genuinely pulled from the provider. Custom providers keep
+     * their manually entered identifiers.
+     */
+    private fun migratePresetCatalogs() {
+        val version = prefs.getInt(CATALOG_SCHEMA_KEY, 0)
+        if (version >= CATALOG_SCHEMA_VERSION) return
+        val editor = prefs.edit()
+        listOf("openai", "gemini", "replicate", "siliconflow", "autodl_model").forEach { providerId ->
+            editor.remove("cloud_${providerId}_models")
+        }
+        editor.putInt(CATALOG_SCHEMA_KEY, CATALOG_SCHEMA_VERSION).apply()
+    }
+
+    private fun bump() {
+        _revision.value = _revision.value + 1
+    }
+
+    fun account(providerId: String, defaultBaseUrl: String): CloudProviderAccount {
         val base = prefs.getString("cloud_${providerId}_base", null)
             ?.takeIf { it.isNotBlank() }
             ?: defaultBaseUrl
+        // Models only ever come from discovery or an explicit save. A missing
+        // value and a saved empty list both mean "no models", never a preset.
         val models = prefs.getString("cloud_${providerId}_models", null)
             ?.split(',', '\n')
             ?.map(String::trim)
             ?.filter(String::isNotBlank)
-            ?.takeIf { it.isNotEmpty() }
-            ?: defaultModels
+            .orEmpty()
         return CloudProviderAccount(
             providerId = providerId,
             baseUrl = base,
@@ -33,6 +66,10 @@ class CloudProviderSettingsStore(
             models = models,
         )
     }
+
+    /** True once the user (or model discovery) has saved a model list, even an empty one. */
+    fun hasSavedModels(providerId: String): Boolean =
+        prefs.contains("cloud_${providerId}_models")
 
     fun save(providerId: String, baseUrl: String, token: String, models: List<String>) {
         secrets.put("cloud_${providerId}_token", token)
@@ -43,6 +80,37 @@ class CloudProviderSettingsStore(
                 models.map(String::trim).filter(String::isNotBlank).distinct().joinToString(","),
             )
             .apply()
+        bump()
+    }
+
+    // Provider visibility: hidden providers never reach Create, Storyboard or
+    // the model picker. Null means "follow the configuration state".
+
+    fun providerEnabledOverride(providerId: String): Boolean? =
+        if (prefs.contains("cloud_${providerId}_enabled")) {
+            prefs.getBoolean("cloud_${providerId}_enabled", true)
+        } else {
+            null
+        }
+
+    fun setProviderEnabled(providerId: String, enabled: Boolean) {
+        prefs.edit().putBoolean("cloud_${providerId}_enabled", enabled).apply()
+        bump()
+    }
+
+    /** Removes credentials, endpoint overrides and model selection for one provider. */
+    fun clear(providerId: String) {
+        secrets.put("cloud_${providerId}_token", "")
+        prefs.edit()
+            .remove("cloud_${providerId}_base")
+            .remove("cloud_${providerId}_models")
+            .remove("cloud_${providerId}_extra")
+            .remove("cloud_${providerId}_headers")
+            .remove("cloud_${providerId}_disabled_models")
+            .remove("cloud_${providerId}_default_model")
+            .remove("cloud_${providerId}_enabled")
+            .apply()
+        bump()
     }
 
     fun extra(providerId: String): String =
@@ -61,10 +129,12 @@ class CloudProviderSettingsStore(
         val disabled = disabledModels(providerId).toMutableSet()
         if (enabled) disabled.remove(model) else disabled.add(model)
         prefs.edit().putStringSet("cloud_${providerId}_disabled_models", disabled).apply()
+        bump()
     }
 
     fun setAllModelsEnabled(providerId: String) {
         prefs.edit().remove("cloud_${providerId}_disabled_models").apply()
+        bump()
     }
 
     fun enabledModels(providerId: String, models: List<String>): List<String> {
@@ -77,6 +147,7 @@ class CloudProviderSettingsStore(
 
     fun setDefaultModel(providerId: String, model: String) {
         prefs.edit().putString("cloud_${providerId}_default_model", model.trim()).apply()
+        bump()
     }
 
     // Provider-specific advanced headers, merged into every HTTP request.
@@ -145,6 +216,9 @@ class CloudProviderSettingsStore(
     }
 
     companion object {
+        private const val CATALOG_SCHEMA_KEY = "cloud_catalog_schema"
+        private const val CATALOG_SCHEMA_VERSION = 2
+
         const val MIN_POLL_SECONDS = 2
         const val MAX_POLL_SECONDS = 60
         const val DEFAULT_POLL_SECONDS = 4

@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.3.1 — 2026-11-04
+
+### Added
+
+- Storyboard tail-frame relay is now an optional per-project gameplay, selectable when creating a project and toggleable in the workspace; turning it off clears only automatic references.
+- Every finished shot now writes its tail frame into project assets and Results. Video tail frames get a durable History copy; existing projects are migrated once.
+- Shot cards show the result and the returned tail frame separately, with a "Use previous shot's tail frame" action.
+- The next-shot action now reflects project state (draft, running, all done), and project assets show their labels and semantic roles.
+- Tail-frame labels follow shots after reordering, and History copies use clean image filenames.
+
+### Fixed
+
+- Removing a tail-frame asset no longer clears the next shot's automatic reference or forces it into manual mode.
+- Loading a project rebuilds the automatic frame chain from its relay setting, so legacy/rotated order stays consistent.
+
+- Cloud tab now has a provider workspace strip and groups every model under its real vendor, matching the local server workspace; tapping a provider filters the list.
+- Cloud providers can be enabled/disabled from Cloud services or the provider page. Hidden providers no longer contribute models, recent presets or recent results, and disabling a provider blocks new submissions through it.
+- Configured providers can be fully disconnected, or have their pulled model list cleared, so a model can no longer get stuck in the picker.
+- Official provider model lists are pulled from each provider instead of seeded from hard-coded presets. Discovery is persisted, missing catalogues are fetched once, and legacy preset lists are migrated away on upgrade.
+- Reference-image inputs now depend on the actual model: GPT Image, Gemini image, SiliconFlow edit/I2V and configurable edit-style models expose an upload slot; OpenAI edits send a real multipart `/images/edits` request and Gemini sends inline image parts.
+- Cloud errors, billing notes, confirmations and the Generate subtitle name the provider that actually runs the request instead of always saying AutoDL.
+- "Make video" no longer routes a legacy AutoDL workflow id to AutoDL when that provider is disabled or unconfigured.
+- Generic AutoDL wording was removed from cloud cancellation dialogs and task copy.
+
+### Tests
+
+- Added regression coverage for provider grouping, provider enable/disable, pulled-vs-preset catalogues, model-specific reference-image rules, provider-labelled failures, request codec round-trips and real multipart edit payloads.
+- Added storyboard regression coverage for optional tail-frame relay, codec migration, tail-frame asset upserts, shot duplication and persisted tail-frame import state.
+
+- Version `2.3.1` (versionCode 27).
+
 ## 2.3.0 — 2026-11-04
 
 ### Added

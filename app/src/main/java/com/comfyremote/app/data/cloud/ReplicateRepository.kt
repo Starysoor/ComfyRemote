@@ -13,22 +13,45 @@ class ReplicateRepository(
 ) : CloudProvider {
     override val id: String = PROVIDER
     override val label: String = "Replicate"
-    override val settingsSummary: String = "Flux / video models · API token"
-    override val defaultModels: List<String> get() = MODELS
+    override val settingsSummary: String = "Image & video models · API token"
     override val pathPrefix: String = "replicate:"
     override val baseUrl: String = DEFAULT_BASE
+    override val supportsModelDiscovery: Boolean = true
     override val supportsCustomHeaders: Boolean = true
 
     private data class Pending(val model: String, val kind: String, val endpoint: String)
     private val pending = ConcurrentHashMap<String, Pending>()
 
-    private fun account() = settings.account(id, DEFAULT_BASE, MODELS)
+    private fun account() = settings.account(id, DEFAULT_BASE)
 
     override fun configured(): Boolean = account().token.isNotBlank()
 
     override fun endpoint(): String = account().baseUrl
 
-    /** Replicate has no user model catalogue; validate the token against the account API. */
+    /** Replicate exposes a public model catalogue; persist only what this account pulled. */
+    override suspend fun discoverModels(): List<String> {
+        val account = account()
+        if (account.token.isBlank()) throw ComfyException("Configure a Replicate token first")
+        val root = CloudHttp.getJson("${account.baseUrl.trimEnd('/')}/models", auth(account))
+        val results = root.optJSONArray("results") ?: return emptyList()
+        return (0 until results.length()).mapNotNull { index ->
+            val item = results.optJSONObject(index) ?: return@mapNotNull null
+            val owner = item.optString("owner").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val name = item.optString("name").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            "$owner/$name"
+        }.filter(::looksLikeMediaModel)
+    }
+
+    private fun looksLikeMediaModel(model: String): Boolean {
+        val lower = model.lowercase()
+        return listOf(
+            "flux", "image", "video", "seedream", "wan-", "wan2", "kling",
+            "hunyuan", "minimax", "stable-diffusion", "sdxl", "veo", "runway",
+            "luma", "recraft", "ideogram", "imagen", "nano-banana",
+        ).any { it in lower }
+    }
+
+    /** Replicate has no account-specific catalogue; validate the token against the account API. */
     override suspend fun check(): CloudHealth {
         if (!configured()) {
             return CloudHealth(CloudHealthStatus.NOT_CONFIGURED, checkedAt = System.currentTimeMillis())
@@ -38,7 +61,7 @@ class ReplicateRepository(
             CloudHttp.getJson("${account.baseUrl.trimEnd('/')}/account", auth(account))
             CloudHealth(
                 status = CloudHealthStatus.READY,
-                modelCount = account.models.ifEmpty { MODELS }.size,
+                modelCount = account.models.size,
                 checkedAt = System.currentTimeMillis(),
             )
         } catch (cancellation: CancellationException) {
@@ -48,8 +71,11 @@ class ReplicateRepository(
         }
     }
 
-    override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> =
-        settings.enabledModels(id, account().models.ifEmpty { MODELS }).map { model ->
+    override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
+        val account = account()
+        if (account.token.isBlank()) return emptyList()
+        val models = pulledModels(settings, id, account.baseUrl, account.token) { discoverModels() }
+        return settings.enabledModels(id, models).map { model ->
             CloudWorkflowSummary(
                 id = model,
                 name = model.substringAfterLast('/'),
@@ -58,6 +84,7 @@ class ReplicateRepository(
                 priceType = "official_api",
             )
         }
+    }
 
     override suspend fun detail(workflowId: String): CloudWorkflowSpec {
         val account = account()
@@ -216,12 +243,6 @@ class ReplicateRepository(
     companion object {
         const val PROVIDER = "replicate"
         const val DEFAULT_BASE = "https://api.replicate.com/v1"
-        val MODELS = listOf(
-            "black-forest-labs/flux-schnell",
-            "black-forest-labs/flux-dev",
-            "minimax/video-01",
-            "tencent/hunyuan-video",
-        )
     }
 }
 

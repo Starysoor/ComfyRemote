@@ -131,7 +131,12 @@ fun GenerateScreen(
             DetailTopBar(
                 title = draft?.workflowName ?: workflowName,
                 onBack = onBack,
-                subtitle = if (draft?.isCloud == true) stringResource(R.string.gen_cloud_subtitle) else null,
+                subtitle = if (draft?.isCloud == true) {
+                    stringResource(
+                        R.string.gen_cloud_subtitle,
+                        draft.cloudProviderLabel.ifBlank { stringResource(R.string.gen_cloud_provider_generic) },
+                    )
+                } else null,
                 subtitleColor = MaterialTheme.colorScheme.secondary,
                 actions = {
                     if (draft != null) {

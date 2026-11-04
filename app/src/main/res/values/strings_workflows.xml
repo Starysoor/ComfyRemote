@@ -12,7 +12,18 @@
     <string name="wf_least_busy">Least busy</string>
     <string name="wf_not_checked">Not checked</string>
     <string name="wf_server_stats">run %1$d · q %2$d · app %3$d</string>
-    <string name="wf_cloud_token_hint">Browse cloud workflows now; configure a provider token before running</string>
+    <string name="wf_cloud_token_hint">Enable a provider and save its API key in Cloud services to pull models.</string>
+    <string name="wf_cloud_workspace">Cloud workspace</string>
+    <string name="wf_cloud_manage">Manage</string>
+    <string name="wf_cloud_all">All cloud models</string>
+    <string name="wf_cloud_all_count">%1$d models</string>
+    <string name="wf_cloud_provider_stats">%1$d models · %2$d running</string>
+    <string name="wf_cloud_provider_token">Token needed</string>
+    <string name="wf_cloud_provider_empty">No visible models</string>
+    <string name="wf_cloud_no_providers">No cloud providers enabled</string>
+    <string name="wf_cloud_no_providers_detail">Open Cloud services, pick a provider, and turn it on.</string>
+    <string name="wf_cloud_section_count">%1$d</string>
+    <string name="wf_cloud_load_skipped">Enable a provider and save its API key to pull models.</string>
     <string name="wf_reuse_choose_title">Choose a workflow</string>
     <string name="wf_reuse_choose_detail">Parameters from \"%1$s\" will be applied to the workflow you pick</string>
     <string name="wf_go_settings">Settings</string>
@@ -24,6 +35,7 @@
     <string name="wf_cloud_workflows">Cloud workflows</string>
     <string name="wf_workflows">Workflows</string>
     <string name="wf_empty_cloud">No cloud workflows available</string>
+    <string name="wf_cloud_empty_detail">Enable a provider, save its API key and pull its model list in Cloud services.</string>
     <string name="wf_empty">No workflows</string>
     <string name="wf_empty_detail">Save workflows on the server and refresh</string>
     <string name="wf_favorite">Favorite</string>

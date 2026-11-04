@@ -18,14 +18,27 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 enum class WorkflowSource { LOCAL, CLOUD }
 
+/** One provider card in the Cloud workspace strip. */
+data class CloudProviderCard(
+    val id: String,
+    val label: String,
+    val configured: Boolean,
+    val enabled: Boolean = true,
+    val modelCount: Int = 0,
+    val error: String? = null,
+)
+
 data class WorkflowsUiState(
     val workflows: List<WorkflowEntry> = emptyList(),
     val cloudWorkflows: List<WorkflowEntry> = emptyList(),
+    val cloudProviderCards: List<CloudProviderCard> = emptyList(),
+    val selectedCloudProviderId: String? = null,
     val source: WorkflowSource = WorkflowSource.LOCAL,
     val cloudLoading: Boolean = false,
     val cloudError: String? = null,
@@ -33,6 +46,9 @@ data class WorkflowsUiState(
     val cloudConfigured: Boolean = false,
     val cloudPrefixes: Set<String> = emptySet(),
     val cloudBaseUrls: Set<String> = emptySet(),
+    /** All registered cloud prefixes/endpoints, even for hidden providers. */
+    val allCloudPrefixes: Set<String> = emptySet(),
+    val allCloudBaseUrls: Set<String> = emptySet(),
     val reuseTransfer: DraftTransfer? = null,
     val query: String = "",
     val loading: Boolean = false,
@@ -46,6 +62,7 @@ data class WorkflowsUiState(
     val servers: List<ServerEntry> = emptyList(),
     val serverHealth: Map<String, ServerHealth> = emptyMap(),
     val appActiveByServer: Map<String, Int> = emptyMap(),
+    val cloudActiveByProvider: Map<String, Int> = emptyMap(),
     val probingServers: Boolean = false,
     val switchingServer: String? = null,
     val message: String? = null,
@@ -56,9 +73,14 @@ data class WorkflowsUiState(
             val recentRank = recentPaths.withIndex().associate { it.value to it.index }
             val sourceList = if (source == WorkflowSource.CLOUD) cloudWorkflows else workflows
             return sourceList.asSequence()
-                .filter {
-                    q.isBlank() || it.name.contains(q, true) || it.path.contains(q, true) ||
-                        it.description.contains(q, true)
+                .filter { workflow ->
+                    val providerMatch = source != WorkflowSource.CLOUD ||
+                        selectedCloudProviderId == null ||
+                        workflow.providerId == selectedCloudProviderId
+                    providerMatch && (
+                        q.isBlank() || workflow.name.contains(q, true) || workflow.path.contains(q, true) ||
+                            workflow.description.contains(q, true)
+                        )
                 }
                 .sortedWith(
                     compareByDescending<WorkflowEntry> { it.path in favoritePaths }
@@ -68,9 +90,55 @@ data class WorkflowsUiState(
                 )
                 .toList()
         }
+
+    /** Cloud workflows grouped by provider, in workspace-card order. */
+    val cloudSections: List<CloudWorkflowSection>
+        get() = cloudWorkflowSections(visible, cloudProviderCards)
+
+    val selectedCloudProvider: CloudProviderCard?
+        get() = selectedCloudProviderId?.let { id -> cloudProviderCards.firstOrNull { it.id == id } }
+}
+
+data class CloudWorkflowSection(
+    val providerId: String,
+    val providerLabel: String,
+    val workflows: List<WorkflowEntry>,
+)
+
+/** Pure grouping helper so provider separation is regression-tested. */
+fun cloudWorkflowSections(
+    entries: List<WorkflowEntry>,
+    providers: List<CloudProviderCard>,
+): List<CloudWorkflowSection> {
+    if (entries.isEmpty()) return emptyList()
+    val byProvider = entries.groupBy { it.providerId }
+    val sections = mutableListOf<CloudWorkflowSection>()
+    providers.forEach { provider ->
+        byProvider[provider.id]?.takeIf { it.isNotEmpty() }?.let {
+            sections += CloudWorkflowSection(provider.id, provider.label, it)
+        }
+    }
+    // Defensive: an entry whose provider card disappeared still renders.
+    entries.groupBy { it.providerId }.forEach { (providerId, list) ->
+        if (sections.none { it.providerId == providerId }) {
+            sections += CloudWorkflowSection(
+                providerId,
+                list.firstOrNull()?.providerLabel.orEmpty(),
+                list,
+            )
+        }
+    }
+    return sections
 }
 
 class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
+    private data class LoadedProvider(
+        val provider: com.comfyremote.app.data.cloud.CloudProvider,
+        val entries: List<WorkflowEntry>,
+        val error: String?,
+    )
+
+    private var cloudReloadQueued = false
     private val pendingAtStart = container.draftTransferRepository.peek()
         ?.takeIf { it.reuseAcrossWorkflows }
     private val initialSource = when {
@@ -91,9 +159,17 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
             servers = container.serverRepository.load(),
             source = initialSource,
             reuseTransfer = pendingAtStart,
-            cloudConfigured = container.cloudProviders.all.any { it.configured() },
-            cloudPrefixes = container.cloudProviders.all.mapTo(hashSetOf()) { it.pathPrefix },
-            cloudBaseUrls = container.cloudProviders.all.flatMapTo(hashSetOf()) { provider ->
+            cloudProviderCards = cloudProviderCards(),
+            cloudConfigured = container.cloudProviders.enabled.any { it.configured() },
+            cloudPrefixes = container.cloudProviders.enabled.mapTo(hashSetOf()) { it.pathPrefix },
+            cloudBaseUrls = container.cloudProviders.enabled.flatMapTo(hashSetOf()) { provider ->
+                listOfNotNull(
+                    provider.baseUrl.takeIf { it.isNotBlank() },
+                    provider.endpoint().takeIf { it.isNotBlank() },
+                )
+            },
+            allCloudPrefixes = container.cloudProviders.all.mapTo(hashSetOf()) { it.pathPrefix },
+            allCloudBaseUrls = container.cloudProviders.all.flatMapTo(hashSetOf()) { provider ->
                 listOfNotNull(
                     provider.baseUrl.takeIf { it.isNotBlank() },
                     provider.endpoint().takeIf { it.isNotBlank() },
@@ -133,9 +209,33 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                     state.copy(
                         appActiveByServer = tasks.filter { it.isActive }
                             .groupingBy { it.request.serverUrl }
-                            .eachCount()
+                            .eachCount(),
+                        cloudActiveByProvider = tasks.filter {
+                            it.isActive && it.request.provider != "comfyui"
+                        }.groupingBy { it.request.provider }.eachCount(),
                     )
                 }
+            }
+        }
+        viewModelScope.launch {
+            var first = true
+            container.cloudProviderSettingsStore.revision.collect {
+                if (first) {
+                    first = false
+                    return@collect
+                }
+                _state.update { state ->
+                    state.copy(
+                        cloudLoaded = false,
+                        cloudConfigured = container.cloudProviders.enabled.any { provider -> provider.configured() },
+                        cloudProviderCards = if (state.source == WorkflowSource.CLOUD) {
+                            cloudProviderCards(state.cloudProviderCards)
+                        } else {
+                            state.cloudProviderCards
+                        },
+                    )
+                }
+                if (_state.value.source == WorkflowSource.CLOUD) loadCloud(force = true)
             }
         }
         viewModelScope.launch {
@@ -183,10 +283,14 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
         if (source == WorkflowSource.CLOUD && !_state.value.cloudLoaded) loadCloud(force = false)
         if (source == WorkflowSource.LOCAL) {
             _state.update {
-                it.copy(cloudConfigured = container.cloudProviders.all.any { provider -> provider.configured() })
+                it.copy(cloudConfigured = container.cloudProviders.enabled.any { provider -> provider.configured() })
             }
             loadInternal(force = false)
         }
+    }
+
+    fun selectCloudProvider(providerId: String?) = _state.update {
+        it.copy(selectedCloudProviderId = providerId)
     }
 
     fun load() {
@@ -195,36 +299,79 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun loadCloud(force: Boolean = false) {
-        if (_state.value.cloudLoading) return
-        val providers = container.cloudProviders.all
+        if (_state.value.cloudLoading) {
+            cloudReloadQueued = true
+            return
+        }
+        val providers = container.cloudProviders.enabled
         _state.update {
             it.copy(
                 cloudLoading = true,
                 cloudError = null,
                 cloudConfigured = providers.any { provider -> provider.configured() },
+                cloudProviderCards = cloudProviderCards(it.cloudProviderCards),
+                selectedCloudProviderId = it.selectedCloudProviderId?.takeIf { id ->
+                    providers.any { provider -> provider.id == id }
+                },
             )
         }
         viewModelScope.launch {
-            val entries = mutableListOf<WorkflowEntry>()
-            val errors = mutableListOf<String>()
-            providers.forEach { provider ->
-                runCatching { provider.catalog(force) }
-                    .onSuccess { list ->
-                        entries += list.map { summary ->
-                            summary.toEntry(provider.pathPrefix, provider.label)
+            val loaded = coroutineScope {
+                providers.map { provider ->
+                    async {
+                        if (!provider.configured()) {
+                            LoadedProvider(provider, emptyList(), null)
+                        } else {
+                            runCatching { provider.catalog(force) }
+                                .fold(
+                                    onSuccess = { list ->
+                                        LoadedProvider(
+                                            provider,
+                                            list.map { summary ->
+                                                summary.toEntry(provider.pathPrefix, provider.label, provider.id)
+                                            },
+                                            null,
+                                        )
+                                    },
+                                    onFailure = { error ->
+                                        LoadedProvider(
+                                            provider,
+                                            emptyList(),
+                                            "${provider.label}: ${error.message ?: "error"}",
+                                        )
+                                    },
+                                )
                         }
                     }
-                    .onFailure { error ->
-                        errors += "${provider.label}: ${error.message ?: "error"}"
-                    }
+                }.awaitAll()
             }
+            val entries = loaded.flatMap { it.entries }
+            val errors = loaded.mapNotNull { it.error }
             _state.update {
                 it.copy(
                     cloudLoading = false,
                     cloudLoaded = true,
                     cloudWorkflows = entries,
+                    cloudProviderCards = loaded.map { result ->
+                        CloudProviderCard(
+                            id = result.provider.id,
+                            label = result.provider.label,
+                            configured = result.provider.configured(),
+                            enabled = true,
+                            modelCount = result.entries.size,
+                            error = result.error,
+                        )
+                    },
                     defaultPaths = defaultCloudPaths(),
+                    cloudPrefixes = providers.mapTo(hashSetOf()) { provider -> provider.pathPrefix },
                     cloudBaseUrls = providers.flatMapTo(hashSetOf()) { provider ->
+                        listOfNotNull(
+                            provider.baseUrl.takeIf { it.isNotBlank() },
+                            provider.endpoint().takeIf { it.isNotBlank() },
+                        )
+                    },
+                    allCloudPrefixes = container.cloudProviders.all.mapTo(hashSetOf()) { it.pathPrefix },
+                    allCloudBaseUrls = container.cloudProviders.all.flatMapTo(hashSetOf()) { provider ->
                         listOfNotNull(
                             provider.baseUrl.takeIf { it.isNotBlank() },
                             provider.endpoint().takeIf { it.isNotBlank() },
@@ -236,18 +383,37 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                     cloudConfigured = providers.any { provider -> provider.configured() },
                 )
             }
+            if (cloudReloadQueued) {
+                cloudReloadQueued = false
+                loadCloud(force = true)
+            }
         }
     }
 
+    private fun cloudProviderCards(previous: List<CloudProviderCard> = emptyList()): List<CloudProviderCard> =
+        container.cloudProviders.enabled.map { provider ->
+            val old = previous.firstOrNull { it.id == provider.id }
+            CloudProviderCard(
+                id = provider.id,
+                label = provider.label,
+                configured = provider.configured(),
+                enabled = true,
+                modelCount = old?.modelCount ?: 0,
+                error = old?.error,
+            )
+        }
+
     private fun defaultCloudPaths(): Set<String> {
-        val paths = container.cloudProviders.all.mapNotNull { provider ->
+        val paths = container.cloudProviders.enabled.mapNotNull { provider ->
             container.cloudProviderSettingsStore.defaultModel(provider.id)
                 .takeIf { it.isNotBlank() }
                 ?.let { provider.pathPrefix + it }
         }.toMutableSet()
-        container.appSettingsStore.settings.value.defaultVideoWorkflowId
-            .takeIf { it.isNotBlank() }
-            ?.let { paths += com.comfyremote.app.data.cloud.AutoDlConfig.PATH_PREFIX + it }
+        if (container.cloudProviders.isEnabled(com.comfyremote.app.data.cloud.AutoDlConfig.PROVIDER)) {
+            container.appSettingsStore.settings.value.defaultVideoWorkflowId
+                .takeIf { it.isNotBlank() }
+                ?.let { paths += com.comfyremote.app.data.cloud.AutoDlConfig.PATH_PREFIX + it }
+        }
         return paths
     }
 
@@ -372,10 +538,13 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun workflowEntryFor(path: String, fallbackName: String = workflowNameFor(path)): WorkflowEntry =
-        _state.value.workflows.firstOrNull { it.path == path } ?: WorkflowEntry(path, fallbackName, "")
+        _state.value.workflows.firstOrNull { it.path == path }
+            ?: _state.value.cloudWorkflows.firstOrNull { it.path == path }
+            ?: WorkflowEntry(path, fallbackName, "")
 
     private fun workflowNameFor(path: String): String =
         _state.value.workflows.firstOrNull { it.path == path }?.name
+            ?: _state.value.cloudWorkflows.firstOrNull { it.path == path }?.name
             ?: path.substringAfterLast('/').removeSuffix(".json")
 
     companion object {

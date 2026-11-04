@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Generate screen: top / bottom bars -->
-    <string name="gen_cloud_subtitle">AUTODL · CLOUD</string>
+    <string name="gen_cloud_subtitle">%1$s · CLOUD</string>
+    <string name="gen_cloud_provider_generic">cloud provider</string>
     <string name="gen_defaults">Defaults</string>
     <string name="gen_task">Task</string>
     <string name="gen_generate">Generate</string>
@@ -53,7 +54,7 @@
 
     <!-- Cancel cloud task -->
     <string name="gen_cancel_cloud_title">Cancel cloud task?</string>
-    <string name="gen_cancel_cloud_body">This only stops local tracking. The AutoDL job may keep running and billing.</string>
+    <string name="gen_cancel_cloud_body">This only stops local tracking. The provider-side job may keep running and billing.</string>
     <string name="gen_cancel_anyway">Cancel anyway</string>
     <string name="gen_keep_waiting">Keep waiting</string>
 
@@ -68,7 +69,7 @@
     <string name="gen_cloud_quantity">Runs: %1$d</string>
     <string name="gen_cloud_total">Estimated total: %1$d (platform units)</string>
     <string name="gen_cloud_duration">duration %1$ss</string>
-    <string name="gen_cloud_billing_note">Actual billing is determined by AutoDL. Cancelling locally may not stop the remote job, which can still be billed.</string>
+    <string name="gen_cloud_billing_note">Actual billing is determined by %1$s. Cancelling locally may not stop the remote job, which can still be billed.</string>
     <string name="gen_submit">Submit</string>
     <string name="gen_ai_result_title">AI result</string>
     <string name="gen_ai_result_hint">Edit before replacing or appending</string>
@@ -103,12 +104,13 @@
     <string name="gen_audio">Audio</string>
 
     <!-- ViewModel messages -->
-    <string name="gen_vm_cloud_note">Cloud workflow · executed by AutoDL.Art</string>
+    <string name="gen_vm_cloud_note">Cloud workflow · executed by %1$s</string>
     <string name="gen_workflow_id">ID · %1$s</string>
     <string name="gen_vm_multi_ref_note">Multi-image references guide identity/style; they do not guarantee an identical first frame. Use a first/last-frame workflow when the first frame must match exactly.</string>
     <string name="gen_vm_defaults_restored">Workflow defaults restored</string>
     <string name="gen_vm_server_disconnected">Server disconnected</string>
-    <string name="gen_vm_cloud_token_missing">Configure a cloud token in Settings → Cloud</string>
+    <string name="gen_vm_cloud_token_missing">Configure %1$s credentials in Settings → Cloud services</string>
+    <string name="gen_vm_cloud_provider_disabled">%1$s is disabled. Enable it in Cloud services to run this model.</string>
     <string name="gen_vm_fix_compat">Fix compatibility issue first: %1$s</string>
     <plurals name="gen_vm_batch_created">
         <item quantity="one">Created %1$d batch task</item>

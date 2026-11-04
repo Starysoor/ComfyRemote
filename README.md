@@ -7,7 +7,7 @@
 
 One lens, every model. Android client for local ComfyUI **and** hosted cloud workflows — pick a model, write a prompt, generate images, video or audio.
 
-**v2.3.0** · [Download APK](https://github.com/Starysoor/Iris/releases/latest) · [Cloud provider guide](docs/CloudProviders.md) · [AutoDL guide](docs/AutoDL.md) · [Screenshots](docs/verification)
+**v2.3.1-dev** · [Download APK](https://github.com/Starysoor/Iris/releases/latest) · [Cloud provider guide](docs/CloudProviders.md) · [AutoDL guide](docs/AutoDL.md) · [Screenshots](docs/verification)
 
 <a href="docs/verification/redesign/light-create.png"><img src="docs/verification/redesign/light-create.png" width="200"/></a>
 <a href="docs/verification/redesign/light-generate.png"><img src="docs/verification/redesign/light-generate.png" width="200"/></a>
@@ -19,10 +19,11 @@ One lens, every model. Android client for local ComfyUI **and** hosted cloud wor
 **Iris** turns your phone into a remote for generation models running on your PC or in the cloud:
 
 - **Local + multi-provider cloud workflows** — browse local ComfyUI and AutoDL.Art workflows alongside OpenAI, Gemini, Replicate, SiliconFlow, AutoDL Models and configurable OpenAI-compatible / JSON-template APIs
+- **Cloud workspace** — provider cards group every model by vendor; model lists are pulled from each provider (never hard-coded), and a provider can be hidden without deleting its settings
 - **Workflow conversion** — converts ComfyUI canvas JSON to API format automatically and discovers prompts, seeds, reference images and advanced parameters
 - **Cloud video + audio** — image-to-video, first/last-frame, multi-image/multi-audio, lip-sync and TTS workflows; results are downloaded immediately because hosted URLs expire
 - **Cost guardrails** — platform price, per-run estimate and confirmation before a paid submit; local spend estimate and cancel warnings
-- **Storyboard** — chain multiple cloud video shots; the previous shot's last frame automatically becomes the next shot's reference
+- **Storyboard** — build multi-shot cloud video projects with reusable project assets. Tail-frame relay is an optional per-project mode; returned frames are added to project assets and Results automatically
 - **Vision-aware AI** — the built-in “AI vision rewrite” actually sends your image to a multimodal model, then rewrites the prompt around what it sees
 - **AI prompt skills** — expand / tag / translate / negative / vision skills via any OpenAI-compatible endpoint (DeepSeek, Zhipu, OpenAI, Qwen, Moonshot, Ollama); custom skills and per-workflow bindings
 - **Live progress** — foreground service, node-level progress, latent preview, cancel, task recovery after process death, local batch queue
@@ -39,9 +40,10 @@ One lens, every model. Android client for local ComfyUI **and** hosted cloud wor
 ### 核心能力
 
 - **本地 + 多厂商云端**：创作页统一管理本地 ComfyUI、AutoDL.Art 托管工作流，以及 OpenAI、Gemini、Replicate、SiliconFlow、AutoDL Models 和可自定义的兼容接口、JSON 模板 API
+- **云服务工作台**：按厂商分组展示模型，模型列表由厂商接口拉取而不是内置预设；可随时关闭某个厂商而不删除配置
 - **云端视频 + 音频**：图生视频、首尾帧、多图参考、多图多音频、对口型与 TTS；云端结果是临时链接，成功后立即下载到手机
 - **费用护栏**：提交前显示平台计价、本次预估并二次确认；本地记录预估消耗；取消云端任务会提示平台侧可能继续计费
-- **分镜**：把多个云端视频镜头串成项目，上一镜的尾帧自动成为下一镜参考图
+- **分镜**：把多个云端视频镜头串成项目，支持复用项目素材；尾帧接力是可选的整项目玩法，返回的尾帧会自动进入项目素材和结果库
 - **真正看图改写的 AI**：内置「AI 看图改写」会把参考图作为图片输入发给多模态模型，再结合你的修改要求重写提示词；不是纯文本猜测
 - **AI 提示词技能**：扩写、标签、翻译、负面、看图改写等，兼容任意 OpenAI 风格接口（DeepSeek、智谱、OpenAI、Qwen、Moonshot、Ollama），支持自定义技能与按工作流绑定
 - **实时反馈**：前台服务保活、节点进度、latent 预览、取消、进程重启恢复、本地批量队列
@@ -64,7 +66,7 @@ ComfyUI 需以 `--listen 0.0.0.0` 启动。连接页可直接选择“仅使用�
 
 ### 云端计费与恢复提醒
 
-云端 Provider 根据其各自的计费规则收费。Iris 会在发起付费生成前显示可获得的价格/预估并请求确认；本地“预估消耗”不是厂商账单。取消本地跟踪不一定会取消远端任务，某些厂商仍可能继续执行及计费。云端结果链接可能过期，请及时保存。
+云端 Provider 根据其各自的计费规则收费。Iris 会在发起付费生成前显示实际厂商、可获得的价格/预估并请求确认；本地“预估消耗”不是厂商账单。取消本地跟踪不一定会取消远端任务，某些厂商仍可能继续执行及计费。云端结果链接可能过期，请及时保存。
 
 v2.3.0 增强了云端任务状态和结果的重启恢复；极端情况下，如果远端已接受任务而本机持久化同时失败，仍可能需要手工找回远端任务 ID。详见 [云服务配置与恢复说明](docs/CloudProviders.md)。
 

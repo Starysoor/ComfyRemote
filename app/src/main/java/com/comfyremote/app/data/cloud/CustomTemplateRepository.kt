@@ -25,7 +25,7 @@ class CustomTemplateRepository(
     private val cached = ConcurrentHashMap<String, CloudTaskResult>()
     private val pending = ConcurrentHashMap<String, Pending>()
 
-    private fun account() = settings.account(id, "", emptyList())
+    private fun account() = settings.account(id, "")
 
     private fun config(): TemplateConfig =
         TemplateConfig.parse(settings.extra(id), account().token).getOrElse {

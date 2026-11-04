@@ -93,6 +93,86 @@ internal fun ServerCard(
     }
 }
 
+/** "All providers" card for the Cloud workspace strip. */
+@Composable
+internal fun AllCloudProviderCard(
+    modelCount: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    IrisCard(
+        modifier = Modifier.width(180.dp),
+        onClick = onClick,
+        highlighted = selected,
+        color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                stringResource(R.string.wf_cloud_all),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            StatusDot(if (modelCount > 0) Iris.colors.success else MaterialTheme.colorScheme.outline)
+        }
+        Text(
+            stringResource(R.string.wf_cloud_all_count, modelCount),
+            style = IrisType.metaSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
+
+/** One provider card in the Cloud workspace strip. */
+@Composable
+internal fun CloudProviderCardItem(
+    provider: CloudProviderCard,
+    active: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val status = when {
+        provider.error != null -> MaterialTheme.colorScheme.error
+        !provider.configured -> Iris.colors.warning
+        provider.modelCount > 0 -> Iris.colors.success
+        else -> MaterialTheme.colorScheme.outline
+    }
+    IrisCard(
+        modifier = Modifier.width(180.dp),
+        onClick = onClick,
+        highlighted = selected,
+        color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                provider.label,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            StatusDot(status)
+        }
+        Text(
+            when {
+                !provider.configured -> stringResource(R.string.wf_cloud_provider_token)
+                provider.error != null -> provider.error
+                provider.modelCount == 0 -> stringResource(R.string.wf_cloud_provider_empty)
+                else -> stringResource(R.string.wf_cloud_provider_stats, provider.modelCount, active)
+            },
+            style = IrisType.metaSmall,
+            color = if (provider.error != null) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 /** Square image tile for a recent result that has a local media file. */
 @Composable
 internal fun RecentResultTile(item: HistoryItem, path: String, onClick: () -> Unit) {

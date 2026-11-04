@@ -55,8 +55,16 @@
     <string name="cloud_provider_base_url">Base URL</string>
     <string name="cloud_provider_base_url_hint">Include the API version segment, e.g. https://api.example.com/v1</string>
     <string name="cloud_provider_api_key">API key / token</string>
+    <string name="cloud_provider_enabled">Show in Cloud models</string>
+    <string name="cloud_provider_enabled_hint">Off hides this provider and its models from Create and Storyboard.</string>
     <string name="cloud_provider_models">Models</string>
-    <string name="cloud_provider_models_hint">Comma-separated model IDs; leave blank to query /models</string>
+    <string name="cloud_provider_models_hint">Pulled from the provider. Tap Refresh models instead of typing presets.</string>
+    <string name="cloud_provider_models_empty">No models pulled yet. Save the credential, then tap Refresh models.</string>
+    <string name="cloud_provider_models_clear">Clear all models</string>
+    <string name="cloud_provider_disconnect">Disconnect provider</string>
+    <string name="cloud_provider_disconnect_confirm_title">Disconnect this provider?</string>
+    <string name="cloud_provider_disconnect_confirm_body">This removes the API key, endpoint override and pulled model list. You can configure it again later.</string>
+    <string name="cloud_provider_disconnected">Provider disconnected</string>
     <string name="cloud_provider_test">Test connection</string>
     <string name="cloud_provider_refresh_models">Refresh models</string>
     <string name="cloud_provider_advanced">Advanced</string>
@@ -76,6 +84,7 @@
     <string name="cloud_provider_retry_hint">0–5 retries for transient polling errors</string>
     <string name="cloud_provider_runtime_invalid">Poll interval must be 2–60s, timeout 1–240min, retries 0–5.</string>
     <string name="cloud_provider_insecure">This endpoint is not HTTPS. Credentials and prompts may be sent in plain text.</string>
+    <string name="cloud_provider_models_hidden">Hidden</string>
     <string name="cloud_provider_models_manage">Model management</string>
     <string name="cloud_provider_models_manage_hint">Changes apply immediately; hidden models disappear from Create and Storyboard. The default model is listed first.</string>
     <string name="cloud_provider_models_search">Search models</string>

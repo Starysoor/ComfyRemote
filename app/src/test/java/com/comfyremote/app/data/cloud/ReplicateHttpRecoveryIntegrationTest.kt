@@ -26,6 +26,12 @@ import org.junit.rules.TemporaryFolder
 class ReplicateHttpRecoveryIntegrationTest {
     @get:Rule val temp = TemporaryFolder()
 
+    /** Model ids are normally pulled from Replicate; tests seed the pulled list explicitly. */
+    private val replicateModels = listOf(
+        "minimax/video-01",
+        "black-forest-labs/flux-schnell",
+    )
+
     @Test
     fun submittedPredictionUsesOriginalEndpointAfterSettingsChangeAndRestart() {
         val original = MockWebServer()
@@ -38,9 +44,8 @@ class ReplicateHttpRecoveryIntegrationTest {
             original.enqueue(json("""{"status":"succeeded","model":"minimax/video-01","output":["https://media.invalid/result.mp4"]}"""))
 
             val settings = settings()
-            settings.save(ReplicateRepository.PROVIDER, base(original), "fake-token", ReplicateRepository.MODELS)
-            assertEquals("fake-token", settings.account(ReplicateRepository.PROVIDER, "", emptyList()).token)
-            assertEquals("fake-token", settings.account(ReplicateRepository.PROVIDER, "", emptyList()).token)
+            settings.save(ReplicateRepository.PROVIDER, base(original), "fake-token", replicateModels)
+            assertEquals("fake-token", settings.account(ReplicateRepository.PROVIDER, "").token)
             val path = File(temp.root, "cloud_tasks")
             val taskId = runBlocking {
                 ReplicateRepository(settings, CloudProviderTaskStore(path)).submit(
@@ -56,7 +61,7 @@ class ReplicateHttpRecoveryIntegrationTest {
                 .getJSONObject("input").getString("prompt"))
 
             // Simulate a provider settings edit before app process is recreated.
-            settings.save(ReplicateRepository.PROVIDER, base(replacement), "fake-token", ReplicateRepository.MODELS)
+            settings.save(ReplicateRepository.PROVIDER, base(replacement), "fake-token", replicateModels)
             val restoredStore = CloudProviderTaskStore(path)
             val restoredRepository = ReplicateRepository(settings, restoredStore)
 
@@ -97,7 +102,7 @@ class ReplicateHttpRecoveryIntegrationTest {
             original.enqueue(json("""{"id":"paid-but-unpersisted-123"}"""))
             val blocked = temp.newFile("blocked-cloud-tasks")
             val settings = settings()
-            settings.save(ReplicateRepository.PROVIDER, base(original), "fake-token", ReplicateRepository.MODELS)
+            settings.save(ReplicateRepository.PROVIDER, base(original), "fake-token", replicateModels)
             val exception = assertThrows(IOException::class.java) {
                 runBlocking {
                     ReplicateRepository(settings, CloudProviderTaskStore(blocked)).submit(
@@ -123,14 +128,14 @@ class ReplicateHttpRecoveryIntegrationTest {
      * expected legacy-token fallback when Android Keystore isn't available.
      */
     private fun settings(): CloudProviderSettingsStore {
-        val entries = mutableMapOf<String, String>()
+        val entries = mutableMapOf<String, Any>()
         val editor = Proxy.newProxyInstance(
             SharedPreferences.Editor::class.java.classLoader,
             arrayOf(SharedPreferences.Editor::class.java),
         ) { proxy, method, args ->
             when (method.name) {
-                "putString" -> {
-                    entries[args!![0] as String] = args[1] as String
+                "putString", "putInt", "putBoolean", "putLong", "putFloat", "putStringSet" -> {
+                    entries[args!![0] as String] = args[1] ?: ""
                     proxy
                 }
                 "remove" -> {
@@ -152,10 +157,13 @@ class ReplicateHttpRecoveryIntegrationTest {
             arrayOf(SharedPreferences::class.java),
         ) { _, method, args ->
             when (method.name) {
-                "getString" -> entries[args!![0] as String] ?: args[1]
+                "getString" -> entries[args!![0] as String] as? String ?: args[1]
                 "edit" -> editor
-                "getStringSet" -> args!![1]
-                "getInt" -> args!![1]
+                "getStringSet" -> entries[args!![0] as String] as? Set<*> ?: args[1]
+                "getInt" -> entries[args!![0] as String] as? Int ?: args[1]
+                "getBoolean" -> entries[args!![0] as String] as? Boolean ?: args[1]
+                "getLong" -> entries[args!![0] as String] as? Long ?: args[1]
+                "getFloat" -> entries[args!![0] as String] as? Float ?: args[1]
                 "contains" -> entries.containsKey(args!![0] as String)
                 "getAll" -> entries.toMap()
                 else -> throw UnsupportedOperationException("Unexpected preferences call: ${method.name}")

@@ -44,7 +44,8 @@ class CloudWorkflowBackendTest {
 
         val error = runCatching { backend.historyEntry("task-1") }.exceptionOrNull()
 
-        assertTrue(error is IOException)
+        assertTrue(error is com.comfyremote.app.ComfyException)
+        assertTrue(error!!.message.orEmpty().contains("Test"))
         assertEquals(3, provider.calls)
     }
 
@@ -60,6 +61,21 @@ class CloudWorkflowBackendTest {
 
         assertNotNull(entry)
         assertTrue(historyCancelled(entry!!))
+    }
+
+    @Test
+    fun submitFailuresCarryTheRealProviderName() = runBlocking {
+        val backend = CloudWorkflowBackend(
+            repository = FailingSubmitProvider(),
+            workflowId = "gpt-image-2.5",
+            providerLabel = "OpenAI",
+        )
+
+        val error = runCatching { backend.queuePrompt(JSONObject(), "client") }.exceptionOrNull()
+
+        assertTrue(error is com.comfyremote.app.ComfyException)
+        assertTrue(error!!.message.orEmpty().startsWith("OpenAI submit failed"))
+        assertFalse(error.message.orEmpty().contains("AutoDL"))
     }
 
     @Test
@@ -79,6 +95,28 @@ class CloudWorkflowBackendTest {
         assertEquals("Test Provider", data.getString("node_type"))
         assertEquals("boom", data.getString("exception_message"))
         assertFalse(data.getString("exception_message").contains("AutoDL"))
+    }
+
+    private class FailingSubmitProvider : CloudProvider {
+        override val id: String = "openai"
+        override val label: String = "OpenAI"
+        override val pathPrefix: String = "openai:"
+        override val baseUrl: String = "https://api.openai.com/v1"
+        override fun configured(): Boolean = true
+        override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> = emptyList()
+        override suspend fun detail(workflowId: String): CloudWorkflowSpec =
+            CloudWorkflowSpec(
+                id = workflowId,
+                name = workflowId,
+                kind = "image",
+                description = "",
+                rules = emptyList(),
+            )
+        override suspend fun submit(workflowId: String, body: JSONObject): String =
+            throw IOException("upstream rejected the key")
+        override suspend fun result(taskId: String): CloudTaskResult =
+            CloudTaskResult(taskId, "FAILED", emptyList(), "", 0)
+        override suspend fun download(url: String): ByteArray = ByteArray(0)
     }
 
     private class FlakyProvider(

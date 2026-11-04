@@ -81,6 +81,7 @@ object GenerationTaskCodec {
     private fun requestToJson(request: GenerationRequest): JSONObject = JSONObject()
         .put("id", request.id)
         .put("provider", request.provider)
+        .put("providerLabel", request.providerLabel)
         .put("serverUrl", request.serverUrl)
         .put("workflowPath", request.workflowPath)
         .put("workflowName", request.workflowName)
@@ -98,6 +99,7 @@ object GenerationTaskCodec {
         GenerationRequest(
             id = o.optString("id"),
             provider = o.optString("provider", "comfyui"),
+            providerLabel = o.optString("providerLabel"),
             serverUrl = o.getString("serverUrl"),
             workflowPath = o.getString("workflowPath"),
             workflowName = o.optString("workflowName"),

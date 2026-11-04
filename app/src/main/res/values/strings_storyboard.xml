@@ -5,7 +5,7 @@
     <string name="board_subtitle">Multi-shot cloud video projects · %1$d</string>
     <string name="board_new">New storyboard</string>
     <string name="board_empty_title">No storyboards yet</string>
-    <string name="board_empty_detail">Chain cloud video shots; the previous last frame becomes the next reference</string>
+    <string name="board_empty_detail">Build a shot list, reuse project assets, and optionally relay each shot\'s tail frame into the next one</string>
 
     <!-- Board detail -->
     <string name="board_not_found">Storyboard not found</string>
@@ -15,6 +15,8 @@
         <item quantity="other">%1$d / %2$d shots done</item>
     </plurals>
     <string name="board_style_prompt">Shared style prompt (prefixed to every shot)</string>
+    <string name="board_chain_frames">Tail-frame relay</string>
+    <string name="board_chain_frames_hint">On: each shot\'s tail frame becomes the next shot\'s reference. Off: references stay manual or asset-based.</string>
     <string name="board_all_done">All shots are done</string>
     <string name="board_next_shot">Generate next shot</string>
     <string name="board_add_shot">Add shot</string>
@@ -37,6 +39,7 @@
     <string name="board_assets">Project assets</string>
     <string name="board_add_asset">Add asset</string>
     <string name="board_assets_empty">No project assets yet</string>
+    <string name="board_assets_empty_hint">Import characters, scenes or style images. A finished shot also adds its tail frame here and to Results.</string>
     <string name="board_asset_role">Choose asset role</string>
     <string name="board_use_asset">Use project asset as reference</string>
     <string name="board_apply_assets">Apply assets</string>
@@ -44,6 +47,7 @@
     <string name="board_move_down">Move down</string>
     <string name="board_duplicate">Duplicate shot</string>
     <string name="board_insert_after">Insert shot after</string>
+    <string name="board_use_previous_frame">Use previous shot\'s tail frame</string>
     <string name="board_clear_reference">Clear reference</string>
     <string name="board_err_add_asset">Could not add asset: %1$s</string>
     <string name="board_err_unknown_provider">Unknown workflow provider: %1$s</string>
@@ -66,6 +70,10 @@
     <string name="reference_role_generic">Reference</string>
     <string name="board_reference">Reference</string>
     <string name="board_result">Result</string>
+    <string name="board_tail_frame">Tail frame</string>
+    <string name="board_tail_asset_label">Shot %1$d tail frame</string>
+    <string name="board_tail_result_name">%1$s · shot %2$d tail frame</string>
+    <string name="board_tail_frame_saved">Tail frame added to project assets and Results</string>
     <string name="board_reference_from_previous">Previous shot\'s last frame</string>
     <string name="board_chain_next">Last frame → reference for shot %1$d</string>
 

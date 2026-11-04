@@ -13,6 +13,7 @@ import kotlinx.coroutines.sync.withLock
 /** Confirmation payload shown before any paid cloud submission. */
 data class CloudConfirmation(
     val workflowName: String,
+    val providerLabel: String,
     val count: Int,
     val priceLabel: String,
     val perRunCost: Int?,
@@ -35,6 +36,11 @@ object CloudSubmissionPolicy {
         val first = cloud.firstOrNull()
         return CloudConfirmation(
             workflowName = cloud.map { it.workflowName }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .singleOrNull()
+                .orEmpty(),
+            providerLabel = cloud.map { it.providerLabel }
                 .filter { it.isNotBlank() }
                 .distinct()
                 .singleOrNull()

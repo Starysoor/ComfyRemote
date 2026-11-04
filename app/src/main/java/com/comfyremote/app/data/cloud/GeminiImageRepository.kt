@@ -13,8 +13,7 @@ class GeminiImageRepository(
 ) : CloudProvider {
     override val id: String = PROVIDER
     override val label: String = "Google Gemini"
-    override val settingsSummary: String = "Imagen & Gemini image models · API key"
-    override val defaultModels: List<String> get() = MODELS
+    override val settingsSummary: String = "Gemini image models · API key"
     override val pathPrefix: String = "gemini:"
     override val baseUrl: String = DEFAULT_BASE
     override val supportsModelDiscovery: Boolean = true
@@ -22,7 +21,7 @@ class GeminiImageRepository(
 
     private val results = ConcurrentHashMap<String, CloudTaskResult>()
 
-    private fun account() = settings.account(id, DEFAULT_BASE, MODELS)
+    private fun account() = settings.account(id, DEFAULT_BASE)
 
     override fun configured(): Boolean = account().token.isNotBlank()
 
@@ -35,16 +34,21 @@ class GeminiImageRepository(
             "${account.baseUrl.trimEnd('/')}/models",
             auth(account),
         )
+        // Imagen uses a different :predict contract; only list models that this
+        // adapter can actually call through :generateContent.
         return modelIdsFromResponse(root.optJSONArray("models"), idKey = "name")
             .map { it.removePrefix("models/") }
             .filter { model ->
                 val lower = model.lowercase()
-                "image" in lower || "imagen" in lower
+                lower.startsWith("gemini") && "image" in lower
             }
     }
 
-    override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> =
-        settings.enabledModels(id, account().models.ifEmpty { MODELS }).map { model ->
+    override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
+        val account = account()
+        if (account.token.isBlank()) return emptyList()
+        val models = pulledModels(settings, id, account.baseUrl, account.token) { discoverModels() }
+        return settings.enabledModels(id, models).map { model ->
             CloudWorkflowSummary(
                 id = model,
                 name = displayName(model),
@@ -53,6 +57,7 @@ class GeminiImageRepository(
                 priceType = "official_api",
             )
         }
+    }
 
     override suspend fun detail(workflowId: String): CloudWorkflowSpec = CloudWorkflowSpec(
         id = workflowId,
@@ -91,30 +96,41 @@ class GeminiImageRepository(
         body.optString("image_size").takeIf { it.isNotBlank() }?.let {
             imageConfig.put("imageSize", it)
         }
+        val parts = JSONArray()
+        val reference = body.optString("image").takeIf { it.isNotBlank() }
+        if (reference != null && CloudModelParameters.supportsReferenceImage(model)) {
+            val payload = CloudHttp.imagePayload(reference, headers)
+                ?: throw ComfyException("The reference image could not be read")
+            parts.put(
+                JSONObject().put(
+                    "inlineData",
+                    JSONObject()
+                        .put("mimeType", payload.first)
+                        .put("data", java.util.Base64.getEncoder().encodeToString(payload.second)),
+                )
+            )
+        }
+        parts.put(JSONObject().put("text", prompt))
+        val generationConfig = JSONObject()
+            .put("responseModalities", JSONArray().put("IMAGE"))
+            .put("imageConfig", imageConfig)
+        body.opt("seed")?.toString()?.toLongOrNull()?.let { generationConfig.put("seed", it) }
         val payload = JSONObject()
             .put(
                 "contents",
                 JSONArray().put(
-                    JSONObject().put("role", "user").put(
-                        "parts",
-                        JSONArray().put(JSONObject().put("text", prompt)),
-                    )
+                    JSONObject().put("role", "user").put("parts", parts),
                 ),
             )
-            .put(
-                "generationConfig",
-                JSONObject()
-                    .put("responseModalities", JSONArray().put("IMAGE"))
-                    .put("imageConfig", imageConfig),
-            )
+            .put("generationConfig", generationConfig)
         val response = CloudHttp.postJson("${base}/models/${model}:generateContent", payload, headers)
-        val parts = response.optJSONArray("candidates")
+        val responseParts = response.optJSONArray("candidates")
             ?.optJSONObject(0)
             ?.optJSONObject("content")
             ?.optJSONArray("parts")
             ?: throw ComfyException(CloudHttp.errorMessage(response, "Gemini returned no image parts"))
-        return (0 until parts.length()).mapNotNull { index ->
-            val part = parts.optJSONObject(index) ?: return@mapNotNull null
+        return (0 until responseParts.length()).mapNotNull { index ->
+            val part = responseParts.optJSONObject(index) ?: return@mapNotNull null
             val inline = part.optJSONObject("inlineData") ?: part.optJSONObject("inline_data")
                 ?: return@mapNotNull null
             val data = inline.optString("data").takeIf { it.isNotBlank() } ?: return@mapNotNull null
@@ -131,7 +147,7 @@ class GeminiImageRepository(
     override suspend fun result(taskId: String): CloudTaskResult =
         results[taskId]
             ?: taskStore.result(id, taskId)
-            ?: CloudTaskResult(taskId, "FAILED", emptyList(), "Image result expired", 0)
+            ?: CloudTaskResult(taskId, "FAILED", emptyList(), "Google image result expired", 0)
 
     override fun forgetTask(taskId: String) {
         results.remove(taskId)
@@ -147,20 +163,8 @@ class GeminiImageRepository(
         CloudHttp.downloadTo(url, target)
     }
 
-    private fun rulesFor(model: String): List<CloudInputRule> {
-        val rules = mutableListOf(
-            CloudInputRule("prompt", "prompt", required = true),
-            CloudInputRule(
-                "aspect_ratio", "enum", required = false, defaultValue = "1:1",
-                options = listOf("1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9"),
-            ),
-        )
-        val sizes = if (model.contains("lite")) listOf("1K") else listOf("1K", "2K", "4K")
-        rules += CloudInputRule(
-            "image_size", "enum", required = false, defaultValue = sizes.first(), options = sizes,
-        )
-        return rules
-    }
+    private fun rulesFor(model: String): List<CloudInputRule> =
+        CloudModelParameters.geminiRules(model)
 
     private fun displayName(model: String): String = when {
         model == "gemini-3-pro-image" -> "Gemini 3 Pro Image (Nano Banana Pro)"
@@ -172,10 +176,5 @@ class GeminiImageRepository(
     companion object {
         const val PROVIDER = "gemini"
         const val DEFAULT_BASE = "https://generativelanguage.googleapis.com/v1beta"
-        val MODELS = listOf(
-            "gemini-3.1-flash-image",
-            "gemini-3.1-flash-lite-image",
-            "gemini-3-pro-image",
-        )
     }
 }

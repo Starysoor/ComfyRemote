@@ -5,7 +5,7 @@
     <string name="board_subtitle">多镜头云端视频项目 · %1$d</string>
     <string name="board_new">新建分镜</string>
     <string name="board_empty_title">还没有分镜项目</string>
-    <string name="board_empty_detail">用多个镜头串起一段云端视频；上一镜尾帧会自动成为下一镜参考图</string>
+    <string name="board_empty_detail">编排镜头、复用项目素材，并可选择开启尾帧接力把上一镜的最后一帧带入下一镜</string>
 
     <!-- 分镜详情 -->
     <string name="board_not_found">项目不存在</string>
@@ -14,6 +14,8 @@
         <item quantity="other">%1$d / %2$d 镜完成</item>
     </plurals>
     <string name="board_style_prompt">统一风格提示词（会拼接到每个镜头前）</string>
+    <string name="board_chain_frames">尾帧接力</string>
+    <string name="board_chain_frames_hint">开启：上一镜尾帧自动成为下一镜参考；关闭：参考图完全手动或使用项目素材。</string>
     <string name="board_all_done">所有镜头都已完成</string>
     <string name="board_next_shot">生成下一镜</string>
     <string name="board_add_shot">添加镜头</string>
@@ -36,6 +38,7 @@
     <string name="board_assets">项目素材</string>
     <string name="board_add_asset">添加素材</string>
     <string name="board_assets_empty">还没有项目素材</string>
+    <string name="board_assets_empty_hint">可导入人物、场景或风格图；每个镜头完成后，尾帧也会自动加入这里并写入结果库。</string>
     <string name="board_asset_role">选择素材角色</string>
     <string name="board_use_asset">使用项目素材作为参考</string>
     <string name="board_apply_assets">应用素材</string>
@@ -43,6 +46,7 @@
     <string name="board_move_down">下移</string>
     <string name="board_duplicate">复制镜头</string>
     <string name="board_insert_after">在后面插入镜头</string>
+    <string name="board_use_previous_frame">使用上一镜尾帧</string>
     <string name="board_clear_reference">清除参考图</string>
     <string name="board_err_add_asset">添加素材失败：%1$s</string>
     <string name="board_err_unknown_provider">未知的工作流 Provider：%1$s</string>
@@ -65,6 +69,10 @@
     <string name="reference_role_generic">参考</string>
     <string name="board_reference">参考图</string>
     <string name="board_result">结果</string>
+    <string name="board_tail_frame">尾帧</string>
+    <string name="board_tail_asset_label">第 %1$d 镜尾帧</string>
+    <string name="board_tail_result_name">%1$s · 第 %2$d 镜尾帧</string>
+    <string name="board_tail_frame_saved">尾帧已加入项目素材和结果库</string>
     <string name="board_reference_from_previous">上一镜尾帧</string>
     <string name="board_chain_next">尾帧 → 第 %1$d 镜参考图</string>
 

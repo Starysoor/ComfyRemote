@@ -13,6 +13,8 @@ data class GenerationRequest(
     val id: String = UUID.randomUUID().toString(),
     /** "comfyui" for a direct server, "autodl" for AutoDL's hosted workflow API. */
     val provider: String = "comfyui",
+    /** Human-readable provider name, so errors and billing notes never name the wrong vendor. */
+    val providerLabel: String = "",
     val serverUrl: String,
     val workflowPath: String,
     val workflowName: String,

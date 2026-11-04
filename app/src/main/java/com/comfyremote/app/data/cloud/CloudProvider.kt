@@ -14,7 +14,6 @@ interface CloudProvider {
     val pathPrefix: String
     val baseUrl: String
     val settingsSummary: String get() = "Hosted workflow API"
-    val defaultModels: List<String> get() = emptyList()
 
     /** Settings can offer a "Refresh models" action when the provider enumerates models. */
     val supportsModelDiscovery: Boolean get() = false
@@ -84,14 +83,32 @@ data class CloudProviderInfo(
     val pathPrefix: String,
     val configured: Boolean,
     val summary: String = "",
+    val enabled: Boolean = true,
 )
 
-class CloudProviderRegistry(private val providers: List<CloudProvider>) {
+class CloudProviderRegistry(
+    private val providers: List<CloudProvider>,
+    /** Provider visibility. Hidden providers never reach Create or Storyboard. */
+    private val isProviderEnabled: (CloudProvider) -> Boolean = { true },
+) {
     val all: List<CloudProvider> get() = providers
 
-    /** Provider cards for the future multi-provider settings page. */
+    /** Providers the user chose to show in cloud model pickers. */
+    val enabled: List<CloudProvider> get() = providers.filter(isProviderEnabled)
+
+    fun isEnabled(id: String): Boolean =
+        providers.firstOrNull { it.id == id }?.let(isProviderEnabled) == true
+
+    /** Provider cards for the multi-provider settings page. */
     fun info(): List<CloudProviderInfo> = providers.map {
-        CloudProviderInfo(it.id, it.label, it.pathPrefix, it.configured(), it.settingsSummary)
+        CloudProviderInfo(
+            id = it.id,
+            label = it.label,
+            pathPrefix = it.pathPrefix,
+            configured = it.configured(),
+            summary = it.settingsSummary,
+            enabled = isProviderEnabled(it),
+        )
     }
 
     fun byId(id: String): CloudProvider? = providers.firstOrNull { it.id == id }

@@ -138,6 +138,9 @@ fun CloudConfirmDialog(
                 confirmation.workflowName.takeIf { it.isNotBlank() }?.let {
                     Text(it, style = MaterialTheme.typography.titleSmall)
                 }
+                confirmation.providerLabel.takeIf { it.isNotBlank() }?.let {
+                    StatusChip(it, tone = ChipTone.Neutral)
+                }
                 Text(
                     stringResource(R.string.gen_cloud_price, confirmation.priceLabel),
                     color = MaterialTheme.colorScheme.primary,
@@ -165,7 +168,15 @@ fun CloudConfirmDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                InfoBanner(text = stringResource(R.string.gen_cloud_billing_note), tone = BannerTone.Warning)
+                InfoBanner(
+                    text = stringResource(
+                        R.string.gen_cloud_billing_note,
+                        confirmation.providerLabel.ifBlank {
+                            stringResource(R.string.gen_cloud_provider_generic)
+                        },
+                    ),
+                    tone = BannerTone.Warning,
+                )
             }
         },
         confirmButton = { TextAction(stringResource(R.string.gen_submit), onConfirm) },

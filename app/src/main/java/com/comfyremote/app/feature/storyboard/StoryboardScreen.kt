@@ -46,6 +46,7 @@ import com.comfyremote.app.ui.Spacing
 import com.comfyremote.app.ui.components.ChipTone
 import com.comfyremote.app.ui.components.EmptyState
 import com.comfyremote.app.ui.components.IrisScaffold
+import com.comfyremote.app.ui.components.IrisSwitch
 import com.comfyremote.app.ui.components.IrisTextField
 import com.comfyremote.app.ui.components.IrisTonalButton
 import com.comfyremote.app.ui.components.LargeTopBar
@@ -126,8 +127,8 @@ fun StoryboardScreen(
         CreateStoryboardDialog(
             workflows = workflows,
             onDismiss = { creating = false },
-            onCreate = { title, workflowPath, style ->
-                val project = viewModel.createProject(title, workflowPath, style)
+            onCreate = { title, workflowPath, style, chainFrames ->
+                val project = viewModel.createProject(title, workflowPath, style, chainFrames)
                 creating = false
                 project?.let { onOpenProject(it.id) }
             },
@@ -189,10 +190,11 @@ private fun ProjectCover(path: String?) {
 private fun CreateStoryboardDialog(
     workflows: List<StoryboardWorkflowOption>,
     onDismiss: () -> Unit,
-    onCreate: (String, String, String) -> Unit,
+    onCreate: (String, String, String, Boolean) -> Unit,
 ) {
     var title by remember { mutableStateOf("") }
     var style by remember { mutableStateOf("") }
+    var chainFrames by remember { mutableStateOf(true) }
     var workflowPath by remember {
         mutableStateOf(
             workflows.firstOrNull { it.workflowId == "minimax_h3_lightx2v_v5" }?.path
@@ -224,12 +226,32 @@ private fun CreateStoryboardDialog(
                     selectedPath = workflowPath,
                     onSelect = { workflowPath = it },
                 )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            stringResource(R.string.board_chain_frames),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            stringResource(R.string.board_chain_frames_hint),
+                            style = IrisType.metaSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IrisSwitch(
+                        checked = chainFrames,
+                        onCheckedChange = { chainFrames = it },
+                    )
+                }
             }
         },
         confirmButton = {
             TextAction(
                 text = stringResource(R.string.board_create),
-                onClick = { onCreate(title, workflowPath, style) },
+                onClick = { onCreate(title, workflowPath, style, chainFrames) },
                 enabled = workflowPath.isNotBlank(),
             )
         },
