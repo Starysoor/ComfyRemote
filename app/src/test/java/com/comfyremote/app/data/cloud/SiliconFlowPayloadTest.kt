@@ -33,6 +33,21 @@ class SiliconFlowPayloadTest {
     }
 
     @Test
+    fun referenceSlotsAreRenumberedContiguously() {
+        val body = JSONObject()
+            .put("prompt", "combine")
+            .put("image", "data:image/png;base64,AA==")
+            .put("image3", "data:image/png;base64,Ag==")
+
+        val payload = buildSiliconFlowImagePayload("Qwen/Qwen-Image-Edit-2509", body)
+
+        assertTrue(payload.has("image"))
+        assertTrue(payload.has("image2"))
+        assertTrue(!payload.has("image3"))
+        assertEquals("data:image/png;base64,Ag==", payload.getString("image2"))
+    }
+
+    @Test
     fun stringifiedBooleanCannotLeakIntoTheRequest() {
         val body = JSONObject()
             .put("prompt", "a fox")

@@ -80,6 +80,7 @@ class CloudModelParametersTest {
         assertFalse(CloudModelParameters.looksLikeMediaModel("DeepSeek-V4-Pro"))
         assertFalse(CloudModelParameters.looksLikeMediaModel("MiniMax-M3.1-Flash"))
         assertTrue(CloudModelParameters.looksLikeMediaModel("gpt-image-2"))
+        assertTrue(CloudModelParameters.looksLikeMediaModel("dall-e-3"))
         assertTrue(CloudModelParameters.looksLikeMediaModel("Qwen-Image"))
         assertTrue(CloudModelParameters.looksLikeMediaModel("nano-banana-2"))
         assertTrue(CloudModelParameters.looksLikeMediaModel("MiniMax-H3"))

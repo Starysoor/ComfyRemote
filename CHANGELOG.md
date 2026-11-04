@@ -6,6 +6,7 @@
 
 - Multi-reference image inputs follow the real model contract: GPT Image / AutoDL Models / custom OpenAI-compatible models expose up to 4 image slots and send repeated `image[]` multipart parts; Gemini image models send every reference as its own `inlineData` part (up to 4 slots); SiliconFlow `Qwen-Image-Edit-2509` exposes `image` / `image2` / `image3`.
 - Real emulator verification covers AutoDL multi-image editing and SiliconFlow `Qwen-Image-Edit-2509` multi-image editing.
+- SiliconFlow reference slots are re-numbered contiguously, so filling `image` + `image3` still sends `image` + `image2`.
 
 ### Fixed
 
@@ -13,7 +14,8 @@
 - SiliconFlow boolean parameters such as `prompt_enhancement` are sent as JSON booleans instead of strings.
 - AutoDL Models `/models` is filtered to real image/video models; Claude, DeepSeek and GPT text models no longer appear as image models and cannot be selected by mistake.
 - SiliconFlow edit models no longer show the unsupported `image_size` field; Qwen-Image-Edit step limits are capped at 20 and CFG is omitted for edit models.
-- Gemini image aspect-ratio options now include the documented wider/taller ratios.
+- Gemini image aspect-ratio options now include the documented wider/taller ratios; the extra wide/tall ratios are only shown for Gemini 3 Pro Image.
+- OpenAI 2048px sizes are only shown for GPT Image 2.5 models, and custom OpenAI endpoints no longer list pure text models.
 - The generation foreground service now calls `startForeground()` immediately, preventing `ForegroundServiceDidNotStartInTimeException` crashes on cloud submit.
 - Cloud catalog errors now include the exception class when the provider supplies no message.
 

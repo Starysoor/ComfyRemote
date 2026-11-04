@@ -37,12 +37,14 @@ class CustomOpenAiRepository(
             auth(account),
         )
         return modelIdsFromResponse(root.optJSONArray("data"))
+            .filter(CloudModelParameters::looksLikeMediaModel)
     }
 
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
         val account = account()
         if (account.baseUrl.isBlank()) return emptyList()
         val models = pulledModels(settings, id, account.baseUrl, account.token) { discoverModels() }
+            .filter(CloudModelParameters::looksLikeMediaModel)
         return settings.enabledModels(id, models).map(::summary)
     }
 

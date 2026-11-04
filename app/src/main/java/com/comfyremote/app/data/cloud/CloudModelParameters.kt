@@ -72,7 +72,7 @@ object CloudModelParameters {
     fun looksLikeMediaModel(model: String): Boolean {
         val lower = model.lowercase()
         return listOf(
-            "image", "gpt-image", "seedream", "seededit", "flux", "banana",
+            "image", "gpt-image", "dall-e", "seedream", "seededit", "flux", "banana",
             "kolors", "stable", "sdxl", "sd3", "z-image", "hunyuanimage",
             "hunyuan-image", "hunyuanvideo", "hunyuan-video", "video",
             "wan2", "wan3", "wan-", "seedance", "kling", "hailuo",
@@ -106,11 +106,13 @@ object CloudModelParameters {
         }
         val sizes = if (dallE) {
             listOf("1024x1024", "1792x1024", "1024x1792")
-        } else {
+        } else if (model.contains("2.5")) {
             listOf(
                 "1024x1024", "1536x1024", "1024x1536",
                 "2048x2048", "2048x1152", "1152x2048", "auto",
             )
+        } else {
+            listOf("1024x1024", "1536x1024", "1024x1536", "auto")
         }
         rules += CloudInputRule("size", "enum", required = false, defaultValue = sizes.first(), options = sizes)
         val qualities = if (dallE) {
@@ -153,14 +155,19 @@ object CloudModelParameters {
      * documented default instead of showing an option the API would ignore.
      */
     fun geminiRules(model: String): List<CloudInputRule> {
+        val ratios = if (model.contains("3-pro-image")) {
+            listOf(
+                "1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9",
+                "4:1", "4:5", "5:4", "1:8", "8:1",
+            )
+        } else {
+            listOf("1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9")
+        }
         val rules = mutableListOf(
             CloudInputRule("prompt", "prompt", required = true),
             CloudInputRule(
                 "aspect_ratio", "enum", required = false, defaultValue = "1:1",
-                options = listOf(
-                    "1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9",
-                    "4:1", "4:5", "5:4", "1:8", "8:1",
-                ),
+                options = ratios,
             ),
         )
         repeat(referenceImageLimit(model)) { index ->

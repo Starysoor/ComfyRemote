@@ -196,8 +196,9 @@ internal fun buildSiliconFlowImagePayload(workflowId: String, body: JSONObject):
     if (body.has("prompt_enhancement")) {
         payload.put("prompt_enhancement", body.optBoolean("prompt_enhancement", false))
     }
-    CloudModelParameters.referenceImageInputs(body).forEach { (key, value) ->
-        payload.put(key, value)
+    // Re-number non-blank slots so image, image3 still becomes image, image2.
+    CloudModelParameters.referenceImageInputs(body).forEachIndexed { index, (_, value) ->
+        payload.put(if (index == 0) "image" else "image${index + 1}", value)
     }
     body.optInt("batch_size", 1).takeIf { it > 0 }?.let { payload.put("batch_size", it) }
     body.optInt("num_inference_steps", 20).takeIf { it > 0 }?.let { payload.put("num_inference_steps", it) }
