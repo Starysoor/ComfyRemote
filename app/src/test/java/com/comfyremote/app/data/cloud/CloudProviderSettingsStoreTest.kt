@@ -38,17 +38,41 @@ class CloudProviderSettingsStoreTest {
     }
 
     @Test
-    fun legacyPresetCataloguesAreMigratedAwayButCustomModelsSurvive() {
+    fun legacyPresetsAreRemovedButManuallySavedModelsSurvive() {
         val prefs = MemoryPrefs().apply {
-            values["cloud_openai_models"] = "gpt-image-2.5-sunburst,preset-model"
+            values["cloud_openai_models"] = "gpt-image-2.5-sunburst,my-custom-model"
             values["cloud_custom_models"] = "my-own-model"
         }
 
         val store = CloudProviderSettingsStore(prefs, MemoryVault())
 
-        assertFalse(store.hasSavedModels("openai"))
-        assertEquals(emptyList<String>(), store.account("openai", "").models)
+        assertTrue(store.hasSavedModels("openai"))
+        assertEquals(listOf("my-custom-model"), store.account("openai", "").models)
         assertEquals(listOf("my-own-model"), store.account("custom", "").models)
+    }
+
+    @Test
+    fun aListMadeOnlyOfLegacyPresetsIsClearedForDiscovery() {
+        val prefs = MemoryPrefs().apply {
+            values["cloud_siliconflow_models"] = "Kwai-Kolors/Kolors,Qwen/Qwen-Image"
+        }
+
+        val store = CloudProviderSettingsStore(prefs, MemoryVault())
+
+        assertFalse(store.hasSavedModels("siliconflow"))
+        assertEquals(emptyList<String>(), store.account("siliconflow", "").models)
+    }
+
+    @Test
+    fun anExplicitlySavedEmptyListSurvivesTheUpgrade() {
+        val prefs = MemoryPrefs().apply {
+            values["cloud_openai_models"] = ""
+        }
+
+        val store = CloudProviderSettingsStore(prefs, MemoryVault())
+
+        assertTrue(store.hasSavedModels("openai"))
+        assertEquals(emptyList<String>(), store.account("openai", "").models)
     }
 
     @Test

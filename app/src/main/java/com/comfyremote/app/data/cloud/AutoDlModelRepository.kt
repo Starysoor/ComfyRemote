@@ -141,6 +141,8 @@ class AutoDlModelRepository(
 
     override fun forgetTask(taskId: String) {
         pending.remove(taskId)
+        // Image results (including base64 data) live in the delegated OpenAI repo.
+        imageApi.forgetTask(taskId)
         taskStore.clear(id, taskId)
     }
 

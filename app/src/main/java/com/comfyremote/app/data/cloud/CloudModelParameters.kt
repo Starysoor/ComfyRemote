@@ -60,8 +60,10 @@ object CloudModelParameters {
 
     fun kindOf(model: String): String {
         val lower = model.lowercase()
-        return if (listOf("t2v", "i2v", "video", "wan2", "wan3", "seedance", "kling", "hailuo")
-                .any { it in lower }
+        return if (listOf(
+                "t2v", "i2v", "video", "wan2", "wan3", "seedance", "kling",
+                "hailuo", "minimax-h3",
+            ).any { it in lower }
         ) "video" else "image"
     }
 
@@ -155,10 +157,12 @@ object CloudModelParameters {
      * documented default instead of showing an option the API would ignore.
      */
     fun geminiRules(model: String): List<CloudInputRule> {
-        val ratios = if (model.contains("3-pro-image")) {
+        val isFlash = model.contains("flash-image") && !model.contains("flash-lite-image")
+        val ratios = if (isFlash) {
+            // Gemini 3.1 Flash Image adds the extreme wide/tall ratios.
             listOf(
                 "1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9",
-                "4:1", "4:5", "5:4", "1:8", "8:1",
+                "1:4", "4:1", "1:8", "8:1",
             )
         } else {
             listOf("1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9")
@@ -177,10 +181,16 @@ object CloudModelParameters {
                 required = false,
             )
         }
-        if (model.contains("3-pro-image")) {
+        val imageSizes = when {
+            model.contains("3-pro-image") -> listOf("1K", "2K", "4K")
+            isFlash -> listOf("0.5K", "1K", "2K", "4K")
+            model.contains("flash-lite-image") -> listOf("0.5K", "1K")
+            else -> emptyList()
+        }
+        if (imageSizes.isNotEmpty()) {
             rules += CloudInputRule(
                 "image_size", "enum", required = false, defaultValue = "1K",
-                options = listOf("1K", "2K", "4K"),
+                options = imageSizes,
             )
         }
         rules += CloudInputRule("seed", "integer", required = false, max = 2_147_483_647.0)
@@ -194,6 +204,23 @@ object CloudModelParameters {
         val editModel = supportsReferenceImage(model)
         val rules = mutableListOf(CloudInputRule("prompt", "prompt", required = kind != "image" || !editModel))
         if (kind == "video") {
+            if (lower.contains("minimax-h3")) {
+                rules += CloudInputRule(
+                    "duration", "integer", required = false, defaultValue = "5",
+                    min = 5.0, max = 15.0,
+                )
+                rules += CloudInputRule(
+                    "resolution", "enum", required = false, defaultValue = "768p",
+                    options = listOf("480p", "768p"),
+                )
+                rules += CloudInputRule(
+                    "ratio", "enum", required = false, defaultValue = "16:9",
+                    options = listOf("1:1", "3:4", "4:3", "9:16", "16:9", "21:9"),
+                )
+                rules += CloudInputRule("first_frame_image", "image", required = false)
+                rules += CloudInputRule("last_frame_image", "image", required = false)
+                return rules
+            }
             rules += CloudInputRule(
                 "image_size", "enum", required = false, defaultValue = "1280x720",
                 options = listOf("1280x720", "720x1280", "960x960"),
@@ -225,9 +252,7 @@ object CloudModelParameters {
             )
         }
         rules += CloudInputRule("negative_prompt", "string", required = false)
-        rules += CloudInputRule(
-            "batch_size", "integer", required = false, defaultValue = "1", min = 1.0, max = 4.0,
-        )
+        // SiliconFlow removed image batch_size; multi-image runs use Iris' own batch queue.
         rules += CloudInputRule(
             "num_inference_steps", "integer", required = false, defaultValue = "20",
             min = 1.0, max = if (editModel) 20.0 else 50.0,

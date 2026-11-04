@@ -10,6 +10,16 @@
 
 ### Fixed
 
+- Third-party reference-image URLs are downloaded without provider credentials, so an image host can never receive `Authorization` / `x-goog-api-key`.
+- A filled but unreadable optional reference image now blocks submission instead of silently becoming a cheaper request with missing references.
+- Task and storyboard persistence now writes atomically before publishing state; failed writes surface an error, block task submission, and never delete media that the old project still references.
+- AutoDL Models image tasks now clear the delegated base64 result cache on `forgetTask`, preventing long-session memory growth.
+- SiliconFlow's removed image `batch_size` field is no longer shown or sent; multi-image runs use Iris' own batch queue.
+- SiliconFlow `MiniMaxAI/MiniMax-H3` is recognized as video and uses the new duration/resolution/ratio/`images[]` contract; Wan2.2 models show a retirement warning.
+- Custom OpenAI manually saved model ids are no longer filtered by Iris media-name keywords.
+- The catalog schema migration now removes only known legacy preset ids and preserves user-selected models and explicitly empty lists.
+- Gemini capability matrices now match model families: Flash gets extreme ratios and 0.5K/2K/4K, Pro gets 1K/2K/4K without the unsupported extreme ratios.
+- The emulator smoke workflow now runs for PRs, release branches, version tags and manual dispatches, and submits a debug-only local smoke task.
 - SiliconFlow random seeds now respect the provider limit (9,999,999,999), so image generation no longer fails with HTTP 400 `seed: Must be less than or equal to 9.999999999e+09`.
 - SiliconFlow boolean parameters such as `prompt_enhancement` are sent as JSON booleans instead of strings.
 - AutoDL Models `/models` is filtered to real image/video models; Claude, DeepSeek and GPT text models no longer appear as image models and cannot be selected by mistake.

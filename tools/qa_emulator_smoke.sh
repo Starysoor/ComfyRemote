@@ -35,7 +35,16 @@ adb shell am start -W -n "$ACTIVITY"
 sleep 4
 check_alive "after-force-stop"
 
-echo "QA step 3: disabled system animations"
+echo "QA step 3: submit safe debug-only local smoke task"
+adb shell am start -a com.comfyremote.app.QA_SMOKE -n "$ACTIVITY"
+sleep 3
+check_alive "smoke-task-submitted"
+adb shell am force-stop "$PKG"
+adb shell am start -W -n "$ACTIVITY"
+sleep 4
+check_alive "after-smoke-task-restart"
+
+echo "QA step 4: disabled system animations"
 adb shell settings put global animator_duration_scale 0
 adb shell settings put global transition_animation_scale 0
 adb shell settings put global window_animation_scale 0

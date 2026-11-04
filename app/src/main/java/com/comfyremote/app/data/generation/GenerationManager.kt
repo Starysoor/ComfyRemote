@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.ComfyApi
+import com.comfyremote.app.ComfyException
 import com.comfyremote.app.PromptValidationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -39,6 +40,10 @@ class GenerationManager(
     private val _localQueuePaused = MutableStateFlow(false)
     val localQueuePaused: StateFlow<Boolean> = _localQueuePaused.asStateFlow()
 
+    /** Last durable-state write failure; surfaced by Generate/Tasks instead of being silent. */
+    private val _persistenceError = MutableStateFlow<String?>(null)
+    val persistenceError: StateFlow<String?> = _persistenceError.asStateFlow()
+
     private val jobs = ConcurrentHashMap<String, Job>()
     private val spendRecordedIds = ConcurrentHashMap.newKeySet<String>().apply {
         addAll(_tasks.value.filter { it.spendRecorded }.map { it.taskId })
@@ -46,7 +51,8 @@ class GenerationManager(
 
     init {
         // Persist normalization before any recovery/local-queue work starts.
-        taskStore.save(_tasks.value)
+        runCatching { taskStore.save(_tasks.value) }
+            .onFailure { _persistenceError.value = it.message ?: it.javaClass.simpleName }
         val persistedActive = _tasks.value.filter { it.isActive }
         if (persistedActive.isNotEmpty()) startService()
         persistedActive
@@ -58,11 +64,20 @@ class GenerationManager(
     /** Submits one request immediately to its bound server. */
     fun submit(request: GenerationRequest): String {
         val task = newTask(request)
-        mutateTasks { prune(listOf(task) + it) }
+        if (!mutateTasks { prune(listOf(task) + it) }) {
+            throw ComfyException(persistenceMessage("task was not submitted"))
+        }
         startService()
         launchTracked(task.taskId) { execute(task) }
         return task.taskId
     }
+
+    fun clearPersistenceError() {
+        _persistenceError.value = null
+    }
+
+    private fun persistenceMessage(action: String): String =
+        "Cannot persist task state ($action): ${_persistenceError.value ?: "unknown storage error"}"
 
     /**
      * Adds a batch. When [localQueue] is true, each server receives at most one app-managed
@@ -80,7 +95,9 @@ class GenerationManager(
                 recoveryNote = if (localQueue) "Waiting in local queue" else null,
             )
         }
-        mutateTasks { prune(tasks + it) }
+        if (!mutateTasks { prune(tasks + it) }) {
+            throw ComfyException(persistenceMessage("batch was not submitted"))
+        }
         startService()
         if (localQueue) {
             pumpLocalQueue()
@@ -230,7 +247,7 @@ class GenerationManager(
             queuePosition = null,
             localPending = false,
         )
-        patch(taskId, allowTerminalExit = true) { recovering }
+        if (!patch(taskId, allowTerminalExit = true) { recovering }) return false
         startService()
         launchRecovery(recovering)
         return true
@@ -437,9 +454,13 @@ class GenerationManager(
                     if (current?.localPending == true && current.isActive && !serverBusyNow && !_localQueuePaused.value) {
                         val updated = current.copy(localPending = false, recoveryNote = null)
                         val next = prune(_tasks.value.map { if (it.taskId == current.taskId) updated else it })
-                        _tasks.value = next
-                        taskStore.save(next)
-                        launch = updated
+                        try {
+                            taskStore.save(next)
+                            _tasks.value = next
+                            launch = updated
+                        } catch (error: Exception) {
+                            _persistenceError.value = error.message ?: error.javaClass.simpleName
+                        }
                     }
                 }
                 launch?.let { task -> launchTracked(task.taskId) { execute(task) } }
@@ -457,25 +478,38 @@ class GenerationManager(
         taskId: String,
         allowTerminalExit: Boolean = false,
         transform: (GenerationTask) -> GenerationTask,
-    ) {
-        mutateTasks { list ->
-            prune(list.map { current ->
-                if (current.taskId != taskId) current
-                else {
-                    val next = transform(current)
-                    if (current.isTerminal && !next.isTerminal && !allowTerminalExit) current else next
-                }
-            })
-        }
+    ): Boolean = mutateTasks { list ->
+        prune(list.map { current ->
+            if (current.taskId != taskId) current
+            else {
+                val next = transform(current)
+                if (current.isTerminal && !next.isTerminal && !allowTerminalExit) current else next
+            }
+        })
     }
 
-    private fun mutateTasks(transform: (List<GenerationTask>) -> List<GenerationTask>) {
+    /**
+     * Publishes memory only after durable state was written. A failed write keeps
+     * the previous queue (and surfaces [persistenceError]) instead of pretending
+     * that a paid/recoverable task was saved.
+     */
+    private fun mutateTasks(transform: (List<GenerationTask>) -> List<GenerationTask>): Boolean {
         synchronized(taskLock) {
             val old = _tasks.value
             val next = transform(old)
-            _tasks.value = next
             // Preview/progress can update many times per second; only durable recovery state hits disk.
-            if (durable(old) != durable(next)) taskStore.save(next)
+            if (durable(old) == durable(next)) {
+                _tasks.value = next
+                return true
+            }
+            return try {
+                taskStore.save(next)
+                _tasks.value = next
+                true
+            } catch (error: Exception) {
+                _persistenceError.value = error.message ?: error.javaClass.simpleName
+                false
+            }
         }
     }
 

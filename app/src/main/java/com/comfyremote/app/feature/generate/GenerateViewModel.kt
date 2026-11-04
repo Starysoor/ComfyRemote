@@ -164,6 +164,16 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
 
     init {
         viewModelScope.launch {
+            container.generationManager.persistenceError.collect { error ->
+                if (error != null) {
+                    _state.update {
+                        it.copy(message = AppStrings.get(R.string.gen_vm_persist_failed, error))
+                    }
+                    container.generationManager.clearPersistenceError()
+                }
+            }
+        }
+        viewModelScope.launch {
             container.promptPresetRepository.presets.collect { presets ->
                 _state.update { it.copy(presets = presets) }
             }
@@ -410,7 +420,12 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         val requests = (0 until count).map { index -> buildRequest(draft, cv, index) }
         val localQueue = _state.value.batchLocalQueue
         submitJob = viewModelScope.launch {
-            val ids = container.cloudSubmissionGate.submit(requests, localQueue, draft.cloud?.pricing?.label)
+            val ids = try {
+                container.cloudSubmissionGate.submit(requests, localQueue, draft.cloud?.pricing?.label)
+            } catch (error: Exception) {
+                _state.update { it.copy(message = error.message ?: error.javaClass.simpleName) }
+                return@launch
+            }
             if (ids.isEmpty()) return@launch
             if (projectId != null && shotId != null) {
                 container.storyboardStore.attachTask(projectId, shotId, ids.first())
@@ -537,7 +552,12 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             createdAt = System.currentTimeMillis(),
         )
         viewModelScope.launch {
-            val ids = container.cloudSubmissionGate.submit(listOf(request), localQueue = false)
+            val ids = try {
+                container.cloudSubmissionGate.submit(listOf(request), localQueue = false)
+            } catch (error: Exception) {
+                _state.update { it.copy(message = error.message ?: error.javaClass.simpleName) }
+                return@launch
+            }
             ids.firstOrNull()?.let { newId -> _state.update { it.copy(activeTaskId = newId) } }
         }
     }

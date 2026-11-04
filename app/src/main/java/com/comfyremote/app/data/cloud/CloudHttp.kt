@@ -140,11 +140,11 @@ object CloudHttp {
     /**
      * Resolves a reference image value to bytes. Local values are converted to
      * data URLs by CloudInputStore, but remote URLs are supported too.
+     *
+     * Remote media is fetched without provider credentials: the URL host is not
+     * the API host and must never receive Authorization / API-key headers.
      */
-    fun imagePayload(
-        value: String,
-        headers: Map<String, String> = emptyMap(),
-    ): Pair<String, ByteArray>? {
+    fun imagePayload(value: String): Pair<String, ByteArray>? {
         decodeDataUrl(value)?.let { return it }
         if (value.startsWith("http://") || value.startsWith("https://")) {
             val ext = value.substringBefore('?').substringAfterLast('.', "").lowercase()
@@ -154,7 +154,7 @@ object CloudHttp {
                 "gif" -> "image/gif"
                 else -> "image/png"
             }
-            return mime to download(value, headers)
+            return mime to download(value)
         }
         return null
     }

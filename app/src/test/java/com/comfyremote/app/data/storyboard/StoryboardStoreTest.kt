@@ -19,7 +19,7 @@ class StoryboardStoreTest {
     @Test
     fun nextShotWaitsForAnEarlierRunningShot() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val first = store.addShot(project.id, "first")!!
         val second = store.addShot(project.id, "second")!!
         val third = store.addShot(project.id, "third")!!
@@ -61,7 +61,7 @@ class StoryboardStoreTest {
     @Test
     fun aProjectCanStartWithTailFrameRelayOff() {
         val store = store()
-        val project = store.create("Board", "wf", chainFrames = false)
+        val project = store.create("Board", "wf", chainFrames = false)!!
 
         assertFalse(project.chainFrames)
         assertFalse(store.project(project.id)!!.chainFrames)
@@ -70,7 +70,7 @@ class StoryboardStoreTest {
     @Test
     fun tailFrameRelayIsAnOptionalGameplay() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val first = store.addShot(project.id, "first")!!
         val second = store.addShot(project.id, "second")!!
 
@@ -95,7 +95,7 @@ class StoryboardStoreTest {
     @Test
     fun addingTheSameAssetIdUpdatesItInsteadOfDuplicating() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val first = com.comfyremote.app.data.reference.ProjectAsset(
             id = "tail:shot-1",
             role = com.comfyremote.app.data.reference.ReferenceRole.END_FRAME,
@@ -116,7 +116,7 @@ class StoryboardStoreTest {
     @Test
     fun aNewTailFrameIsMarkedForAssetAndResultImportAgain() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val shot = store.addShot(project.id, "shot")!!
         store.markDone(project.id, shot.id, "/tmp/result-1.mp4", "/tmp/tail-1.png")
         store.updateShot(project.id, shot.id) { it.copy(tailFrameStored = true) }
@@ -131,7 +131,7 @@ class StoryboardStoreTest {
     @Test
     fun duplicatingAShotDoesNotInheritImportedTailState() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val shot = store.addShot(project.id, "shot")!!
         store.markDone(project.id, shot.id, "/tmp/result.mp4", "/tmp/tail.png")
         store.updateShot(project.id, shot.id) { it.copy(tailFrameStored = true) }
@@ -145,7 +145,7 @@ class StoryboardStoreTest {
     @Test
     fun attachTaskDoesNotOverwriteARunningShot() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val shot = store.addShot(project.id, "shot")!!
 
         assertTrue(store.attachTask(project.id, shot.id, "task-1"))
@@ -157,7 +157,7 @@ class StoryboardStoreTest {
     @Test
     fun deletingAShotRebasesTheNextReference() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val first = store.addShot(project.id, "first")!!
         val second = store.addShot(project.id, "second")!!
         val third = store.addShot(project.id, "third")!!
@@ -175,7 +175,7 @@ class StoryboardStoreTest {
     @Test
     fun deletingAShotDoesNotRebaseAManualReference() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val first = store.addShot(project.id, "first")!!
         val second = store.addShot(project.id, "second")!!
         val third = store.addShot(project.id, "third")!!
@@ -198,10 +198,10 @@ class StoryboardStoreTest {
         val keepFile = File(mediaDir, "keep.png").apply { writeText("keep") }
         val orphan = File(mediaDir, "orphan.png").apply { writeText("orphan") }
 
-        val keep = store.create("Keep", "wf")
+        val keep = store.create("Keep", "wf")!!
         val keepShot = store.addShot(keep.id, "shot")!!
         store.markDone(keep.id, keepShot.id, "/tmp/result.mp4", keepFile.absolutePath)
-        val drop = store.create("Drop", "wf")
+        val drop = store.create("Drop", "wf")!!
         orphan.setLastModified(System.currentTimeMillis() - 60 * 60_000L)
 
         store.delete(drop.id)
@@ -213,7 +213,7 @@ class StoryboardStoreTest {
     @Test
     fun moveDuplicateAndInsertKeepShotOrder() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val first = store.addShot(project.id, "first")!!
         val second = store.addShot(project.id, "second")!!
 
@@ -236,7 +236,7 @@ class StoryboardStoreTest {
     @Test
     fun projectSettingsUpdateAndResetShotWorkflowOverrides() {
         val store = store()
-        val project = store.create("Board", "old-workflow")
+        val project = store.create("Board", "old-workflow")!!
         val shot = store.addShot(project.id, "shot")!!
         store.updateShot(project.id, shot.id) {
             it.copy(
@@ -277,7 +277,7 @@ class StoryboardStoreTest {
             workflowId = "owner/model",
             workflowPath = "replicate:owner/model",
             providerId = "replicate",
-        )
+        )!!
 
         assertEquals("owner/model", project.workflowId)
         assertEquals("replicate:owner/model", project.workflowPath)
@@ -288,7 +288,7 @@ class StoryboardStoreTest {
     @Test
     fun removingAnAssetCleansEveryShotReference() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val shot = store.addShot(project.id, "shot")!!
         val first = com.comfyremote.app.data.reference.ProjectAsset(
             id = "asset-a",
@@ -329,7 +329,7 @@ class StoryboardStoreTest {
     @Test
     fun reorderingShotsRebuildsTheAutomaticFrameChain() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val first = store.addShot(project.id, "first")!!
         val second = store.addShot(project.id, "second")!!
         val third = store.addShot(project.id, "third")!!
@@ -349,7 +349,7 @@ class StoryboardStoreTest {
     @Test
     fun insertingAShotRebuildsTheAutomaticFrameChain() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val first = store.addShot(project.id, "first")!!
         val second = store.addShot(project.id, "second")!!
         store.markDone(project.id, first.id, "/tmp/first.mp4", "/tmp/first.png")
@@ -366,7 +366,7 @@ class StoryboardStoreTest {
     @Test
     fun manualReferencesSurviveReordering() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val first = store.addShot(project.id, "first")!!
         val manual = store.addShot(project.id, "manual")!!
         val auto = store.addShot(project.id, "auto")!!
@@ -385,7 +385,7 @@ class StoryboardStoreTest {
     @Test
     fun removingATailFrameAssetDoesNotBreakTheAutomaticRelay() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val first = store.addShot(project.id, "first")!!
         val second = store.addShot(project.id, "second")!!
         store.markDone(project.id, first.id, "/tmp/first.mp4", "/tmp/first.png")
@@ -406,11 +406,34 @@ class StoryboardStoreTest {
     }
 
     @Test
+    fun aFailedWriteKeepsTheProjectAndDoesNotDeleteAssetMedia() {
+        val index = File(temp.root, "storyboards.json")
+        val store = StoryboardStore(index)
+        val project = store.create("Board", "wf")!!
+        val assetFile = File(temp.root, "asset.png").apply { writeText("asset") }
+        val asset = com.comfyremote.app.data.reference.ProjectAsset(
+            id = "asset-file",
+            role = com.comfyremote.app.data.reference.ReferenceRole.GENERIC_REFERENCE,
+            path = assetFile.absolutePath,
+        )
+        store.addAsset(project.id, asset)
+        index.delete()
+        index.mkdirs()
+
+        val removed = store.removeAsset(project.id, asset.id)
+
+        assertFalse(removed)
+        assertTrue(assetFile.exists())
+        assertTrue(store.project(project.id)!!.assets.any { it.id == asset.id })
+        assertTrue(store.persistenceError.value != null)
+    }
+
+    @Test
     fun removingAnAssetDeletesItsAppOwnedFileImmediately() {
         val store = store()
         val mediaDir = File(temp.root, "storyboards").apply { mkdirs() }
         val file = File(mediaDir, "fresh.png").apply { writeText("asset") }
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val asset = com.comfyremote.app.data.reference.ProjectAsset(
             id = "asset-file",
             role = com.comfyremote.app.data.reference.ReferenceRole.GENERIC_REFERENCE,
@@ -426,7 +449,7 @@ class StoryboardStoreTest {
     @Test
     fun projectAssetsPersistAndCountAsReferencedMedia() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val asset = com.comfyremote.app.data.reference.ProjectAsset(
             id = "asset-1",
             role = com.comfyremote.app.data.reference.ReferenceRole.CHARACTER_REFERENCE,
@@ -446,7 +469,7 @@ class StoryboardStoreTest {
     @Test
     fun referencedMediaPathsCoverResultsFramesAndReferences() {
         val store = store()
-        val project = store.create("Board", "wf")
+        val project = store.create("Board", "wf")!!
         val shot = store.addShot(project.id, "shot")!!
         store.markDone(project.id, shot.id, "/tmp/result.mp4", "/tmp/last.png")
         store.setReference(project.id, shot.id, "/tmp/reference.png")

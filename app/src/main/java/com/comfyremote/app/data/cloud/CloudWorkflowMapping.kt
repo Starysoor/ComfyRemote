@@ -117,6 +117,9 @@ object CloudWorkflowMapping {
         } else if (spec.rules.any { it.isVideo }) {
             out += "此工作流支持视频参考；当前版本会忽略这些可选素材"
         }
+        if (spec.id.contains("Wan2.2", ignoreCase = true)) {
+            out += "Wan2.2 系列将于 2026-11-10 停用，请尽快切换到 MiniMax-H3 等新模型"
+        }
         return out
     }
 
@@ -214,9 +217,11 @@ object CloudPromptBuilder {
                 }
                 FieldKind.IMAGE, FieldKind.AUDIO -> {
                     if (raw.isNotBlank()) {
+                        // A filled slot is a user intent. Never silently drop it and
+                        // submit a cheaper request with missing references.
                         val resolved = resolveImage(raw)
-                        if (resolved != null) body.put(field.input, resolved)
-                        else if (field.required) throw PromptValidationException("${field.label} 读取失败")
+                            ?: throw PromptValidationException("${field.label} 读取失败，请重新选择素材")
+                        body.put(field.input, resolved)
                     } else if (field.required) {
                         throw PromptValidationException("${field.label} 不能为空")
                     }

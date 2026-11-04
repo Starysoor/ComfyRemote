@@ -52,6 +52,14 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         refreshWorkflows()
         migrateLegacyTailFrames()
         viewModelScope.launch {
+            container.storyboardStore.persistenceError.collect { error ->
+                if (error != null) {
+                    _message.value = error
+                    container.storyboardStore.clearPersistenceError()
+                }
+            }
+        }
+        viewModelScope.launch {
             container.generationManager.tasks.collect { tasks -> syncTasks(tasks) }
         }
         viewModelScope.launch {
@@ -126,7 +134,9 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
             stylePrompt = stylePrompt,
             workflowPath = option.path,
             providerId = option.providerId,
-        )
+        ).also { created ->
+            if (created == null) _message.value = AppStrings.get(R.string.board_err_persist)
+        }
     }
 
     fun deleteProject(id: String): Boolean {
@@ -135,8 +145,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
             _message.value = AppStrings.get(R.string.board_err_delete_running_project)
             return false
         }
-        container.storyboardStore.delete(id)
-        return true
+        return container.storyboardStore.delete(id)
     }
 
     fun setStyle(projectId: String, style: String) = container.storyboardStore.setStyle(projectId, style)
@@ -400,8 +409,13 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                         try {
                             val index = project.shots.indexOfFirst { it.id == shot.id }
                             val lastFrame = extractLastFrame(shot.id, resultPath)
-                            container.storyboardStore.markDone(project.id, shot.id, resultPath, lastFrame)
-                            if (lastFrame != null &&
+                            val done = container.storyboardStore.markDone(
+                                project.id,
+                                shot.id,
+                                resultPath,
+                                lastFrame,
+                            )
+                            if (done && lastFrame != null &&
                                 addTailFrameArtifacts(project, shot, index, resultPath, lastFrame)
                             ) {
                                 markTailFrameStored(project.id, shot.id)
@@ -476,7 +490,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
             createdAt = existing?.createdAt ?: System.currentTimeMillis(),
         )
         if (existing?.path != asset.path || existing?.label != asset.label) {
-            container.storyboardStore.addAsset(project.id, asset)
+            if (!container.storyboardStore.addAsset(project.id, asset)) return false
         }
         // An image result is already in History; only a video needs its tail frame added.
         return lastFramePath == resultPath ||

@@ -112,6 +112,7 @@
     <string name="gen_vm_cloud_token_missing">请先在设置 → 云端服务中配置 %1$s 的凭据</string>
     <string name="gen_vm_cloud_provider_disabled">%1$s 已在云端服务中关闭，请先启用再提交。</string>
     <string name="gen_vm_fix_compat">请先修复兼容性问题：%1$s</string>
+    <string name="gen_vm_persist_failed">无法保存任务状态：%1$s，未提交到云端</string>
     <plurals name="gen_vm_batch_created">
         <item quantity="other">已创建 %1$d 个批量任务</item>
     </plurals>

@@ -177,6 +177,42 @@ class GenerationPromptBuilderTest {
     }
 
     @Test
+    fun aFilledButUnreadableOptionalReferenceBlocksSubmission() = runBlocking {
+        val spec = com.comfyremote.app.data.cloud.CloudWorkflowSpec(
+            id = "gpt-image-2.5-sunburst",
+            name = "GPT Image",
+            kind = "image",
+            description = "",
+            rules = listOf(
+                com.comfyremote.app.data.cloud.CloudInputRule("prompt", "prompt", required = true),
+                com.comfyremote.app.data.cloud.CloudInputRule("image", "image", required = false),
+                com.comfyremote.app.data.cloud.CloudInputRule("image2", "image", required = false),
+            ),
+        )
+        val fields = com.comfyremote.app.data.cloud.CloudWorkflowMapping.fields(spec)
+        val request = GenerationRequest(
+            id = "missing-reference",
+            provider = "openai",
+            serverUrl = "https://api.openai.com/v1",
+            workflowPath = "openai:gpt-image-2.5-sunburst",
+            workflowName = "GPT Image",
+            fieldValues = mapOf("prompt" to "combine", "image2" to "local:/missing.png"),
+            randomSeed = false,
+            nodeTitles = emptyMap(),
+            fields = fields,
+            convertedPrompt = spec.toJson(),
+            createdAt = 1L,
+        )
+
+        val error = runCatching {
+            GenerationPromptBuilder.build(request) { null }
+        }.exceptionOrNull()
+
+        assertTrue(error is com.comfyremote.app.PromptValidationException)
+        assertTrue(error!!.message.orEmpty().contains("读取失败"))
+    }
+
+    @Test
     fun generationTaskTerminalStatesAreNotActive() {
         val req = request(randomSeed = false, values = emptyMap())
 

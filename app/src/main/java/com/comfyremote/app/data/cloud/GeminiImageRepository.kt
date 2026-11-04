@@ -97,7 +97,7 @@ class GeminiImageRepository(
             imageConfig.put("imageSize", it)
         }
         val parts = buildGeminiImageParts(model, prompt, body) { value ->
-            CloudHttp.imagePayload(value, headers)
+            CloudHttp.imagePayload(value)
         }
         val generationConfig = JSONObject()
             .put("responseModalities", JSONArray().put("IMAGE"))

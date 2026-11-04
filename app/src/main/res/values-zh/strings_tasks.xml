@@ -48,6 +48,7 @@
     <string name="tasks_local_interrupt_text">ComfyUI 的 /interrupt 是服务器级操作，会停止该服务器当前执行，可能影响使用同一服务器的其它客户端；Iris 无法只取消这一个运行中的提示词。</string>
     <string name="tasks_msg_cancel_failed">取消失败：%1$s</string>
     <string name="tasks_msg_cancel_partial">有 %1$d 个任务未能从服务器队列删除</string>
+    <string name="tasks_msg_persist_failed">任务状态保存失败：%1$s</string>
     <string name="tasks_bulk_cancel_cloud_title">取消排队任务？</string>
     <string name="tasks_bulk_cancel_cloud_text">其中 %1$d 个云端任务已提交，取消后可能继续运行并计费。</string>
     <string name="tasks_cloud_cancel_title">取消云端任务？</string>

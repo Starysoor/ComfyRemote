@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -67,6 +68,17 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            container.generationManager.persistenceError.collect { error ->
+                if (error != null) {
+                    _message.value = AppStrings.get(R.string.tasks_msg_persist_failed, error)
+                    container.generationManager.clearPersistenceError()
+                }
+            }
+        }
+    }
+
     fun task(id: String): GenerationTask? = tasks.value.firstOrNull { it.taskId == id }
 
     fun setFilter(filter: TaskFilter) { _filter.value = filter }
@@ -112,7 +124,12 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
             return
         }
         viewModelScope.launch {
-            val ids = container.cloudSubmissionGate.submit(requests, localQueue = true)
+            val ids = try {
+                container.cloudSubmissionGate.submit(requests, localQueue = true)
+            } catch (error: Exception) {
+                _message.value = error.message ?: error.javaClass.simpleName
+                return@launch
+            }
             if (ids.isNotEmpty()) {
                 _message.value = AppStrings.plural(R.plurals.tasks_msg_retries_queued, ids.size, ids.size)
             }
@@ -134,9 +151,13 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
             createdAt = System.currentTimeMillis(),
         )
         viewModelScope.launch {
-            container.cloudSubmissionGate.submit(listOf(request), localQueue = false)
-                .firstOrNull()
-                ?.let(onSubmitted)
+            val ids = try {
+                container.cloudSubmissionGate.submit(listOf(request), localQueue = false)
+            } catch (error: Exception) {
+                _message.value = error.message ?: error.javaClass.simpleName
+                return@launch
+            }
+            ids.firstOrNull()?.let(onSubmitted)
         }
     }
 

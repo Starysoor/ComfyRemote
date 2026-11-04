@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.util.UUID
 
 /** JSON-file-backed multi-shot projects. */
@@ -15,6 +17,14 @@ class StoryboardStore internal constructor(private val file: File) {
     private val lock = Any()
     private val _projects = MutableStateFlow(load())
     val projects: StateFlow<List<StoryboardProject>> = _projects.asStateFlow()
+
+    /** Last durable-state write failure; surfaced by the Board screen. */
+    private val _persistenceError = MutableStateFlow<String?>(null)
+    val persistenceError: StateFlow<String?> = _persistenceError.asStateFlow()
+
+    fun clearPersistenceError() {
+        _persistenceError.value = null
+    }
 
     fun load(): List<StoryboardProject> = synchronized(lock) {
         runCatching {
@@ -33,7 +43,7 @@ class StoryboardStore internal constructor(private val file: File) {
         workflowPath: String = "",
         providerId: String = "",
         chainFrames: Boolean = true,
-    ): StoryboardProject = synchronized(lock) {
+    ): StoryboardProject? = synchronized(lock) {
         val path = workflowPath.trim().ifBlank {
             workflowId.trim().takeIf { it.isNotBlank() }
                 ?.let { com.comfyremote.app.data.cloud.AutoDlConfig.PATH_PREFIX + it }
@@ -48,25 +58,28 @@ class StoryboardStore internal constructor(private val file: File) {
             stylePrompt = stylePrompt.trim(),
             chainFrames = chainFrames,
         )
-        write(listOf(project) + _projects.value)
-        project
+        if (write(listOf(project) + _projects.value)) project else null
     }
 
     fun delete(projectId: String) = synchronized(lock) {
-        write(_projects.value.filterNot { it.id == projectId })
-        gcOrphanMediaLocked()
+        if (write(_projects.value.filterNot { it.id == projectId })) {
+            gcOrphanMediaLocked()
+            true
+        } else {
+            false
+        }
     }
 
-    fun setStyle(projectId: String, style: String) = update(projectId) {
+    fun setStyle(projectId: String, style: String): Boolean = update(projectId) {
         it.copy(stylePrompt = style.trim(), updatedAt = System.currentTimeMillis())
     }
 
-    fun setAspectRatio(projectId: String, ratio: String) = update(projectId) {
+    fun setAspectRatio(projectId: String, ratio: String): Boolean = update(projectId) {
         it.copy(aspectRatio = ratio.trim(), updatedAt = System.currentTimeMillis())
     }
 
     /** Toggles the optional tail-frame relay. Turning it off clears automatic refs only. */
-    fun setChainFrames(projectId: String, enabled: Boolean) = update(projectId) { project ->
+    fun setChainFrames(projectId: String, enabled: Boolean): Boolean = update(projectId) { project ->
         project.copy(
             chainFrames = enabled,
             shots = rebaseAutoReferences(project.shots, enabled),
@@ -81,7 +94,7 @@ class StoryboardStore internal constructor(private val file: File) {
         providerId: String,
         aspectRatio: String,
         defaultValues: Map<String, String>,
-    ) = update(projectId) { project ->
+    ): Boolean = update(projectId) { project ->
         val path = workflowPath.trim()
         val workflowChanged = project.workflowPath != path
         project.copy(
@@ -104,7 +117,7 @@ class StoryboardStore internal constructor(private val file: File) {
 
     fun addShot(projectId: String, prompt: String): StoryboardShot? = synchronized(lock) {
         var created: StoryboardShot? = null
-        updateLocked(projectId) { project ->
+        val persisted = updateLocked(projectId) { project ->
             val shot = StoryboardShot(prompt = prompt.trim())
             created = shot
             project.copy(
@@ -112,12 +125,12 @@ class StoryboardStore internal constructor(private val file: File) {
                 updatedAt = System.currentTimeMillis(),
             )
         }
-        created
+        created.takeIf { persisted }
     }
 
     fun insertShotAfter(projectId: String, shotId: String, prompt: String): StoryboardShot? = synchronized(lock) {
         var created: StoryboardShot? = null
-        updateLocked(projectId) { project ->
+        val persisted = updateLocked(projectId) { project ->
             val index = project.shots.indexOfFirst { it.id == shotId }
             if (index < 0) return@updateLocked project
             val shot = StoryboardShot(prompt = prompt.trim())
@@ -128,12 +141,12 @@ class StoryboardStore internal constructor(private val file: File) {
                 updatedAt = System.currentTimeMillis(),
             )
         }
-        created
+        created.takeIf { persisted }
     }
 
     fun duplicateShot(projectId: String, shotId: String): StoryboardShot? = synchronized(lock) {
         var created: StoryboardShot? = null
-        updateLocked(projectId) { project ->
+        val persisted = updateLocked(projectId) { project ->
             val index = project.shots.indexOfFirst { it.id == shotId }
             if (index < 0) return@updateLocked project
             val copy = project.shots[index].copy(
@@ -152,12 +165,12 @@ class StoryboardStore internal constructor(private val file: File) {
                 updatedAt = System.currentTimeMillis(),
             )
         }
-        created
+        created.takeIf { persisted }
     }
 
     fun moveShot(projectId: String, shotId: String, delta: Int): Boolean = synchronized(lock) {
         var moved = false
-        updateLocked(projectId) { project ->
+        val persisted = updateLocked(projectId) { project ->
             val index = project.shots.indexOfFirst { it.id == shotId }
             val target = index + delta
             if (index < 0 || target !in project.shots.indices) return@updateLocked project
@@ -170,13 +183,13 @@ class StoryboardStore internal constructor(private val file: File) {
                 updatedAt = System.currentTimeMillis(),
             )
         }
-        moved
+        moved && persisted
     }
 
     /** Adds or replaces an asset by id (tail frames reuse one stable asset id per shot). */
     fun addAsset(projectId: String, asset: ProjectAsset): Boolean = synchronized(lock) {
         var added = false
-        update(projectId) { project ->
+        val persisted = update(projectId) { project ->
             added = true
             val existing = project.assets.any { it.id == asset.id }
             val assets = if (existing) {
@@ -186,13 +199,13 @@ class StoryboardStore internal constructor(private val file: File) {
             }
             project.copy(assets = assets, updatedAt = System.currentTimeMillis())
         }
-        added
+        added && persisted
     }
 
     fun removeAsset(projectId: String, assetId: String): Boolean = synchronized(lock) {
         var removed = false
         var removedPath: String? = null
-        update(projectId) { project ->
+        val persisted = update(projectId) { project ->
             val asset = project.assets.firstOrNull { it.id == assetId }
                 ?: return@update project
             removed = true
@@ -234,16 +247,16 @@ class StoryboardStore internal constructor(private val file: File) {
                 updatedAt = System.currentTimeMillis(),
             )
         }
-        if (removed) {
+        if (persisted && removed) {
             // An explicitly removed asset no longer needs the GC grace period.
             removedPath?.takeIf { path -> path.isNotBlank() && path !in referencedMediaPaths() }
                 ?.let { path -> runCatching { File(path).delete() } }
             gcOrphanMediaLocked()
         }
-        removed
+        removed && persisted
     }
 
-    fun updateShot(projectId: String, shotId: String, transform: (StoryboardShot) -> StoryboardShot) =
+    fun updateShot(projectId: String, shotId: String, transform: (StoryboardShot) -> StoryboardShot): Boolean =
         synchronized(lock) {
             updateLocked(projectId) { project ->
                 project.copy(
@@ -253,8 +266,8 @@ class StoryboardStore internal constructor(private val file: File) {
             }
         }
 
-    fun deleteShot(projectId: String, shotId: String) = synchronized(lock) {
-        updateLocked(projectId) { project ->
+    fun deleteShot(projectId: String, shotId: String): Boolean = synchronized(lock) {
+        val persisted = updateLocked(projectId) { project ->
             val index = project.shots.indexOfFirst { it.id == shotId }
             if (index < 0) return@updateLocked project
             val remaining = project.shots.toMutableList().apply { removeAt(index) }
@@ -262,12 +275,14 @@ class StoryboardStore internal constructor(private val file: File) {
                 shots = rebaseAutoReferences(remaining, project.chainFrames),
                 updatedAt = System.currentTimeMillis(),
             )
-        }.also { gcOrphanMediaLocked() }
+        }
+        if (persisted) gcOrphanMediaLocked()
+        persisted
     }
 
     fun attachTask(projectId: String, shotId: String, taskId: String): Boolean {
         var attached = false
-        updateShot(projectId, shotId) { shot ->
+        val persisted = updateShot(projectId, shotId) { shot ->
             if (shot.status == "running" && !shot.taskId.isNullOrBlank()) {
                 shot
             } else {
@@ -275,10 +290,10 @@ class StoryboardStore internal constructor(private val file: File) {
                 shot.copy(status = "running", taskId = taskId, error = null, resultPath = null)
             }
         }
-        return attached
+        return attached && persisted
     }
 
-    fun markDone(projectId: String, shotId: String, resultPath: String, lastFramePath: String?) =
+    fun markDone(projectId: String, shotId: String, resultPath: String, lastFramePath: String?): Boolean =
         synchronized(lock) {
             updateLocked(projectId) { project ->
                 val shots = project.shots.map { shot ->
@@ -299,14 +314,19 @@ class StoryboardStore internal constructor(private val file: File) {
             }
         }
 
-    fun markFailed(projectId: String, shotId: String, message: String) = updateShot(projectId, shotId) {
-        it.copy(status = "failed", error = message)
-    }
-
-    fun setReference(projectId: String, shotId: String, path: String?, manual: Boolean = true) =
+    fun markFailed(projectId: String, shotId: String, message: String): Boolean =
         updateShot(projectId, shotId) {
-            it.copy(referencePath = path, referenceManual = manual)
+            it.copy(status = "failed", error = message)
         }
+
+    fun setReference(
+        projectId: String,
+        shotId: String,
+        path: String?,
+        manual: Boolean = true,
+    ): Boolean = updateShot(projectId, shotId) {
+        it.copy(referencePath = path, referenceManual = manual)
+    }
 
     fun nextShot(projectId: String): StoryboardShot? {
         val project = _projects.value.firstOrNull { it.id == projectId } ?: return null
@@ -368,28 +388,52 @@ class StoryboardStore internal constructor(private val file: File) {
         return if (changed) result else shots
     }
 
-    private fun update(projectId: String, transform: (StoryboardProject) -> StoryboardProject) =
+    private fun update(projectId: String, transform: (StoryboardProject) -> StoryboardProject): Boolean =
         synchronized(lock) { updateLocked(projectId, transform) }
 
     private fun updateLocked(
         projectId: String,
         transform: (StoryboardProject) -> StoryboardProject,
-    ) {
+    ): Boolean {
         val next = _projects.value.map { if (it.id == projectId) transform(it) else it }
-        write(next)
+        return write(next)
     }
 
-    private fun write(projects: List<StoryboardProject>) {
+    /** Atomic write first, then publish the in-memory project list. */
+    private fun write(projects: List<StoryboardProject>): Boolean {
         val sorted = projects.sortedByDescending { it.updatedAt }
-        _projects.value = sorted
-        val tmp = File(file.parentFile, file.name + ".tmp")
-        runCatching {
-            tmp.writeText(StoryboardCodec.encode(sorted))
-            if (!tmp.renameTo(file)) {
-                file.writeText(tmp.readText())
-                tmp.delete()
+        val parent = file.parentFile
+        if (parent != null && !parent.isDirectory && !parent.mkdirs()) {
+            _persistenceError.value = "Cannot create storyboard directory: $parent"
+            return false
+        }
+        val tmp = File(parent, file.name + ".tmp")
+        return try {
+            FileOutputStream(tmp).use { stream ->
+                stream.write(StoryboardCodec.encode(sorted).toByteArray(Charsets.UTF_8))
+                stream.fd.sync()
             }
-        }.onFailure { tmp.delete() }
+            try {
+                java.nio.file.Files.move(
+                    tmp.toPath(),
+                    file.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                )
+            } catch (unsupported: java.nio.file.AtomicMoveNotSupportedException) {
+                java.nio.file.Files.move(
+                    tmp.toPath(),
+                    file.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                )
+            }
+            _projects.value = sorted
+            true
+        } catch (error: Exception) {
+            tmp.delete()
+            _persistenceError.value = error.message ?: error.javaClass.simpleName
+            false
+        }
     }
 
     /** Deletes app-owned storyboard frames that no shot references anymore. */

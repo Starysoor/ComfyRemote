@@ -43,8 +43,9 @@ class CustomOpenAiRepository(
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
         val account = account()
         if (account.baseUrl.isBlank()) return emptyList()
+        // Auto-discovery keeps a media-name hint, but a manually saved model list
+        // is user intent and must not be filtered by Iris keywords.
         val models = pulledModels(settings, id, account.baseUrl, account.token) { discoverModels() }
-            .filter(CloudModelParameters::looksLikeMediaModel)
         return settings.enabledModels(id, models).map(::summary)
     }
 
@@ -65,7 +66,7 @@ class CustomOpenAiRepository(
             .filter { CloudModelParameters.supportsReferenceImage(workflowId) }
         val response = if (references.isNotEmpty()) {
             val files = references.mapIndexed { index, (_, value) ->
-                val payload = CloudHttp.imagePayload(value, headers)
+                val payload = CloudHttp.imagePayload(value)
                     ?: throw ComfyException("The reference image could not be read")
                 val extension = when (payload.first) {
                     "image/jpeg" -> "jpg"

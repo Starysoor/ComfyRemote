@@ -70,7 +70,7 @@ class OpenAiCompatibleImageRepository(
             .filter { CloudModelParameters.supportsReferenceImage(workflowId) }
         val response = if (references.isNotEmpty()) {
             val files = references.mapIndexed { index, (_, value) ->
-                val payload = CloudHttp.imagePayload(value, headers)
+                val payload = CloudHttp.imagePayload(value)
                     ?: throw ComfyException("The reference image could not be read")
                 val extension = when (payload.first) {
                     "image/jpeg" -> "jpg"
