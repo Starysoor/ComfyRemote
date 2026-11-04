@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.3.1 — 2026-11-04
 
 ### Fixed
 
@@ -16,6 +16,8 @@
 ### Tests
 
 - Added regression coverage for provider grouping, provider enable/disable, pulled-vs-preset catalogues, model-specific reference-image rules, provider-labelled failures, request codec round-trips and real multipart edit payloads.
+
+- Version `2.3.1` (versionCode 27).
 
 ## 2.3.0 — 2026-11-04
 
