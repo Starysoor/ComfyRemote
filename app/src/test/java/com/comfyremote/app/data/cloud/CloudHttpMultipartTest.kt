@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
+import java.io.ByteArrayInputStream
+import org.junit.Assert.assertThrows
 import java.net.ServerSocket
 import java.util.Base64
 import kotlin.concurrent.thread
@@ -19,6 +21,20 @@ class CloudHttpMultipartTest {
 
         assertEquals("image/png", payload?.first)
         assertTrue(payload!!.second.contentEquals(bytes))
+    }
+
+    @Test
+    fun oversizedReferenceDownloadsAreRejectedEvenWithoutContentLength() {
+        val input = ByteArrayInputStream(byteArrayOf(1, 2, 3, 4, 5))
+        assertThrows(com.comfyremote.app.ComfyException::class.java) {
+            CloudHttp.readBounded(input, 4)
+        }
+    }
+
+    @Test
+    fun referenceDownloadLimitAllowsAnExactSize() {
+        val input = ByteArrayInputStream(byteArrayOf(1, 2, 3, 4))
+        assertTrue(CloudHttp.readBounded(input, 4).contentEquals(byteArrayOf(1, 2, 3, 4)))
     }
 
     @Test

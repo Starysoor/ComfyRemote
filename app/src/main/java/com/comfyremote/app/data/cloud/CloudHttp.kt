@@ -8,6 +8,8 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.File
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.util.Base64
 import java.util.concurrent.TimeUnit
 
@@ -21,6 +23,8 @@ data class CloudFilePart(
 
 /** Shared HTTP plumbing for official/custom cloud providers. */
 object CloudHttp {
+    /** User-supplied reference URLs are untrusted and must never exhaust app memory. */
+    private const val MAX_REFERENCE_BYTES = 32 * 1024 * 1024
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     val client: OkHttpClient by lazy {
@@ -145,7 +149,16 @@ object CloudHttp {
      * the API host and must never receive Authorization / API-key headers.
      */
     fun imagePayload(value: String): Pair<String, ByteArray>? {
-        decodeDataUrl(value)?.let { return it }
+        if (value.startsWith("data:")) {
+            val comma = value.indexOf(',')
+            if (comma >= 0 && value.length - comma - 1 > MAX_REFERENCE_BYTES.toLong() * 4 / 3 + 8) {
+                throw ComfyException("Reference image is larger than 32 MiB")
+            }
+        }
+        decodeDataUrl(value)?.let {
+            if (it.second.size > MAX_REFERENCE_BYTES) throw ComfyException("Reference image is larger than 32 MiB")
+            return it
+        }
         if (value.startsWith("http://") || value.startsWith("https://")) {
             val ext = value.substringBefore('?').substringAfterLast('.', "").lowercase()
             val mime = when (ext) {
@@ -154,14 +167,20 @@ object CloudHttp {
                 "gif" -> "image/gif"
                 else -> "image/png"
             }
-            return mime to download(value)
+            return mime to download(value, maxBytes = MAX_REFERENCE_BYTES)
         }
         return null
     }
 
-    fun download(url: String, headers: Map<String, String> = emptyMap()): ByteArray {
+    fun download(
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+        maxBytes: Int? = null,
+    ): ByteArray {
         if (url.startsWith("data:")) {
-            return Base64.getDecoder().decode(url.substringAfter(','))
+            val bytes = Base64.getDecoder().decode(url.substringAfter(','))
+            if (maxBytes != null && bytes.size > maxBytes) throw ComfyException("Reference image is too large")
+            return bytes
         }
         val request = Request.Builder()
             .url(url)
@@ -170,8 +189,27 @@ object CloudHttp {
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw ComfyException("HTTP ${response.code} while downloading result")
-            return response.body?.bytes() ?: throw ComfyException("Empty result download")
+            val body = response.body ?: throw ComfyException("Empty result download")
+            if (maxBytes == null) return body.bytes()
+            if (body.contentLength() > maxBytes) throw ComfyException("Reference image is larger than 32 MiB")
+            return readBounded(body.byteStream(), maxBytes)
         }
+    }
+
+    /** Streams at most [maxBytes]; safe even when Content-Length is absent or false. */
+    internal fun readBounded(input: InputStream, maxBytes: Int): ByteArray {
+        require(maxBytes >= 0)
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(16 * 1024)
+        var count = 0L
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            count += n
+            if (count > maxBytes) throw ComfyException("Reference image exceeds allowed download size")
+            output.write(buffer, 0, n)
+        }
+        return output.toByteArray()
     }
 
     fun downloadTo(url: String, target: File, headers: Map<String, String> = emptyMap()) {
