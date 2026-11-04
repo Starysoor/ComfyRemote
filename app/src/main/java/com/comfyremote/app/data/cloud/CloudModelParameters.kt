@@ -1,5 +1,7 @@
 package com.comfyremote.app.data.cloud
 
+import org.json.JSONObject
+
 /**
  * The editable parameters a specific model really exposes. Model capabilities
  * differ inside one vendor family, so rules are derived from the model id rather
@@ -29,6 +31,32 @@ object CloudModelParameters {
         if (lower.startsWith("gemini") && "image" in lower) return true
         return referenceImagePatterns.any { it in lower }
     }
+
+    /**
+     * Number of reference-image slots exposed for a model. This is an app-side
+     * practical cap; vendor hard limits are higher (GPT Image 16, Gemini Pro 14).
+     */
+    fun referenceImageLimit(model: String): Int {
+        val lower = model.lowercase()
+        if (!supportsReferenceImage(model)) return 0
+        if (lower.contains("qwen-image-edit-2509")) return 3
+        if (lower.startsWith("gpt-image") || lower.startsWith("chatgpt-image")) return 4
+        if (lower.startsWith("gemini") && "image" in lower) return 4
+        if (lower.contains("nano-banana") || lower.contains("seedream")) return 4
+        return 1
+    }
+
+    /** Ordered reference image values from a built request body (`image`, `image2`, ...). */
+    fun referenceImageInputs(body: JSONObject): List<Pair<String, String>> =
+        body.keys().asSequence()
+            .filter { key -> key == "image" || Regex("image\\d+").matches(key) }
+            .sortedBy { key ->
+                if (key == "image") 0 else key.removePrefix("image").toIntOrNull() ?: Int.MAX_VALUE
+            }
+            .mapNotNull { key ->
+                body.optString(key).takeIf(String::isNotBlank)?.let { key to it }
+            }
+            .toList()
 
     fun kindOf(model: String): String {
         val lower = model.lowercase()
@@ -61,8 +89,12 @@ object CloudModelParameters {
         val gptImage = model.startsWith("gpt-image") || model.startsWith("chatgpt-image")
         val dallE = model.startsWith("dall-e")
         val rules = mutableListOf(CloudInputRule("prompt", "prompt", required = true))
-        if (supportsReferenceImage(model)) {
-            rules += CloudInputRule("image", "image", required = false)
+        repeat(referenceImageLimit(model)) { index ->
+            rules += CloudInputRule(
+                name = if (index == 0) "image" else "image${index + 1}",
+                type = "image",
+                required = false,
+            )
         }
         if (!gptImage && !dallE) {
             rules += CloudInputRule(
@@ -125,11 +157,18 @@ object CloudModelParameters {
             CloudInputRule("prompt", "prompt", required = true),
             CloudInputRule(
                 "aspect_ratio", "enum", required = false, defaultValue = "1:1",
-                options = listOf("1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9"),
+                options = listOf(
+                    "1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9",
+                    "4:1", "4:5", "5:4", "1:8", "8:1",
+                ),
             ),
         )
-        if (supportsReferenceImage(model)) {
-            rules += CloudInputRule("image", "image", required = false)
+        repeat(referenceImageLimit(model)) { index ->
+            rules += CloudInputRule(
+                name = if (index == 0) "image" else "image${index + 1}",
+                type = "image",
+                required = false,
+            )
         }
         if (model.contains("3-pro-image")) {
             rules += CloudInputRule(
@@ -162,22 +201,35 @@ object CloudModelParameters {
             return rules
         }
         if (editModel) {
-            rules += CloudInputRule("image", "image", required = true)
+            // Qwen-Image-Edit-2509 accepts image, image2 and image3; older edit
+            // endpoints take a single source image. Edit models do not accept
+            // image_size, so it must not be offered.
+            repeat(referenceImageLimit(model)) { index ->
+                rules += CloudInputRule(
+                    name = if (index == 0) "image" else "image${index + 1}",
+                    type = "image",
+                    required = index == 0,
+                )
+            }
+        } else {
+            rules += CloudInputRule(
+                "image_size", "enum", required = false, defaultValue = "1024x1024",
+                options = listOf("1024x1024", "768x1024", "1024x768", "512x512", "1280x720", "720x1280"),
+            )
         }
-        rules += CloudInputRule(
-            "image_size", "enum", required = false, defaultValue = "1024x1024",
-            options = listOf("1024x1024", "768x1024", "1024x768", "512x512", "1280x720", "720x1280"),
-        )
         rules += CloudInputRule("negative_prompt", "string", required = false)
         rules += CloudInputRule(
             "batch_size", "integer", required = false, defaultValue = "1", min = 1.0, max = 4.0,
         )
         rules += CloudInputRule(
-            "num_inference_steps", "integer", required = false, defaultValue = "20", min = 20.0, max = 50.0,
+            "num_inference_steps", "integer", required = false, defaultValue = "20",
+            min = 1.0, max = if (editModel) 20.0 else 50.0,
         )
-        rules += CloudInputRule(
-            "guidance_scale", "number", required = false, defaultValue = "7.5", min = 1.0, max = 20.0,
-        )
+        if (!editModel) {
+            rules += CloudInputRule(
+                "guidance_scale", "number", required = false, defaultValue = "7.5", min = 1.0, max = 20.0,
+            )
+        }
         rules += CloudInputRule(
             "seed", "integer", required = false, max = SILICON_FLOW_SEED_MAX,
         )

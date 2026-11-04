@@ -50,10 +50,11 @@ are not stored in the repository.
 | File | What it shows |
 |---|---|
 | `iris-v232-autodl-models.png` | AutoDL `/models` filtered to six real media models; Claude/DeepSeek/GPT text models are gone |
-| `iris-v232-gptimage-task.png` | Real AutoDL Models `gpt-image-2` generation completed |
-| `iris-v232-kolors-task.png` | Real SiliconFlow `Kwai-Kolors/Kolors` generation completed after seed/boolean fixes |
-| `iris-v232-edit-task.png` | Real SiliconFlow `Qwen-Image-Edit-2509` generation with an uploaded reference image |
-| `iris-v232-autodl-edit-task.png` | Real AutoDL Models `gpt-image-2` edit with an uploaded reference image |
+| `iris-v232-gptimage-task.png` | Real AutoDL Models `gpt-image-2` text generation completed |
+| `iris-v232-multi-filled.png` | Four multi-reference slots exposed; two images filled |
+| `iris-v232-multi-task.png` | Real AutoDL multi-image edit completed (green/yellow + orange/purple references combined) |
+| `iris-v232-sf-multi-filled4.png` | SiliconFlow `Qwen-Image-Edit-2509` exposes three slots; two images filled |
+| `iris-v232-sf-multi-task.png` | Real SiliconFlow multi-image edit completed with `image` / `image2` |
 
 ## Storyboard workspace polish
 

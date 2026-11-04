@@ -169,6 +169,8 @@ object CloudWorkflowMapping {
         name == "first_frame" || name == "first_frame_image" -> "首帧 · First frame"
         name == "last_frame" || name == "last_frame_image" -> "尾帧 · Last frame"
         name == "image" -> "参考图 · Reference image"
+        name.matches(Regex("image\\d+")) ->
+            "参考图 ${name.removePrefix("image").toIntOrNull() ?: ""} · Reference"
         name == "mask" -> "蒙版 · Mask"
         name == "aspect_ratio" || name == "ratio" -> "画幅 · Aspect ratio"
         name == "image_size" || name == "size" -> "尺寸 · Size"

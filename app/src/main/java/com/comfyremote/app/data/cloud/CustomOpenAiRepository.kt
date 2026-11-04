@@ -59,10 +59,24 @@ class CustomOpenAiRepository(
         if (account.baseUrl.isBlank()) throw ComfyException("Configure the custom API base URL first")
         val headers = auth(account)
         val base = account.baseUrl.trimEnd('/')
-        val reference = body.optString("image").takeIf { it.isNotBlank() }
-        val response = if (reference != null && CloudModelParameters.supportsReferenceImage(workflowId)) {
-            val payload = CloudHttp.imagePayload(reference, headers)
-                ?: throw ComfyException("The reference image could not be read")
+        val references = CloudModelParameters.referenceImageInputs(body)
+            .filter { CloudModelParameters.supportsReferenceImage(workflowId) }
+        val response = if (references.isNotEmpty()) {
+            val files = references.mapIndexed { index, (_, value) ->
+                val payload = CloudHttp.imagePayload(value, headers)
+                    ?: throw ComfyException("The reference image could not be read")
+                val extension = when (payload.first) {
+                    "image/jpeg" -> "jpg"
+                    "image/webp" -> "webp"
+                    else -> "png"
+                }
+                CloudFilePart(
+                    fieldName = if (references.size == 1) "image" else "image[]",
+                    fileName = "reference${index + 1}.$extension",
+                    mime = payload.first,
+                    bytes = payload.second,
+                )
+            }
             val fields = linkedMapOf(
                 "model" to workflowId,
                 "prompt" to body.optString("prompt"),
@@ -71,13 +85,10 @@ class CustomOpenAiRepository(
                 body.optString(key).takeIf { it.isNotBlank() }?.let { fields[key] = it }
             }
             body.optInt("n", 1).takeIf { it > 0 }?.let { fields["n"] = it.toString() }
-            val extension = if (payload.first == "image/jpeg") "jpg" else "png"
             CloudHttp.postMultipart(
                 url = "$base/images/edits",
                 fields = fields,
-                files = listOf(
-                    CloudFilePart("image", "reference.$extension", payload.first, payload.second)
-                ),
+                files = files,
                 headers = headers,
             )
         } else {

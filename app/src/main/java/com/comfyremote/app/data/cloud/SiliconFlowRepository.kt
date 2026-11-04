@@ -196,7 +196,9 @@ internal fun buildSiliconFlowImagePayload(workflowId: String, body: JSONObject):
     if (body.has("prompt_enhancement")) {
         payload.put("prompt_enhancement", body.optBoolean("prompt_enhancement", false))
     }
-    body.opt("image")?.toString()?.takeIf { it.isNotBlank() }?.let { payload.put("image", it) }
+    CloudModelParameters.referenceImageInputs(body).forEach { (key, value) ->
+        payload.put(key, value)
+    }
     body.optInt("batch_size", 1).takeIf { it > 0 }?.let { payload.put("batch_size", it) }
     body.optInt("num_inference_steps", 20).takeIf { it > 0 }?.let { payload.put("num_inference_steps", it) }
     body.opt("guidance_scale")?.let {
