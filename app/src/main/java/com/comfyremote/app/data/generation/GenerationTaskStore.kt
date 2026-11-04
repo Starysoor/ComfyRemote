@@ -4,6 +4,7 @@ import android.content.Context
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import org.json.JSONArray
 
 /**
  * Small JSON-backed persistence for runtime tasks. Active tasks survive process death;
@@ -32,6 +33,15 @@ class GenerationTaskStore internal constructor(private val file: File) {
         }
         val tmp = File(parent, file.name + ".tmp")
         try {
+            // If a prior crash damaged the index, never silently replace its
+            // only recoverable bytes with an empty task list.
+            if (file.isFile) {
+                val raw = file.readText()
+                val rows = JSONArray(raw)
+                if (GenerationTaskCodec.decode(raw).size != rows.length()) {
+                    throw IOException("Existing task index contains unreadable tasks")
+                }
+            }
             FileOutputStream(tmp).use { stream ->
                 stream.write(GenerationTaskCodec.encode(tasks).toByteArray(Charsets.UTF_8))
                 stream.fd.sync()

@@ -9,6 +9,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.UUID
+import org.json.JSONArray
 
 /** JSON-file-backed multi-shot projects. */
 class StoryboardStore internal constructor(private val file: File) {
@@ -409,6 +410,15 @@ class StoryboardStore internal constructor(private val file: File) {
         }
         val tmp = File(parent, file.name + ".tmp")
         return try {
+            // decode() intentionally tolerates damaged files for read-only UI;
+            // writes must not overwrite that damage and erase recoverable work.
+            if (file.isFile) {
+                val raw = file.readText()
+                val rows = JSONArray(raw)
+                if (StoryboardCodec.decode(raw).size != rows.length()) {
+                    throw IOException("Existing storyboard index contains unreadable projects")
+                }
+            }
             FileOutputStream(tmp).use { stream ->
                 stream.write(StoryboardCodec.encode(sorted).toByteArray(Charsets.UTF_8))
                 stream.fd.sync()

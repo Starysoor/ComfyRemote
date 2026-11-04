@@ -479,4 +479,22 @@ class StoryboardStoreTest {
             store.referencedMediaPaths(),
         )
     }
+    @Test
+    fun corruptStoryboardIndexCannotBeOverwrittenWithAnEmptyProject() {
+        val file = File(temp.root, "storyboards.json").apply { writeText("{broken") }
+        val store = StoryboardStore(file)
+        assertNull(store.create("New", "workflow"))
+        assertTrue(store.persistenceError.value != null)
+        assertEquals("{broken", file.readText())
+    }
+
+    @Test
+    fun unreadableProjectRowsCannotBeSilentlyDroppedOnSave() {
+        val file = File(temp.root, "storyboards.json").apply { writeText("""[{"title":"missing id"}]""") }
+        val store = StoryboardStore(file)
+        assertNull(store.create("New", "workflow"))
+        assertTrue(store.persistenceError.value != null)
+        assertTrue(file.readText().contains("missing id"))
+    }
+
 }

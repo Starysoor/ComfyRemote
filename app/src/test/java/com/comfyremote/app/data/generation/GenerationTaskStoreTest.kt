@@ -43,4 +43,22 @@ class GenerationTaskStoreTest {
 
         assertTrue(error is IOException)
     }
+    @Test
+    fun corruptTaskIndexIsNeverOverwrittenWithAnEmptyQueue() {
+        val file = File(temp.root, "tasks.json").apply { writeText("{not json") }
+        val store = GenerationTaskStore(file)
+        assertTrue(runCatching { store.save(emptyList()) }.exceptionOrNull() is IOException)
+        assertTrue(file.readText() == "{not json")
+    }
+
+    @Test
+    fun unreadableTaskRowsAreNeverSilentlyErased() {
+        val file = File(temp.root, "tasks.json").apply {
+            writeText("""[{"taskId":"lost","phase":"RUNNING"}]""")
+        }
+        val store = GenerationTaskStore(file)
+        assertTrue(runCatching { store.save(emptyList()) }.exceptionOrNull() is IOException)
+        assertTrue(file.readText().contains("lost"))
+    }
+
 }

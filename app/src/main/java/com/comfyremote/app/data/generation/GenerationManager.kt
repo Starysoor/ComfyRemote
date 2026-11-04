@@ -274,11 +274,19 @@ class GenerationManager(
                 providerId = updated.request.provider,
             )
         }
-        patch(updated.taskId, allowTerminalExit) {
+        val persisted = patch(updated.taskId, allowTerminalExit) {
             updated.copy(
                 localPending = false,
                 spendRecorded = updated.spendRecorded || firstCloudSubmit || updated.taskId in spendRecordedIds,
             )
+        }
+        if (!persisted) {
+            // Never discard provider recovery data after a failed local commit.
+            // The remote job may already be paid for, so include its ID and
+            // prevent the runner from reporting a durable SUCCESS.
+            val remote = updated.promptId?.takeIf { it.isNotBlank() }
+            val suffix = remote?.let { "; remote task ID=$it; check the provider before retrying" }.orEmpty()
+            throw ComfyException(persistenceMessage("generation task could not be saved$suffix"))
         }
     }
 
