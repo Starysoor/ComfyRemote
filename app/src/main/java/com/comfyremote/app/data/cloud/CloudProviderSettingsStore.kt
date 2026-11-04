@@ -217,7 +217,7 @@ class CloudProviderSettingsStore(
 
     companion object {
         private const val CATALOG_SCHEMA_KEY = "cloud_catalog_schema"
-        private const val CATALOG_SCHEMA_VERSION = 2
+        private const val CATALOG_SCHEMA_VERSION = 3
 
         const val MIN_POLL_SECONDS = 2
         const val MAX_POLL_SECONDS = 60

@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.3.2 — 2026-11-04
+
+### Fixed
+
+- SiliconFlow random seeds now respect the provider limit (9,999,999,999), so image generation no longer fails with HTTP 400 `seed: Must be less than or equal to 9.999999999e+09`.
+- SiliconFlow boolean parameters such as `prompt_enhancement` are sent as JSON booleans instead of strings.
+- AutoDL Models `/models` is filtered to real image/video models; Claude, DeepSeek and GPT text models no longer appear as image models and cannot be selected by mistake.
+- The generation foreground service now calls `startForeground()` immediately, preventing `ForegroundServiceDidNotStartInTimeException` crashes on cloud submit.
+- Cloud catalog errors now include the exception class when the provider supplies no message.
+
+### Verified
+
+- Emulator with real AutoDL Models and SiliconFlow keys: AutoDL `gpt-image-2` and SiliconFlow `Kwai-Kolors/Kolors` both completed; AutoDL model list shows only six media models; no foreground-service crash on submit.
+- Version `2.3.2` (versionCode 28).
+
 ## 2.3.1 — 2026-11-04
 
 ### Added

@@ -32,7 +32,25 @@ object CloudModelParameters {
 
     fun kindOf(model: String): String {
         val lower = model.lowercase()
-        return if (listOf("t2v", "i2v", "video", "wan2").any { it in lower }) "video" else "image"
+        return if (listOf("t2v", "i2v", "video", "wan2", "wan3", "seedance", "kling", "hailuo")
+                .any { it in lower }
+        ) "video" else "image"
+    }
+
+    /**
+     * `/models` endpoints also return text/LLM entries. Keep only entries that
+     * can actually be used by the image/video generation adapters.
+     */
+    fun looksLikeMediaModel(model: String): Boolean {
+        val lower = model.lowercase()
+        return listOf(
+            "image", "gpt-image", "seedream", "seededit", "flux", "banana",
+            "kolors", "stable", "sdxl", "sd3", "z-image", "hunyuanimage",
+            "hunyuan-image", "hunyuanvideo", "hunyuan-video", "video",
+            "wan2", "wan3", "wan-", "seedance", "kling", "hailuo",
+            "minimax-h3", "minimax_h3", "veo", "runway", "luma",
+            "recraft", "ideogram", "imagen",
+        ).any { it in lower }
     }
 
     /**
@@ -119,7 +137,7 @@ object CloudModelParameters {
                 options = listOf("1K", "2K", "4K"),
             )
         }
-        rules += CloudInputRule("seed", "integer", required = false)
+        rules += CloudInputRule("seed", "integer", required = false, max = 2_147_483_647.0)
         return rules
     }
 
@@ -138,7 +156,9 @@ object CloudModelParameters {
                 rules += CloudInputRule("image", "image", required = true)
             }
             rules += CloudInputRule("negative_prompt", "string", required = false)
-            rules += CloudInputRule("seed", "integer", required = false)
+            rules += CloudInputRule(
+                "seed", "integer", required = false, max = SILICON_FLOW_SEED_MAX,
+            )
             return rules
         }
         if (editModel) {
@@ -158,8 +178,13 @@ object CloudModelParameters {
         rules += CloudInputRule(
             "guidance_scale", "number", required = false, defaultValue = "7.5", min = 1.0, max = 20.0,
         )
-        rules += CloudInputRule("seed", "integer", required = false)
+        rules += CloudInputRule(
+            "seed", "integer", required = false, max = SILICON_FLOW_SEED_MAX,
+        )
         rules += CloudInputRule("prompt_enhancement", "boolean", required = false, defaultValue = "false")
         return rules
     }
+
+    /** SiliconFlow rejects seeds above 9.999999999e9. */
+    private const val SILICON_FLOW_SEED_MAX = 9_999_999_999.0
 }

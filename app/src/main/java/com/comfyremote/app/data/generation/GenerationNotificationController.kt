@@ -40,6 +40,16 @@ class GenerationNotificationController(private val context: Context) {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
+    /** Immediate placeholder used before the first task-flow emission arrives. */
+    fun startingNotification(): Notification = NotificationCompat.Builder(context, CHANNEL_RUNNING)
+        .setSmallIcon(android.R.drawable.stat_notify_sync)
+        .setContentTitle(context.getString(R.string.notif_generating))
+        .setContentText(context.getString(R.string.notif_queued))
+        .setOngoing(true)
+        .setOnlyAlertOnce(true)
+        .setProgress(0, 0, true)
+        .build()
+
     fun runningNotification(task: GenerationTask): Notification {
         val text = when (task.phase) {
             GenerationPhase.QUEUEING, GenerationPhase.QUEUED -> context.getString(R.string.notif_queued)

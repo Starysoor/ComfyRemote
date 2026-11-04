@@ -140,6 +140,43 @@ class GenerationPromptBuilderTest {
     }
 
     @Test
+    fun randomCloudSeedRespectsTheProviderMaximum() = runBlocking {
+        val max = 9_999_999_999L
+        val spec = com.comfyremote.app.data.cloud.CloudWorkflowSpec(
+            id = "Kwai-Kolors/Kolors",
+            name = "Kolors",
+            kind = "image",
+            description = "",
+            rules = listOf(
+                com.comfyremote.app.data.cloud.CloudInputRule("prompt", "prompt", required = true),
+                com.comfyremote.app.data.cloud.CloudInputRule(
+                    "seed", "integer", required = false, max = max.toDouble(),
+                ),
+            ),
+        )
+        val fields = com.comfyremote.app.data.cloud.CloudWorkflowMapping.fields(spec)
+        val request = GenerationRequest(
+            id = "siliconflow-seed",
+            provider = "siliconflow",
+            serverUrl = "https://api.siliconflow.cn/v1",
+            workflowPath = "siliconflow:Kwai-Kolors/Kolors",
+            workflowName = "Kolors",
+            fieldValues = mapOf("prompt" to "a fox"),
+            randomSeed = true,
+            nodeTitles = emptyMap(),
+            fields = fields,
+            convertedPrompt = spec.toJson(),
+            createdAt = 1L,
+        )
+
+        val (body, seeds) = GenerationPromptBuilder.build(request)
+        val seed = body.getLong("seed")
+
+        assertTrue(seed in 1L..max)
+        assertEquals(seed.toString(), seeds["seed"])
+    }
+
+    @Test
     fun generationTaskTerminalStatesAreNotActive() {
         val req = request(randomSeed = false, values = emptyMap())
 

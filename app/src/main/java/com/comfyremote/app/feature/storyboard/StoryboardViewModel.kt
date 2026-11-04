@@ -91,7 +91,10 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                             }
                         }
                         .onFailure { error ->
-                            errors += "${provider.label}: ${error.message ?: "error"}"
+                            errors += "${provider.label}: ${
+                                error.message?.takeIf(String::isNotBlank)
+                                    ?: error.javaClass.simpleName
+                            }"
                         }
                 }
                 Triple(options, errors, ready)

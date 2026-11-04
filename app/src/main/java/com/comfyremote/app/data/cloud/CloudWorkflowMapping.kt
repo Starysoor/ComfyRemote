@@ -220,10 +220,14 @@ object CloudPromptBuilder {
                     }
                 }
                 FieldKind.SEED -> {
+                    val max = spec.rule(field.input)?.max
+                        ?.toLong()
+                        ?.coerceIn(1L, SEED_LIMIT)
+                        ?: SEED_LIMIT
                     val used = if (randomSeed) {
-                        Random.nextLong(1L, SEED_LIMIT)
+                        Random.nextLong(1L, max + 1L)
                     } else {
-                        raw.toLongOrNull() ?: 1L
+                        (raw.toLongOrNull() ?: 1L).coerceIn(1L, max)
                     }
                     body.put(field.input, used)
                     seeds[field.key] = used.toString()

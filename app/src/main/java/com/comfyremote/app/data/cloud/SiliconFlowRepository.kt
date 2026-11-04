@@ -40,6 +40,7 @@ class SiliconFlowRepository(
         val account = account()
         if (account.token.isBlank()) return emptyList()
         val models = pulledModels(settings, id, account.baseUrl, account.token) { discoverModels() }
+            .filter(CloudModelParameters::looksLikeMediaModel)
         return settings.enabledModels(id, models).map { model ->
             CloudWorkflowSummary(
                 id = model,
@@ -85,19 +86,7 @@ class SiliconFlowRepository(
             taskStore.savePending(id, requestId, JSONObject().put("base", base))
             requestId
         } else {
-            val payload = JSONObject()
-                .put("model", workflowId)
-                .put("prompt", body.optString("prompt"))
-            listOf("negative_prompt", "image_size", "prompt_enhancement").forEach { key ->
-                body.optString(key).takeIf { it.isNotBlank() }?.let { payload.put(key, it) }
-            }
-            body.opt("image")?.toString()?.takeIf { it.isNotBlank() }?.let { payload.put("image", it) }
-            body.optInt("batch_size", 1).takeIf { it > 0 }?.let { payload.put("batch_size", it) }
-            body.optInt("num_inference_steps", 20).takeIf { it > 0 }?.let { payload.put("num_inference_steps", it) }
-            body.opt("guidance_scale")?.let {
-                it.toString().toDoubleOrNull()?.let { value -> payload.put("guidance_scale", value) }
-            }
-            body.opt("seed")?.let { payload.put("seed", it) }
+            val payload = buildSiliconFlowImagePayload(workflowId, body)
             val response = CloudHttp.postJson("$base/images/generations", payload, headers)
             val items = response.optJSONArray("images") ?: response.optJSONArray("data")
                 ?: throw ComfyException(CloudHttp.errorMessage(response, "SiliconFlow returned no images"))
@@ -181,14 +170,8 @@ class SiliconFlowRepository(
 
     private fun kindOf(model: String): String = CloudModelParameters.kindOf(model)
 
-    private fun looksLikeMediaModel(model: String): Boolean {
-        val lower = model.lowercase()
-        return listOf(
-            "image", "kolors", "flux", "stable", "sd3", "sdxl", "wan2", "video",
-            "seedance", "seedream", "kling", "hailuo", "cogvideo", "z-image",
-            "hunyuanvideo", "hunyuan-video", "hunyuanimage", "hunyuan-image",
-        ).any { it in lower }
-    }
+    private fun looksLikeMediaModel(model: String): Boolean =
+        CloudModelParameters.looksLikeMediaModel(model)
 
     private fun extensionOf(url: String): String =
         url.substringBefore('?').substringAfterLast('.', "").lowercase().takeIf { it.length in 2..5 }.orEmpty()
@@ -200,4 +183,25 @@ class SiliconFlowRepository(
         const val PROVIDER = "siliconflow"
         const val DEFAULT_BASE = "https://api.siliconflow.cn/v1"
     }
+}
+
+/** Strict JSON types matter: SiliconFlow rejects stringified booleans and oversized seeds. */
+internal fun buildSiliconFlowImagePayload(workflowId: String, body: JSONObject): JSONObject {
+    val payload = JSONObject()
+        .put("model", workflowId)
+        .put("prompt", body.optString("prompt"))
+    listOf("negative_prompt", "image_size").forEach { key ->
+        body.optString(key).takeIf { it.isNotBlank() }?.let { payload.put(key, it) }
+    }
+    if (body.has("prompt_enhancement")) {
+        payload.put("prompt_enhancement", body.optBoolean("prompt_enhancement", false))
+    }
+    body.opt("image")?.toString()?.takeIf { it.isNotBlank() }?.let { payload.put("image", it) }
+    body.optInt("batch_size", 1).takeIf { it > 0 }?.let { payload.put("batch_size", it) }
+    body.optInt("num_inference_steps", 20).takeIf { it > 0 }?.let { payload.put("num_inference_steps", it) }
+    body.opt("guidance_scale")?.let {
+        it.toString().toDoubleOrNull()?.let { value -> payload.put("guidance_scale", value) }
+    }
+    body.opt("seed")?.let { payload.put("seed", it) }
+    return payload
 }

@@ -1,5 +1,6 @@
 package com.comfyremote.app.data.cloud
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,6 +44,20 @@ class CloudModelParametersTest {
 
         assertTrue(edit.first { it.isImage }.required)
         assertTrue(text.none { it.isImage })
+        assertEquals(9_999_999_999.0, edit.first { it.name == "seed" }.max!!, 0.0)
+        assertEquals(9_999_999_999.0, text.first { it.name == "seed" }.max!!, 0.0)
+    }
+
+    @Test
+    fun mediaFilterDropsTextModelsButKeepsImageAndVideoModels() {
+        assertFalse(CloudModelParameters.looksLikeMediaModel("claude-fable-5"))
+        assertFalse(CloudModelParameters.looksLikeMediaModel("DeepSeek-V4-Pro"))
+        assertFalse(CloudModelParameters.looksLikeMediaModel("MiniMax-M3.1-Flash"))
+        assertTrue(CloudModelParameters.looksLikeMediaModel("gpt-image-2"))
+        assertTrue(CloudModelParameters.looksLikeMediaModel("Qwen-Image"))
+        assertTrue(CloudModelParameters.looksLikeMediaModel("nano-banana-2"))
+        assertTrue(CloudModelParameters.looksLikeMediaModel("MiniMax-H3"))
+        assertTrue(CloudModelParameters.looksLikeMediaModel("Wan-AI/Wan2.2-I2V-A14B"))
     }
 
     @Test

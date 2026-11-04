@@ -337,7 +337,10 @@ class WorkflowsViewModel(private val container: AppContainer) : ViewModel() {
                                         LoadedProvider(
                                             provider,
                                             emptyList(),
-                                            "${provider.label}: ${error.message ?: "error"}",
+                                            "${provider.label}: ${
+                                                error.message?.takeIf(String::isNotBlank)
+                                                    ?: error.javaClass.simpleName
+                                            }",
                                         )
                                     },
                                 )
