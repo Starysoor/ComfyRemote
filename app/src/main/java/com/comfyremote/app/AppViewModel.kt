@@ -33,11 +33,16 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         }
         viewModelScope.launch {
             val saved = container.serverRepository.savedLastUrl() ?: return@launch
-            runCatching {
+            val restored = runCatching {
                 container.serverSession.connect(saved, auto = true)
-                container.objectInfoCache.invalidate()
-                container.serverRepository.remember(saved)
-            }.onSuccess {
+                // A manual switch may have happened during the auto-probe.
+                if (container.serverSession.url != saved) false else {
+                    container.objectInfoCache.invalidate()
+                    container.serverRepository.remember(saved)
+                    true
+                }
+            }.getOrDefault(false)
+            if (restored && container.serverSession.url == saved) {
                 container.navigationRequests.request(Routes.CREATE)
             }
         }

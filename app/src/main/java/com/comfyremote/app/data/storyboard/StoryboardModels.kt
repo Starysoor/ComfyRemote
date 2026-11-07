@@ -37,6 +37,10 @@ data class StoryboardShot(
     val error: String? = null,
 )
 
+/** A persisted running shot whose task vanished must be made editable, never resubmitted automatically. */
+internal fun isOrphanedRunningShot(shot: StoryboardShot, knownTaskIds: Set<String>): Boolean =
+    shot.status == "running" && (shot.taskId.isNullOrBlank() || shot.taskId !in knownTaskIds)
+
 /** A sequence of cloud video shots sharing one workflow and style prompt. */
 data class StoryboardProject(
     val id: String = UUID.randomUUID().toString(),

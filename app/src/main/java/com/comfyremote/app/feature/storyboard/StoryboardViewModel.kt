@@ -16,6 +16,7 @@ import com.comfyremote.app.data.reference.ReferenceRole
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.storyboard.StoryboardProject
 import com.comfyremote.app.data.storyboard.StoryboardShot
+import com.comfyremote.app.data.storyboard.isOrphanedRunningShot
 import com.comfyremote.app.feature.generate.isVideoPath
 import com.comfyremote.app.R
 import com.comfyremote.app.ui.AppStrings
@@ -363,8 +364,17 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         val byId = tasks.associateBy { it.taskId }
         projects.value.forEach { project ->
             project.shots.forEach { shot ->
-                val taskId = shot.taskId ?: return@forEach
-                val task = byId[taskId] ?: return@forEach
+                if (isOrphanedRunningShot(shot, byId.keys)) {
+                    // The remote job may still exist: unlock for manual recovery,
+                    // but never automatically create another paid generation.
+                    container.storyboardStore.markFailed(
+                        project.id,
+                        shot.id,
+                        AppStrings.get(R.string.board_err_missing_task),
+                    )
+                    return@forEach
+                }
+                val task = shot.taskId?.let(byId::get) ?: return@forEach
                 if (task.isActive) {
                     if (shot.status != "running") {
                         container.storyboardStore.updateShot(project.id, shot.id) {

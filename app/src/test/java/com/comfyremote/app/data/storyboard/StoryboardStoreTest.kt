@@ -497,4 +497,18 @@ class StoryboardStoreTest {
         assertTrue(file.readText().contains("missing id"))
     }
 
+    @Test
+    fun runningShotWithDeletedTaskCanBeUnblockedWithoutResubmission() {
+        val store = store()
+        val project = store.create("Board", "wf")!!
+        val shot = store.addShot(project.id, "Scene")!!
+        assertTrue(store.attachTask(project.id, shot.id, "removed-task"))
+        val running = store.project(project.id)!!.shots.single()
+        assertTrue(isOrphanedRunningShot(running, emptySet()))
+        assertFalse(isOrphanedRunningShot(running, setOf("removed-task")))
+        assertTrue(store.markFailed(project.id, shot.id, "Check the provider before retrying"))
+        assertEquals(shot.id, store.nextShot(project.id)?.id)
+        assertEquals("failed", store.project(project.id)!!.shots.single().status)
+    }
+
 }
