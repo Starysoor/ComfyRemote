@@ -144,4 +144,17 @@ class HistoryStoreTest {
         assertEquals("{corrupted json", index.readText())
     }
 
+    @Test
+    fun untrustedTaskIdsCannotCreatePathsOutsideMediaDirectory() {
+        val dir = directory()
+        val store = HistoryStore(dir)
+        val ids = listOf("../escape", "/tmp/outside", "jobs/123", "..\\\\outside", "图片/危险")
+        ids.forEachIndexed { index, id ->
+            val file = store.newMediaFile(id, index, "../../mp4")
+            assertEquals(dir.canonicalPath, file.parentFile.canonicalPath)
+            assertTrue(file.name.endsWith(".bin"))
+        }
+        assertEquals("safe-id_0.png", store.newMediaFile("safe-id", 0, "png").name)
+    }
+
 }

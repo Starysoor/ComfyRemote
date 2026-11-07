@@ -126,11 +126,18 @@ class HistoryStore(
 
     fun delete(id: String) = deleteMany(listOf(id))
 
-    fun newImageFile(id: String, idx: Int): File = File(dir, "${id}_${idx}.png")
+    fun newImageFile(id: String, idx: Int): File = newMediaFile(id, idx, "png")
 
     fun newMediaFile(id: String, idx: Int, extension: String): File {
-        val ext = extension.trim().removePrefix(".").ifBlank { "png" }
-        return File(dir, "${id}_${idx}.$ext")
+        // IDs come from external APIs in legacy flows: never treat them as paths.
+        val safeId = id.takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,96}")) }
+            ?: java.security.MessageDigest.getInstance("SHA-256")
+                .digest(id.toByteArray(Charsets.UTF_8))
+                .take(20)
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        val safeExt = extension.trim().removePrefix(".").lowercase()
+            .takeIf { it.matches(Regex("[a-z0-9]{1,8}")) } ?: "bin"
+        return File(dir, "${safeId}_${idx.coerceAtLeast(0)}.$safeExt")
     }
 
     private fun writeItems(items: List<HistoryItem>) {

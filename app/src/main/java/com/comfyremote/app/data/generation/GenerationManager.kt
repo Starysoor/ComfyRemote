@@ -130,7 +130,7 @@ class GenerationManager(
         val cloud = task.request.provider != "comfyui"
         return when (cancelActionFor(task.phase, cloud, task.localPending)) {
             CancelAction.LOCAL_PENDING -> {
-                patch(taskId) {
+                val committed = patch(taskId) {
                     it.copy(
                         localPending = false,
                         phase = GenerationPhase.CANCELLED,
@@ -141,13 +141,20 @@ class GenerationManager(
                         preview = null,
                     )
                 }
-                pumpLocalQueue()
-                CancelOutcome(taskId, true)
+                if (!committed) {
+                    CancelOutcome(taskId, false, persistenceMessage("cancel was not saved; task may still run"))
+                } else {
+                    pumpLocalQueue()
+                    CancelOutcome(taskId, true)
+                }
             }
             CancelAction.CANCEL_JOB -> {
-                patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }
-                finishCancel(taskId)
-                CancelOutcome(taskId, true)
+                if (!patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }) {
+                    CancelOutcome(taskId, false, persistenceMessage("cancel could not be persisted"))
+                } else {
+                    finishCancel(taskId)
+                    CancelOutcome(taskId, true)
+                }
             }
             CancelAction.DELETE_QUEUE -> {
                 val promptId = task.promptId
@@ -160,9 +167,12 @@ class GenerationManager(
                     patch(taskId) { it.copy(recoveryNote = "Server queue delete failed: $message") }
                     return CancelOutcome(taskId, false, message)
                 }
-                patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }
-                finishCancel(taskId)
-                CancelOutcome(taskId, true)
+                if (!patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }) {
+                    CancelOutcome(taskId, false, persistenceMessage("remote queue removal succeeded; local cancel was not saved"))
+                } else {
+                    finishCancel(taskId)
+                    CancelOutcome(taskId, true)
+                }
             }
             CancelAction.INTERRUPT_SERVER -> {
                 // ComfyUI /interrupt is server-scoped, not a per-prompt cancel.
@@ -177,9 +187,12 @@ class GenerationManager(
                     }
                     return CancelOutcome(taskId, false, message)
                 }
-                patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }
-                finishCancel(taskId)
-                CancelOutcome(taskId, true)
+                if (!patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }) {
+                    CancelOutcome(taskId, false, persistenceMessage("server interrupt succeeded; local cancel was not saved"))
+                } else {
+                    finishCancel(taskId)
+                    CancelOutcome(taskId, true)
+                }
             }
             CancelAction.NOT_CANCELLABLE -> CancelOutcome(taskId, false)
         }
@@ -272,6 +285,7 @@ class GenerationManager(
                 points = updated.request.estimatedCloudCost,
                 remoteTaskId = updated.promptId,
                 providerId = updated.request.provider,
+                endpoint = updated.request.serverUrl,
             )
         }
         val persisted = patch(updated.taskId, allowTerminalExit) {
