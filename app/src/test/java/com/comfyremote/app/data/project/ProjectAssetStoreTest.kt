@@ -48,6 +48,17 @@ class ProjectAssetStoreTest {
     }
 
     @Test
+    fun projectVideoImportStreamsPastTheOld32MiBCap() = runBlocking {
+        val store = store()
+        // A sparse source creates the file cheaply; the actual bounded copy still
+        // has to stream all 33 MiB into project-owned storage without heap buffering.
+        val source = temp.newFile("long-scene.mp4")
+        java.io.RandomAccessFile(source, "rw").use { it.setLength(33L * 1024 * 1024) }
+        val asset = store.importFile(source.absolutePath, ReferenceRole.SCENE_REFERENCE)
+        assertEquals(source.length(), File(asset.path).length())
+    }
+
+    @Test
     fun audioFilesKeepTheirContainerExtension() = runBlocking {
         val store = store()
         val source = temp.newFile("voice.m4a").apply { writeBytes(ByteArray(128)) }

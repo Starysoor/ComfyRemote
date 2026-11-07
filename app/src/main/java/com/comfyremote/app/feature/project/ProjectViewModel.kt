@@ -29,7 +29,9 @@ import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.feature.generate.isVideoPath
 import com.comfyremote.app.R
 import com.comfyremote.app.ui.AppStrings
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,6 +58,10 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
     val workflows: StateFlow<List<ProjectWorkflowOption>> = _workflows.asStateFlow()
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
+    data class AssetImportProgress(val running: Boolean = false, val copiedBytes: Long = 0, val totalBytes: Long? = null)
+    private val _assetImport = MutableStateFlow(AssetImportProgress())
+    val assetImport: StateFlow<AssetImportProgress> = _assetImport.asStateFlow()
+    private var assetImportJob: Job? = null
     private val syncing = mutableSetOf<String>()
 
     private companion object {
@@ -363,16 +369,31 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Library import: any media kind, with tags, via the same bounded pipeline. */
+    /** Library import: bounded streaming copy with progress and cancellation. */
     fun importAsset(projectId: String, role: ReferenceRole, uri: Uri) {
-        viewModelScope.launch {
-            runCatching { container.projectAssetStore.importUri(uri, role) }
-                .onSuccess { asset -> container.projectStore.addAsset(projectId, asset) }
-                .onFailure { e ->
-                    _message.value = AppStrings.get(R.string.board_err_add_asset, e.message ?: "error")
+        if (assetImportJob?.isActive == true) return
+        assetImportJob = viewModelScope.launch {
+            _assetImport.value = AssetImportProgress(running = true)
+            try {
+                val asset = container.projectAssetStore.importUri(uri, role) { copied, total ->
+                    _assetImport.value = AssetImportProgress(true, copied, total)
                 }
+                if (!container.projectStore.addAsset(projectId, asset)) {
+                    // The file must not be leaked if the project index cannot be written.
+                    File(asset.path).delete()
+                    _message.value = AppStrings.get(R.string.board_err_persist)
+                }
+            } catch (cancelled: CancellationException) {
+                // The import store removes its .tmp file; cancellation is user-initiated.
+            } catch (e: Exception) {
+                _message.value = AppStrings.get(R.string.board_err_add_asset, e.message ?: "error")
+            } finally {
+                _assetImport.value = AssetImportProgress()
+            }
         }
     }
+
+    fun cancelAssetImport() { assetImportJob?.cancel() }
 
     /** Label/tag edits upsert the asset in place; the media file is untouched. */
     fun updateAsset(projectId: String, asset: ProjectAsset) {

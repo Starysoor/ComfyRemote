@@ -36,6 +36,8 @@
     <string name="proj_asset_label">Label</string>
     <string name="proj_asset_tags">Tags</string>
     <string name="proj_asset_tags_hint">Comma separated, e.g. hero, main, v2</string>
+    <string name="proj_asset_import_progress">Importing: %1$d / %2$d MiB</string>
+    <string name="proj_asset_import_progress_unknown">Importing: %1$d MiB (unknown size)</string>
     <string name="proj_profiles">Consistency profiles</string>
     <string name="proj_profile_new">New profile</string>
     <string name="proj_profile_edit">Edit profile</string>

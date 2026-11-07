@@ -15,6 +15,8 @@ import java.io.IOException
 import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /**
@@ -42,24 +44,33 @@ class ProjectAssetStore private constructor(
         role: ReferenceRole,
         label: String = "",
         tags: List<String> = emptyList(),
+        onProgress: (copiedBytes: Long, totalBytes: Long?) -> Unit = { _, _ -> },
     ): ProjectAsset = withContext(Dispatchers.IO) {
         val resolver = context?.contentResolver
             ?: throw IllegalStateException("ProjectAssetStore requires a Context for content imports")
         val mime = resolver.getType(uri)
         val name = displayName(resolver, uri)
+        val expectedSize = displaySize(resolver, uri)
         when (val kind = resolveAssetKind(mime, name)) {
             AssetKind.IMAGE -> {
                 val bytes = resolver.openInputStream(uri)?.use {
                     BoundedMediaInput.read(it, BoundedMediaInput.MAX_IMAGE_BYTES)
                 } ?: throw IllegalStateException("Cannot read image")
+                onProgress(bytes.size.toLong(), expectedSize)
                 saveImage(bytes, mime, role, label, tags)
             }
             else -> {
                 val ext = name?.extension()
                     ?: mime?.let(::extForMime)
                     ?: "bin"
+                val limit = limitFor(kind)
+                if (expectedSize != null && expectedSize > limit) {
+                    throw IllegalArgumentException("Media source exceeds ${limit / (1024 * 1024)} MiB")
+                }
                 resolver.openInputStream(uri)?.use { input ->
-                    copyBounded(input, ext, role, label, tags, kind)
+                    copyBounded(input, ext, role, label, tags, kind) { copied ->
+                        onProgress(copied, expectedSize)
+                    }
                 } ?: throw IllegalStateException("Cannot read media")
             }
         }
@@ -110,12 +121,19 @@ class ProjectAssetStore private constructor(
         label: String,
         tags: List<String>,
         kind: AssetKind,
+        onProgress: (Long) -> Unit = {},
     ): ProjectAsset {
         val file = newAssetFile(ext)
         val tmp = File(file.parentFile, file.name + ".tmp")
         try {
             withContext(Dispatchers.IO) {
-                FileOutputStream(tmp).use { out -> BoundedMediaInput.copy(input, out, limitFor(kind)) }
+                val context = currentCoroutineContext()
+                FileOutputStream(tmp).use { out ->
+                    BoundedMediaInput.copy(input, out, limitFor(kind)) { copied ->
+                        context.ensureActive()
+                        onProgress(copied)
+                    }
+                }
                 if (!tmp.renameTo(file) || !file.isFile) {
                     throw IOException("Cannot save media asset")
                 }
@@ -146,6 +164,12 @@ class ProjectAssetStore private constructor(
         kind = kind,
         tags = tags,
     )
+
+    private fun displaySize(resolver: ContentResolver, uri: Uri): Long? = runCatching {
+        resolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0).takeIf { it >= 0 } else null
+        }
+    }.getOrNull()
 
     private fun displayName(resolver: ContentResolver, uri: Uri): String? = runCatching {
         resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->

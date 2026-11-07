@@ -36,6 +36,8 @@
     <string name="proj_asset_label">名称</string>
     <string name="proj_asset_tags">标签</string>
     <string name="proj_asset_tags_hint">逗号分隔，例如：主角, 主角色, v2</string>
+    <string name="proj_asset_import_progress">导入中：%1$d / %2$d MiB</string>
+    <string name="proj_asset_import_progress_unknown">正在导入：%1$d MiB（大小未知）</string>
     <string name="proj_profiles">一致性档案</string>
     <string name="proj_profile_new">新建档案</string>
     <string name="proj_profile_edit">编辑档案</string>
