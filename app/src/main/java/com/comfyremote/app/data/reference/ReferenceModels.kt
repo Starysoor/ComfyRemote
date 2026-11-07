@@ -31,6 +31,30 @@ data class ReferenceImage(
     val source: String = "",
 )
 
+/** Media type of a project asset; defaults to IMAGE for legacy reference-only assets. */
+enum class AssetKind {
+    IMAGE,
+    VIDEO,
+    AUDIO,
+    SUBTITLE;
+
+    companion object {
+        fun fromStorage(raw: String?): AssetKind =
+            entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: IMAGE
+
+        /** Infers the kind from a file extension; unknown extensions stay images. */
+        fun fromPath(path: String): AssetKind {
+            val ext = path.substringAfterLast('.', "").lowercase()
+            return when (ext) {
+                "mp4", "mov", "webm", "avi", "mkv", "m4v" -> VIDEO
+                "mp3", "wav", "aac", "ogg", "m4a", "flac", "opus" -> AUDIO
+                "srt", "vtt", "ass" -> SUBTITLE
+                else -> IMAGE
+            }
+        }
+    }
+}
+
 /** A project-level asset (character/scene/style/etc.) that can be reused across shots. */
 data class ProjectAsset(
     val id: String = UUID.randomUUID().toString(),
@@ -39,6 +63,8 @@ data class ProjectAsset(
     val label: String = "",
     val order: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
+    val kind: AssetKind = AssetKind.IMAGE,
+    val tags: List<String> = emptyList(),
 )
 
 /** Infers a useful default role from a workflow input name/label. */
