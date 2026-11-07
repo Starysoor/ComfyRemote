@@ -11,6 +11,8 @@ import com.comfyremote.app.LabeledText
 import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
+import com.comfyremote.app.data.project.AssetProfile
+import com.comfyremote.app.data.project.ProfileKind
 import com.comfyremote.app.data.project.ProjectShot
 import com.comfyremote.app.data.project.VideoProject
 import com.comfyremote.app.data.project.isOrphanedRunningShot
@@ -266,7 +268,7 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
     /** Copies a picked image into project-owned storage so it survives gallery changes. */
     fun addAsset(projectId: String, role: ReferenceRole, uri: Uri) {
         viewModelScope.launch {
-            runCatching { container.storyboardAssetStore.importUri(uri, role) }
+            runCatching { container.projectAssetStore.importUri(uri, role) }
                 .onSuccess { asset -> container.projectStore.addAsset(projectId, asset) }
                 .onFailure { e ->
                     _message.value = AppStrings.get(R.string.board_err_add_asset, e.message ?: "error")
@@ -274,8 +276,55 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** Library import: any media kind, with tags, via the same bounded pipeline. */
+    fun importAsset(projectId: String, role: ReferenceRole, uri: Uri) {
+        viewModelScope.launch {
+            runCatching { container.projectAssetStore.importUri(uri, role) }
+                .onSuccess { asset -> container.projectStore.addAsset(projectId, asset) }
+                .onFailure { e ->
+                    _message.value = AppStrings.get(R.string.board_err_add_asset, e.message ?: "error")
+                }
+        }
+    }
+
+    /** Label/tag edits upsert the asset in place; the media file is untouched. */
+    fun updateAsset(projectId: String, asset: ProjectAsset) {
+        container.projectStore.addAsset(projectId, asset)
+    }
+
     fun removeAsset(projectId: String, assetId: String) {
         container.projectStore.removeAsset(projectId, assetId)
+    }
+
+    fun createProfile(
+        projectId: String,
+        name: String,
+        summary: String,
+        kind: ProfileKind,
+        assetIds: List<String>,
+    ) {
+        if (name.isBlank()) return
+        container.projectStore.addProfile(
+            projectId,
+            AssetProfile(name = name, summary = summary, kind = kind, assetIds = assetIds),
+        )
+    }
+
+    fun updateProfile(projectId: String, profile: AssetProfile) {
+        container.projectStore.addProfile(projectId, profile)
+    }
+
+    fun deleteProfile(projectId: String, profileId: String) {
+        container.projectStore.deleteProfile(projectId, profileId)
+    }
+
+    /** Assigning a profile expands its assets into the shot's ordered references. */
+    fun applyProfileToShot(projectId: String, shotId: String, profileId: String) {
+        val project = container.projectStore.project(projectId) ?: return
+        val profile = project.profiles.firstOrNull { it.id == profileId } ?: return
+        val known = profile.assetIds.filter { id -> project.assets.any { it.id == id } }
+        if (known.isEmpty()) return
+        assignAssetsToShot(projectId, shotId, known)
     }
 
     fun project(projectId: String): VideoProject? =

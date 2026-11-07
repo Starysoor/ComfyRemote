@@ -73,6 +73,7 @@ import com.comfyremote.app.feature.settings.AppSettingsViewModel
 import com.comfyremote.app.feature.settings.CloudSettingsScreen
 import com.comfyremote.app.feature.settings.CloudSettingsViewModel
 import com.comfyremote.app.feature.settings.SettingsScreen
+import com.comfyremote.app.feature.project.AssetLibraryScreen
 import com.comfyremote.app.feature.project.ProjectHomeScreen
 import com.comfyremote.app.feature.project.ProjectListScreen
 import com.comfyremote.app.feature.project.ProjectViewModel
@@ -227,6 +228,11 @@ private fun AppNavHost(
                     onOpenWorkspace = {
                         navController.navigate(
                             Routes.projectShots(entry.arguments?.getString("projectId").orEmpty()),
+                        )
+                    },
+                    onOpenLibrary = {
+                        navController.navigate(
+                            Routes.projectAssets(entry.arguments?.getString("projectId").orEmpty()),
                         )
                     },
                     onOpenTask = { taskId -> navController.navigate(Routes.task(taskId)) },

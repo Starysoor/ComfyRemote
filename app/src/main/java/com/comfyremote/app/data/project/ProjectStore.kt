@@ -252,6 +252,13 @@ class ProjectStore internal constructor(private val file: File) {
             removed = true
             removedPath = asset.path
             val remaining = project.assets.filterNot { it.id == assetId }
+            val profiles = project.profiles.map { profile ->
+                if (assetId in profile.assetIds) {
+                    profile.copy(assetIds = profile.assetIds - assetId)
+                } else {
+                    profile
+                }
+            }
             val cleaned = project.shots.map { shot ->
                 val referencedById = assetId in shot.referenceAssetIds
                 val referencedByPath = shot.referencePath == asset.path
@@ -284,6 +291,7 @@ class ProjectStore internal constructor(private val file: File) {
             }
             project.copy(
                 assets = remaining,
+                profiles = profiles,
                 shots = rebaseAutoReferences(cleaned, project.chainFrames),
                 updatedAt = System.currentTimeMillis(),
             )
@@ -295,6 +303,57 @@ class ProjectStore internal constructor(private val file: File) {
             gcOrphanMediaLocked()
         }
         removed && persisted
+    }
+
+    /** Adds or replaces a consistency profile by id; assets themselves are untouched. */
+    fun addProfile(projectId: String, profile: AssetProfile): Boolean = synchronized(lock) {
+        var saved = false
+        val persisted = update(projectId) { project ->
+            saved = true
+            val exists = project.profiles.any { it.id == profile.id }
+            val profiles = if (exists) {
+                project.profiles.map { if (it.id == profile.id) profile else it }
+            } else {
+                project.profiles + profile
+            }
+            project.copy(profiles = profiles, updatedAt = System.currentTimeMillis())
+        }
+        saved && persisted
+    }
+
+    /** Deletes a profile only; assets referenced by it stay in the project. */
+    fun deleteProfile(projectId: String, profileId: String): Boolean = synchronized(lock) {
+        var removed = false
+        val persisted = update(projectId) { project ->
+            if (project.profiles.none { it.id == profileId }) return@update project
+            removed = true
+            project.copy(
+                profiles = project.profiles.filterNot { it.id == profileId },
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+        removed && persisted
+    }
+
+    fun updateProfile(
+        projectId: String,
+        profileId: String,
+        transform: (AssetProfile) -> AssetProfile,
+    ): Boolean = synchronized(lock) {
+        var changed = false
+        val persisted = update(projectId) { project ->
+            val profiles = project.profiles.map { profile ->
+                if (profile.id == profileId) {
+                    changed = true
+                    transform(profile)
+                } else {
+                    profile
+                }
+            }
+            if (!changed) return@update project
+            project.copy(profiles = profiles, updatedAt = System.currentTimeMillis())
+        }
+        changed && persisted
     }
 
     fun updateShot(projectId: String, shotId: String, transform: (ProjectShot) -> ProjectShot): Boolean =

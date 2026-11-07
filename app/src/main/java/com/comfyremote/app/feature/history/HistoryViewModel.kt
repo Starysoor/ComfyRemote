@@ -50,7 +50,7 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
 
     fun addToProject(projectId: String, role: ReferenceRole, path: String, label: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { container.storyboardAssetStore.importFile(path, role, label) }
+            runCatching { container.projectAssetStore.importFile(path, role, label) }
                 .onSuccess { asset ->
                     container.projectStore.addAsset(projectId, asset)
                     _message.value = AppStrings.get(R.string.history_msg_added_to_project)

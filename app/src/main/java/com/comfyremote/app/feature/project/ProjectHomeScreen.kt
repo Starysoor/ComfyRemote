@@ -1,7 +1,5 @@
 package com.comfyremote.app.feature.project
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -42,7 +40,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
 import com.comfyremote.app.data.generation.GenerationPhase
-import com.comfyremote.app.data.reference.ReferenceRole
 import com.comfyremote.app.ui.IrisType
 import com.comfyremote.app.ui.Spacing
 import com.comfyremote.app.ui.components.ChipTone
@@ -67,6 +64,7 @@ fun ProjectHomeScreen(
     projectId: String,
     onBack: () -> Unit,
     onOpenWorkspace: () -> Unit,
+    onOpenLibrary: () -> Unit,
     onOpenTask: (String) -> Unit,
 ) {
     val projects by viewModel.projects.collectAsState()
@@ -77,13 +75,6 @@ fun ProjectHomeScreen(
     val snackbar = remember { SnackbarHostState() }
     var menuOpen by remember { mutableStateOf(false) }
     var projectSettings by remember { mutableStateOf(false) }
-    var assetRoleDialog by remember { mutableStateOf(false) }
-    var pendingAssetRole by remember { mutableStateOf<ReferenceRole?>(null) }
-    val assetPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        val role = pendingAssetRole
-        if (uri != null && role != null) viewModel.addAsset(projectId, role, uri)
-        pendingAssetRole = null
-    }
 
     LaunchedEffect(message) {
         message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() }
@@ -168,7 +159,7 @@ fun ProjectHomeScreen(
                             modifier = Modifier.padding(end = Spacing.xs),
                         )
                     }
-                    TextAction(stringResource(R.string.board_add_asset), onClick = { assetRoleDialog = true })
+                    TextAction(stringResource(R.string.proj_assets_manage), onClick = onOpenLibrary)
                 }
             }
             item("assets") {
@@ -219,16 +210,6 @@ fun ProjectHomeScreen(
                     project.id, title, synopsis, workflowPath, aspect, defaults, duration,
                 )
                 projectSettings = false
-            },
-        )
-    }
-    if (assetRoleDialog) {
-        AssetRoleDialog(
-            onDismiss = { assetRoleDialog = false },
-            onRole = { role ->
-                pendingAssetRole = role
-                assetRoleDialog = false
-                assetPicker.launch("image/*")
             },
         )
     }

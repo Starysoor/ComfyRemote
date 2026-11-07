@@ -20,4 +20,27 @@
     <!-- Dialogs -->
     <string name="proj_field_synopsis">简介 / 剧本（可选）</string>
     <string name="proj_field_duration">目标时长（秒，可选）</string>
+
+    <!-- Asset library -->
+    <string name="proj_assets_manage">管理</string>
+    <string name="proj_assets_title">项目素材</string>
+    <string name="proj_assets_empty_hint">导入图片、视频或音频；打标签并归入角色/场景一致性档案，即可跨镜头复用。</string>
+    <string name="proj_asset_kind_all">全部</string>
+    <string name="proj_asset_kind_image">图片</string>
+    <string name="proj_asset_kind_video">视频</string>
+    <string name="proj_asset_kind_audio">音频</string>
+    <string name="proj_asset_edit">编辑素材</string>
+    <string name="proj_asset_label">名称</string>
+    <string name="proj_asset_tags">标签</string>
+    <string name="proj_asset_tags_hint">逗号分隔，例如：主角, 主角色, v2</string>
+    <string name="proj_profiles">一致性档案</string>
+    <string name="proj_profile_new">新建档案</string>
+    <string name="proj_profile_edit">编辑档案</string>
+    <string name="proj_profile_character">角色</string>
+    <string name="proj_profile_scene">场景</string>
+    <string name="proj_profile_name">档案名称</string>
+    <string name="proj_profile_summary">角色 / 场景一致性描述</string>
+    <string name="proj_profile_assets_hint">勾选属于该档案的素材；应用到镜头时按此顺序作为参考。</string>
+    <string name="proj_profile_apply">应用到镜头</string>
+    <string name="proj_profile_unnamed">未命名档案</string>
 </resources>
