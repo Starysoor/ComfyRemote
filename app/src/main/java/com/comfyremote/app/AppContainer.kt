@@ -20,6 +20,7 @@ import com.comfyremote.app.data.discovery.TailscalePeerSettingsStore
 import com.comfyremote.app.data.generation.CloudSubmissionGate
 import com.comfyremote.app.data.generation.GenerationManager
 import com.comfyremote.app.data.generation.GenerationTaskStore
+import com.comfyremote.app.data.project.ProjectStore
 import com.comfyremote.app.data.media.GalleryExporter
 import com.comfyremote.app.data.media.IncomingMediaRepository
 import com.comfyremote.app.data.repository.AiRepository
@@ -85,6 +86,11 @@ class AppContainer(val app: Application) {
     val storyboardStore = StoryboardStore(app)
     val storyboardAssetStore = StoryboardAssetStore(app)
 
+    // Studio project index. Empty until the legacy storyboard index migrates;
+    // migration activates together with the project UI (P0-2) so the legacy
+    // store and the new store never diverge while both are writable.
+    val projectStore = ProjectStore(app)
+
     val aiSettingsStore = AiSettingsStore(prefs, secretStore)
     val aiSkillStore = AiSkillStore(prefs)
     val aiSkillBindingStore = AiSkillBindingStore(prefs)
@@ -113,7 +119,9 @@ class AppContainer(val app: Application) {
     val workflowDraftStore = WorkflowDraftStore(prefs)
 
     val historyRepository = HistoryRepository(
-        HistoryStore(app) { storyboardStore.referencedMediaPaths() }
+        HistoryStore(app) {
+            storyboardStore.referencedMediaPaths() + projectStore.referencedMediaPaths()
+        }
     )
     val objectInfoCache = ObjectInfoCache(app.cacheDir)
     val workflowRepository = WorkflowRepository(serverSession, objectInfoCache)

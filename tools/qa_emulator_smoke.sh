@@ -53,6 +53,23 @@ adb shell am start -W -n "$ACTIVITY"
 sleep 3
 check_alive "animations-disabled"
 
+echo "QA step 5: dark mode and large font cold start"
+adb shell cmd uimode night yes
+adb shell settings put system font_scale 1.3
+adb shell am force-stop "$PKG"
+adb shell am start -W -n "$ACTIVITY"
+sleep 4
+check_alive "dark-large-font"
+
+echo "QA step 6: locked landscape cold start"
+adb shell settings put system accelerometer_rotation 0
+adb shell settings put system user_rotation 1
+adb shell am force-stop "$PKG"
+adb shell am start -W -n "$ACTIVITY"
+sleep 4
+check_alive "landscape"
+adb shell settings put system user_rotation 0
+
 adb logcat -d -s AndroidRuntime:E > "$EVIDENCE/android-runtime-errors.log"
 if grep -q "Process: $PKG" "$EVIDENCE/android-runtime-errors.log"; then
   echo "FAIL: app fatal crash found in AndroidRuntime" >&2

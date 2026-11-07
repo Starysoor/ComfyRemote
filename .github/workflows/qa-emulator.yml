@@ -10,9 +10,26 @@ on:
 
 jobs:
   emulator-smoke:
-    # Runs for release-candidate PRs, release/* branches, version tags and manual dispatches.
+    # Regression matrix for the project workbench (#57 P0): oldest supported
+    # API, current phone target, and a tablet form factor.
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api29-phone
+            api-level: 29
+            target: google_apis
+            profile: pixel_3a
+          - name: api34-phone
+            api-level: 34
+            target: google_apis
+            profile: pixel_3a
+          - name: api34-tablet
+            api-level: 34
+            target: google_apis
+            profile: nexus_10
     steps:
       - uses: actions/checkout@v4
 
@@ -37,9 +54,10 @@ jobs:
       - name: Install, cold-start, force-stop, relaunch
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
-          target: google_apis
+          api-level: ${{ matrix.api-level }}
+          target: ${{ matrix.target }}
           arch: x86_64
+          profile: ${{ matrix.profile }}
           ram-size: 2048M
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           script: bash tools/qa_emulator_smoke.sh
@@ -48,7 +66,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: iris-qa-emulator-evidence-${{ github.sha }}
+          name: iris-qa-emulator-evidence-${{ matrix.name }}-${{ github.sha }}
           path: tools/qa-screens/
           retention-days: 7
           if-no-files-found: warn
