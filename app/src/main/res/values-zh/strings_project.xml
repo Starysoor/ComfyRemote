@@ -94,4 +94,17 @@
     <string name="proj_timeline_preview">预览</string>
     <string name="proj_timeline_preview_note">预览按顺序播放视频轨并应用裁剪；速度、音量与静音在导出时完整生效。</string>
     <string name="proj_timeline_unreadable">无法读取该媒体文件</string>
+    <string name="proj_export_start">导出 MP4</string>
+    <string name="proj_export_title">导出成片</string>
+    <string name="proj_export_running">导出中… %1$d%%</string>
+    <string name="proj_export_running_note">请保持本页打开；关闭应用会中止导出（项目与素材不受影响）。</string>
+    <string name="proj_export_done">导出完成，成片已加入结果页。</string>
+    <string name="proj_export_done_note">保存到相册会把文件复制到 Movies/Iris；分享会打开系统分享面板。</string>
+    <string name="proj_export_failed_note">结果页没有写入任何内容；素材不受影响，可以重试。</string>
+    <string name="proj_export_retry">重试</string>
+    <string name="proj_export_share">分享</string>
+    <string name="proj_export_save_gallery">保存到相册</string>
+    <string name="proj_export_no_clips">时间线上没有可导出的视频片段</string>
+    <string name="proj_export_skipped">已跳过缺失媒体的片段：%1$s</string>
+    <string name="proj_export_history_name">%1$s · 成片</string>
 </resources>

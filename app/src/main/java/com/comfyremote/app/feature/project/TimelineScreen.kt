@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.comfyremote.app.R
@@ -63,6 +65,7 @@ import com.comfyremote.app.ui.components.EmptyState
 import com.comfyremote.app.ui.components.InfoBanner
 import com.comfyremote.app.ui.components.IrisCard
 import com.comfyremote.app.ui.components.IrisPrimaryButton
+import com.comfyremote.app.ui.components.IrisProgressBar
 import com.comfyremote.app.ui.components.IrisScaffold
 import com.comfyremote.app.ui.components.IrisSwitch
 import com.comfyremote.app.ui.components.IrisTextField
@@ -88,6 +91,8 @@ fun TimelineScreen(
     var addingFor by remember { mutableStateOf<TrackKind?>(null) }
     var editing by remember { mutableStateOf<Pair<TrackKind, TimelineClip>?>(null) }
     var previewing by remember { mutableStateOf(false) }
+    var exportSheet by remember { mutableStateOf(false) }
+    val exportState by viewModel.exportState.collectAsState()
 
     LaunchedEffect(project?.id) {
         if (project != null && project.timeline == null) viewModel.ensureTimeline(projectId)
@@ -108,6 +113,15 @@ fun TimelineScreen(
                         enabled = project?.timeline?.videoTrack?.isNotEmpty() == true,
                     ) {
                         Icon(Icons.Outlined.PlayArrow, stringResource(R.string.proj_timeline_preview))
+                    }
+                    IconButton(
+                        onClick = {
+                            viewModel.startExport(projectId)
+                            exportSheet = true
+                        },
+                        enabled = project?.timeline?.videoTrack?.isNotEmpty() == true,
+                    ) {
+                        Icon(Icons.Outlined.Movie, stringResource(R.string.proj_export_start))
                     }
                 },
             )
@@ -229,6 +243,88 @@ fun TimelineScreen(
             onDismiss = { previewing = false },
         )
     }
+    if (exportSheet) {
+        ExportDialog(
+            state = exportState,
+            onDismiss = {
+                exportSheet = false
+                viewModel.dismissExport()
+            },
+            onCancel = { viewModel.cancelExport() },
+            onRetry = { viewModel.startExport(projectId) },
+            onSaveToGallery = { viewModel.saveExportToGallery(it) },
+        )
+    }
+}
+
+/** Export progress / result dialog; cancellation and retry are explicit. */
+@Composable
+private fun ExportDialog(
+    state: ProjectViewModel.ExportState,
+    onDismiss: () -> Unit,
+    onCancel: () -> Unit,
+    onRetry: () -> Unit,
+    onSaveToGallery: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.proj_export_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                when (state) {
+                    is ProjectViewModel.ExportState.Running -> {
+                        Text(stringResource(R.string.proj_export_running, (state.progress * 100).toInt()))
+                        IrisProgressBar(progress = state.progress)
+                        Text(
+                            stringResource(R.string.proj_export_running_note),
+                            style = IrisType.metaSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    is ProjectViewModel.ExportState.Succeeded -> {
+                        Text(stringResource(R.string.proj_export_done))
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            TextAction(stringResource(R.string.proj_export_share), onClick = {
+                                com.comfyremote.app.feature.generate.shareMedia(context, state.outputPath)
+                            })
+                            TextAction(stringResource(R.string.proj_export_save_gallery), onClick = {
+                                onSaveToGallery(state.outputPath)
+                            })
+                        }
+                        Text(
+                            stringResource(R.string.proj_export_done_note),
+                            style = IrisType.metaSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    is ProjectViewModel.ExportState.Failed -> {
+                        Text(state.message, color = MaterialTheme.colorScheme.error)
+                        Text(
+                            stringResource(R.string.proj_export_failed_note),
+                            style = IrisType.metaSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    ProjectViewModel.ExportState.Idle -> Text(stringResource(R.string.proj_export_start))
+                }
+            }
+        },
+        confirmButton = {
+            when (state) {
+                is ProjectViewModel.ExportState.Running -> TextButton(onClick = onCancel) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+                is ProjectViewModel.ExportState.Failed -> TextButton(onClick = onRetry) {
+                    Text(stringResource(R.string.proj_export_retry))
+                }
+                else -> {}
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+        },
+    )
 }
 
 private fun LazyListScope.trackSection(
@@ -472,6 +568,7 @@ private fun EditClipDialog(
  * Sequential preview of the video track: trims apply through clipping; speed,
  * volume and mute are previewed at 1x (the export is authoritative).
  */
+@OptIn(UnstableApi::class)
 @Composable
 private fun PreviewDialog(timeline: Timeline, onDismiss: () -> Unit) {
     val context = LocalContext.current
