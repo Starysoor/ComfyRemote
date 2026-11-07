@@ -21,4 +21,13 @@
     <string name="connect_scan_none">No server found in scanned LAN/VPN ranges or saved addresses. Other Tailscale peers may still be reachable by IP or MagicDNS.</string>
     <string name="connect_not_on_wifi">Unknown subnet - not on Wi-Fi</string>
     <string name="connect_scan_vpn_hint">Scans LAN/VPN /24 ranges and saved servers, not the entire Tailnet. Unknown Tailscale peers may be reachable: enter their IP or MagicDNS name.</string>
+    <string name="connect_tailscale_setup">Enable Tailnet device discovery (optional)</string>
+    <string name="connect_tailscale_enabled">Tailnet device discovery configured</string>
+    <string name="connect_tailscale_title">Find unknown Tailnet devices</string>
+    <string name="connect_tailscale_description">Optional: provide a Tailscale API access token scoped only to devices:core:read. Iris fetches the device list from api.tailscale.com and checks port 8188. Only reachable ComfyUI servers appear. Without a token, saved devices and local LAN/VPN scanning still work.</string>
+    <string name="connect_tailscale_token">Read-only Tailscale API token</string>
+    <string name="connect_tailscale_token_hint">Saved locally in the app credential vault. Never sent to ComfyUI servers.</string>
+    <string name="connect_tailscale_disable">Disable Tailnet API lookup</string>
+    <string name="connect_tailscale_access_denied">Tailscale device-list access denied. Check the token and devices:core:read permission.</string>
+    <string name="connect_tailscale_api_unavailable">Tailscale device list could not be loaded; LAN/VPN and saved-address scanning continues.</string>
 </resources>

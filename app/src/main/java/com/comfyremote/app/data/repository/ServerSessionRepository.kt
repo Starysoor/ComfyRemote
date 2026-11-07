@@ -52,12 +52,9 @@ class ServerSessionRepository {
     suspend fun connect(url: String, auto: Boolean = false): SysInfo {
         val clean = url.trim().removeSuffix("/")
         val ticket = attempts.start()
-        // Auto-recovery must not block the UI on a hung /system_stats request.
-        val info = if (auto) {
-            ComfyApi(clean, ComfyApi.probeClient).systemStats()
-        } else {
-            ComfyApi(clean).systemStats()
-        }
+        // Both manual connection and startup recovery use short health probes.
+        // The normal generation client is still constructed after connecting.
+        val info = ComfyApi(clean, ComfyApi.probeClient).systemStats()
         // A slow auto-probe must not overwrite a newer manual connection/disconnect.
         val committed = attempts.commit(ticket) {
             // Generations need the long-timeout client after the short probe.

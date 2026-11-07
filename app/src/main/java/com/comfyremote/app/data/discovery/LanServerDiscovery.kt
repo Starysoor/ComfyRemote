@@ -16,6 +16,7 @@ import java.net.InetSocketAddress
 import java.net.URI
 import java.net.NetworkInterface
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.cancellation.CancellationException
 
 /** A ComfyUI server found on the local network. */
 data class DiscoveredServer(val ip: String, val url: String) {
@@ -49,7 +50,7 @@ internal fun isCgnatAddress(address: String): Boolean {
 }
 
 /** Validates known server URLs before any direct HTTPS/HTTP health probes. */
-internal fun savedComfyProbeUrls(saved: List<String>): List<String> =
+internal fun savedComfyProbeUrls(saved: List<String>, maxResults: Int = 8): List<String> =
     saved.mapNotNull { candidate ->
         val raw = candidate.trim().trimEnd('/')
         val uri = runCatching { URI(raw) }.getOrNull() ?: return@mapNotNull null
@@ -57,7 +58,7 @@ internal fun savedComfyProbeUrls(saved: List<String>): List<String> =
         if (scheme !in setOf("http", "https") || uri.host.isNullOrBlank() ||
             uri.rawUserInfo != null || uri.rawQuery != null || uri.rawFragment != null
         ) null else raw
-    }.distinct().take(8)
+    }.distinct().take(maxResults.coerceIn(0, 256))
 
 /** Generates a bounded plan: local /24 targets plus direct saved hosts on any subnet. */
 internal data class DiscoveryProbe(val host: String, val url: String, val remembered: Boolean)
@@ -66,9 +67,10 @@ internal fun discoveryProbePlan(
     savedUrls: List<String>,
     prefixes: List<String>,
     port: Int,
+    additionalUrls: List<String> = emptyList(),
 ): List<DiscoveryProbe> =
     (
-        savedComfyProbeUrls(savedUrls).map { url ->
+        (savedComfyProbeUrls(savedUrls) + savedComfyProbeUrls(additionalUrls, 256)).map { url ->
             DiscoveryProbe(URI(url).host, url, remembered = true)
         } + prefixes.distinct().flatMap { prefix ->
             (1..254).map { n ->
@@ -88,6 +90,8 @@ class LanServerDiscovery(
     private val probeTimeoutMs: Int = 400,
     private val verifyTimeoutMs: Long = 1500,
     private val knownUrls: () -> List<String> = { emptyList() },
+    private val tailscaleToken: () -> String? = { null },
+    private val tailscaleDirectory: TailscaleDeviceDirectory? = null,
 ) {
     private val verifyClient = OkHttpClient.Builder()
         .connectTimeout(probeTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
@@ -99,15 +103,37 @@ class LanServerDiscovery(
     fun discover(): Flow<DiscoveryEvent> = channelFlow {
         val subnets = withContext(Dispatchers.IO) { localSubnets() }
         val remembered = savedComfyProbeUrls(knownUrls())
-        if (subnets.isEmpty() && remembered.isEmpty()) {
-            send(DiscoveryEvent.Error("not-on-wifi"))
+        // Only configured users trigger this read-only Tailscale API request.
+        // Never pass the API token to a ComfyUI probe or to a redirect.
+        val directory = tailscaleDirectory
+        val token = tailscaleToken()
+        val tailnetPeers = if (directory != null && !token.isNullOrBlank()) {
+            try {
+                directory.fetchProbeUrls(token, port)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (denied: TailscaleAccessDenied) {
+                send(DiscoveryEvent.Warning("tailscale-access-denied"))
+                emptyList()
+            } catch (_: Exception) {
+                send(DiscoveryEvent.Warning("tailscale-directory-unavailable"))
+                emptyList()
+            }
+        } else emptyList()
+        if (subnets.isEmpty() && remembered.isEmpty() && tailnetPeers.isEmpty()) {
+            // Keep a more actionable authorization/network failure warning visible.
+            if (directory == null || token.isNullOrBlank()) {
+                send(DiscoveryEvent.Error("not-on-wifi"))
+            }
             send(DiscoveryEvent.Finished)
             return@channelFlow
         }
-        // Even when VPN is connected, the subnet scanner cannot enumerate
-        // unknown peers on arbitrary Tailnet IP ranges.
-        if (subnets.any { it.vpn }) send(DiscoveryEvent.Warning("vpn-only"))
-        val probes = discoveryProbePlan(remembered, subnets.map { it.prefix }, port)
+        if (subnets.any { it.vpn } && tailnetPeers.isEmpty()) {
+            send(DiscoveryEvent.Warning("vpn-only"))
+        }
+        val probes = discoveryProbePlan(
+            remembered, subnets.map { it.prefix }, port, additionalUrls = tailnetPeers,
+        )
         var scanned = 0
         // Bound concurrency; 508 simultaneous connections can exhaust sockets.
         coroutineScope {

@@ -28,6 +28,7 @@ data class ConnectUiState(
     val scanTotal: Int = 254,
     val scanFound: List<ServerEntry> = emptyList(),
     val scanError: String? = null,
+    val tailscaleConfigured: Boolean = false,
 )
 
 class ConnectViewModel(private val container: AppContainer) : ViewModel() {
@@ -36,6 +37,7 @@ class ConnectViewModel(private val container: AppContainer) : ViewModel() {
             url = container.serverRepository.lastUrl(),
             session = container.serverSession.session.value,
             servers = container.serverRepository.load(),
+            tailscaleConfigured = container.tailscalePeerSettings.configured(),
         )
     )
     val state: StateFlow<ConnectUiState> = _state.asStateFlow()
@@ -57,6 +59,18 @@ class ConnectViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun setUrl(value: String) = _state.update { it.copy(url = value) }
+
+    fun configureTailscaleDiscovery(token: String): Boolean {
+        if (token.isBlank()) return false
+        container.tailscalePeerSettings.saveToken(token)
+        _state.update { it.copy(tailscaleConfigured = true, scanError = null) }
+        return true
+    }
+
+    fun disableTailscaleDiscovery() {
+        container.tailscalePeerSettings.clear()
+        _state.update { it.copy(tailscaleConfigured = false, scanError = null) }
+    }
 
     fun connect(url: String = _state.value.url) {
         val clean = url.trim().removeSuffix("/")
@@ -126,6 +140,8 @@ class ConnectViewModel(private val container: AppContainer) : ViewModel() {
     private fun discoveryError(code: String): String = when (code) {
         "not-on-wifi" -> AppStrings.get(R.string.connect_not_on_wifi)
         "vpn-only" -> AppStrings.get(R.string.connect_scan_vpn_hint)
+        "tailscale-access-denied" -> AppStrings.get(R.string.connect_tailscale_access_denied)
+        "tailscale-directory-unavailable" -> AppStrings.get(R.string.connect_tailscale_api_unavailable)
         else -> code
     }
 }

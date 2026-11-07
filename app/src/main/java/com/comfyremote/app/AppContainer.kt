@@ -15,6 +15,8 @@ import com.comfyremote.app.data.cloud.OpenAiCompatibleImageRepository
 import com.comfyremote.app.data.cloud.ReplicateRepository
 import com.comfyremote.app.data.cloud.SiliconFlowRepository
 import com.comfyremote.app.data.discovery.LanServerDiscovery
+import com.comfyremote.app.data.discovery.TailscaleDeviceDirectory
+import com.comfyremote.app.data.discovery.TailscalePeerSettingsStore
 import com.comfyremote.app.data.generation.CloudSubmissionGate
 import com.comfyremote.app.data.generation.GenerationManager
 import com.comfyremote.app.data.generation.GenerationTaskStore
@@ -90,10 +92,15 @@ class AppContainer(val app: Application) {
 
     val serverRepository = ServerRepository(prefs)
     val serverSession = ServerSessionRepository()
+    val tailscalePeerSettings = TailscalePeerSettingsStore(secretStore)
     val serverDiscoveryRepository = ServerDiscoveryRepository(
-        LanServerDiscovery(knownUrls = {
-            serverRepository.load().map { it.url } + listOfNotNull(serverRepository.savedLastUrl())
-        })
+        LanServerDiscovery(
+            knownUrls = {
+                serverRepository.load().map { it.url } + listOfNotNull(serverRepository.savedLastUrl())
+            },
+            tailscaleToken = { tailscalePeerSettings.token() },
+            tailscaleDirectory = TailscaleDeviceDirectory(),
+        )
     )
     val serverHealthRepository = ServerHealthRepository()
 
