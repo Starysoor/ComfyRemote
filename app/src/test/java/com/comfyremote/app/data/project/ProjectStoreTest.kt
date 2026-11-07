@@ -290,7 +290,7 @@ class ProjectStoreTest {
     }
 
     @Test
-    fun projectSettingsUpdateAndResetShotWorkflowOverrides() {
+    fun projectSettingsPreserveExplicitShotWorkflowOverrides() {
         val store = store()
         val project = store.create("Studio", "wf")!!
         val shot = store.addShot(project.id, "scene")!!
@@ -319,9 +319,45 @@ class ProjectStoreTest {
         assertEquals(120, updated.targetDurationSeconds)
         assertEquals(9.9, updated.budget!!, 1e-9)
         val overridden = updated.shots.single()
-        assertNull(overridden.workflowPath)
-        assertNull(overridden.providerId)
-        assertTrue(overridden.values.isEmpty())
+        assertEquals("siliconflow:old/model", overridden.workflowPath)
+        assertEquals("siliconflow", overridden.providerId)
+        assertEquals(mapOf("k" to "v"), overridden.values)
+    }
+
+
+    @Test
+    fun projectSettingsPreserveExistingBudgetUnlessExplicitlyEdited() {
+        val store = store()
+        val project = store.create("Studio", "wf")!!
+        assertTrue(store.setBudget(project.id, 20.0))
+        assertTrue(store.updateSettings(
+            project.id, "Renamed", "", "autodl:other", "autodl", "16:9", emptyMap(),
+        ))
+        assertEquals(20.0, store.project(project.id)!!.budget!!, 1e-9)
+        assertTrue(store.updateSettings(
+            project.id, "Renamed", "", "autodl:other", "autodl", "16:9", emptyMap(),
+            budget = null, updateBudget = true,
+        ))
+        assertNull(store.project(project.id)!!.budget)
+        assertTrue(store.setBudget(project.id, Double.POSITIVE_INFINITY))
+        assertNull(store.project(project.id)!!.budget)
+    }
+
+    @Test
+    fun changingProjectDefaultRetainsOverridesButClearsInheritedValues() {
+        val store = store()
+        val project = store.create("Studio", "wf")!!
+        val inherited = store.addShot(project.id, "inherited")!!
+        val overridden = store.addShot(project.id, "override")!!
+        store.updateShot(project.id, inherited.id) { it.copy(values = mapOf("legacy" to "1")) }
+        store.updateShot(project.id, overridden.id) {
+            it.copy(workflowPath = "replicate:fixed", values = mapOf("prompt" to "saved"))
+        }
+        assertTrue(store.updateSettings(project.id, "Studio", "", "autodl:new", "autodl", "", emptyMap()))
+        val shots = store.project(project.id)!!.shots
+        assertTrue(shots.first { it.id == inherited.id }.values.isEmpty())
+        assertEquals("replicate:fixed", shots.first { it.id == overridden.id }.workflowPath)
+        assertEquals(mapOf("prompt" to "saved"), shots.first { it.id == overridden.id }.values)
     }
 
     @Test

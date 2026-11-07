@@ -141,18 +141,18 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
         chainFrames: Boolean = true,
     ): VideoProject? {
         val option = _workflows.value.firstOrNull { it.path == workflowPath }
-        if (option == null) {
+        if (workflowPath.isNotBlank() && option == null) {
             _message.value = AppStrings.get(R.string.board_err_choose_workflow)
             return null
         }
         return container.projectStore.create(
             title = title,
             chainFrames = chainFrames,
-            workflowId = option.workflowId,
+            workflowId = option?.workflowId.orEmpty(),
             stylePrompt = stylePrompt,
             synopsis = synopsis,
-            workflowPath = option.path,
-            providerId = option.providerId,
+            workflowPath = option?.path.orEmpty(),
+            providerId = option?.providerId.orEmpty(),
         ).also { created ->
             if (created == null) _message.value = AppStrings.get(R.string.board_err_persist)
         }
@@ -180,11 +180,14 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
         aspectRatio: String,
         defaultValues: Map<String, String>,
         targetDurationSeconds: Int?,
+        budget: Double?,
     ) {
         val providerId = container.cloudProviders.forPath(workflowPath)?.id.orEmpty()
         container.projectStore.updateSettings(
             projectId, title, synopsis, workflowPath, providerId, aspectRatio, defaultValues,
             targetDurationSeconds = targetDurationSeconds,
+            budget = budget,
+            updateBudget = true,
         )
     }
 

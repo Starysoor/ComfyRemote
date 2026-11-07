@@ -103,7 +103,7 @@ class ProjectStore internal constructor(private val file: File) {
     }
 
     fun setBudget(projectId: String, budget: Double?): Boolean = update(projectId) {
-        it.copy(budget = budget?.takeIf { value -> value > 0.0 }, updatedAt = System.currentTimeMillis())
+        it.copy(budget = budget?.takeIf { value -> value.isFinite() && value > 0.0 }, updatedAt = System.currentTimeMillis())
     }
 
     /** Toggles the optional tail-frame relay. Turning it off clears automatic refs only. */
@@ -125,22 +125,25 @@ class ProjectStore internal constructor(private val file: File) {
         defaultValues: Map<String, String>,
         targetDurationSeconds: Int? = null,
         budget: Double? = null,
+        updateBudget: Boolean = budget != null,
     ): Boolean = update(projectId) { project ->
         val path = workflowPath.trim()
         val workflowChanged = project.workflowPath != path
         project.copy(
             title = title.trim().ifBlank { "Project" },
             synopsis = synopsis.trim(),
-            workflowId = path.substringAfter(':'),
+            workflowId = if (path.isBlank()) "" else path.substringAfter(':'),
             workflowPath = path,
             providerId = providerId.trim(),
             aspectRatio = aspectRatio.trim(),
             defaultValues = defaultValues,
             targetDurationSeconds = targetDurationSeconds?.takeIf { it > 0 },
-            budget = budget?.takeIf { it > 0.0 },
+            budget = if (updateBudget) budget?.takeIf { it.isFinite() && it > 0.0 } else project.budget,
             shots = if (workflowChanged) {
-                project.shots.map {
-                    it.copy(workflowId = null, workflowPath = null, providerId = null, values = emptyMap())
+                // Explicit per-shot provider/model overrides are independent of the project default.
+                // Only inherited fields are reset when the default workflow changes.
+                project.shots.map { shot ->
+                    if (shot.workflowPath.isNullOrBlank()) shot.copy(values = emptyMap()) else shot
                 }
             } else {
                 project.shots

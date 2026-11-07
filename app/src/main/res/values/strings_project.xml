@@ -20,6 +20,9 @@
     <!-- Dialogs -->
     <string name="proj_field_synopsis">Synopsis / script (optional)</string>
     <string name="proj_field_duration">Target duration (seconds, optional)</string>
+    <string name="proj_no_default_workflow">No model yet · edit project offline</string>
+    <string name="proj_field_budget">Cloud budget limit (estimated provider points)</string>
+    <string name="proj_field_budget_hint">Optional; leave blank to disable. Estimates are not bills. Exceeding the limit blocks project submissions.</string>
 
     <!-- Asset library -->
     <string name="proj_assets_manage">Manage</string>
