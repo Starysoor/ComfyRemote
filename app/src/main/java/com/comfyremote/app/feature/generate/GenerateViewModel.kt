@@ -28,6 +28,7 @@ import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationRequest
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.media.ImagePreprocessor
+import com.comfyremote.app.data.media.BoundedMediaInput
 import com.comfyremote.app.data.media.decodeSampled
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.repository.PromptPreset
@@ -1020,7 +1021,9 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     private suspend fun uploadOne(api: ComfyApi, uri: Uri, seq: Int): String {
         val ctx = container.app
         val raw = withContext(Dispatchers.IO) {
-            ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ctx.contentResolver.openInputStream(uri)?.use {
+                BoundedMediaInput.read(it, BoundedMediaInput.MAX_IMAGE_BYTES)
+            }
         } ?: throw ComfyException(AppStrings.get(R.string.gen_vm_read_image_failed))
         val (bytes, ext) = withContext(Dispatchers.IO) {
             ImagePreprocessor.prepare(

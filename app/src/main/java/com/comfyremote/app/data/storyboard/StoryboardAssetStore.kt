@@ -3,6 +3,7 @@ package com.comfyremote.app.data.storyboard
 import android.content.Context
 import android.net.Uri
 import com.comfyremote.app.data.media.ImagePreprocessor
+import com.comfyremote.app.data.media.BoundedMediaInput
 import com.comfyremote.app.data.reference.ProjectAsset
 import com.comfyremote.app.data.reference.ReferenceRole
 import kotlinx.coroutines.Dispatchers
@@ -15,7 +16,9 @@ class StoryboardAssetStore(private val context: Context) {
 
     suspend fun importUri(uri: Uri, role: ReferenceRole, label: String = ""): ProjectAsset {
         val bytes = withContext(Dispatchers.IO) {
-            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            context.contentResolver.openInputStream(uri)?.use {
+                BoundedMediaInput.read(it, BoundedMediaInput.MAX_IMAGE_BYTES)
+            }
         } ?: throw IllegalStateException("Cannot read image")
         return save(bytes, context.contentResolver.getType(uri), role, label)
     }
@@ -23,7 +26,12 @@ class StoryboardAssetStore(private val context: Context) {
     suspend fun importFile(path: String, role: ReferenceRole, label: String = ""): ProjectAsset {
         val file = File(path)
         if (!file.isFile) throw IllegalStateException("Image file does not exist")
-        return save(withContext(Dispatchers.IO) { file.readBytes() }, null, role, label)
+        return save(withContext(Dispatchers.IO) {
+            if (file.length() > BoundedMediaInput.MAX_IMAGE_BYTES) {
+                throw IllegalArgumentException("Image source exceeds 32 MiB")
+            }
+            file.readBytes()
+        }, null, role, label)
     }
 
     private suspend fun save(
