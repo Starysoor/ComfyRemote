@@ -8,9 +8,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material3.AlertDialog
@@ -34,8 +37,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
+import com.comfyremote.app.data.project.ProjectShot
+import com.comfyremote.app.data.project.ShotTake
 import com.comfyremote.app.data.project.VideoProject
 import com.comfyremote.app.data.reference.ReferenceRole
+import com.comfyremote.app.feature.generate.MediaThumbnail
 import com.comfyremote.app.ui.IrisType
 import com.comfyremote.app.ui.Spacing
 import com.comfyremote.app.ui.components.IrisSwitch
@@ -294,27 +300,274 @@ internal fun ProjectSettingsDialog(
 }
 
 @Composable
-internal fun AddShotDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
+internal fun AddShotDialog(onDismiss: () -> Unit, onAdd: (prompt: String, cameraNotes: String?) -> Unit) {
     var prompt by remember { mutableStateOf("") }
+    var cameraNotes by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.board_add_shot)) },
         icon = { Icon(Icons.Outlined.Add, null) },
         text = {
-            IrisTextField(
-                value = prompt,
-                onValueChange = { prompt = it },
-                label = stringResource(R.string.board_shot_prompt),
-                minLines = 3,
-                maxLines = 6,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                IrisTextField(
+                    value = prompt,
+                    onValueChange = { prompt = it },
+                    label = stringResource(R.string.board_shot_prompt),
+                    minLines = 3,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                IrisTextField(
+                    value = cameraNotes,
+                    onValueChange = { cameraNotes = it },
+                    label = stringResource(R.string.proj_shot_camera_notes),
+                    minLines = 1,
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         },
         confirmButton = {
-            TextAction(stringResource(R.string.board_add), onClick = { onAdd(prompt) }, enabled = prompt.isNotBlank())
+            TextAction(
+                stringResource(R.string.board_add),
+                onClick = { onAdd(prompt, cameraNotes.trim().ifBlank { null }) },
+                enabled = prompt.isNotBlank(),
+            )
         },
         dismissButton = {
             TextAction(stringResource(R.string.action_cancel), onClick = onDismiss, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+    )
+}
+
+@Composable
+internal fun EditShotDialog(
+    shot: ProjectShot,
+    onDismiss: () -> Unit,
+    onSave: (prompt: String, cameraNotes: String?) -> Unit,
+) {
+    var prompt by remember(shot.id) { mutableStateOf(shot.prompt) }
+    var cameraNotes by remember(shot.id) { mutableStateOf(shot.cameraNotes.orEmpty()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.proj_shot_edit)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                IrisTextField(
+                    value = prompt,
+                    onValueChange = { prompt = it },
+                    label = stringResource(R.string.board_shot_prompt),
+                    minLines = 3,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                IrisTextField(
+                    value = cameraNotes,
+                    onValueChange = { cameraNotes = it },
+                    label = stringResource(R.string.proj_shot_camera_notes),
+                    minLines = 1,
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextAction(
+                stringResource(R.string.board_save),
+                onClick = { onSave(prompt, cameraNotes.trim().ifBlank { null }) },
+                enabled = prompt.isNotBlank(),
+            )
+        },
+        dismissButton = {
+            TextAction(stringResource(R.string.action_cancel), onClick = onDismiss, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+    )
+}
+
+/**
+ * The take workshop: every recorded generation attempt for one shot with its
+ * outcome, params and cost. Promoting a take changes the shot's live result;
+ * discarding only marks the record and never touches files.
+ */
+@Composable
+internal fun TakeWorkshopDialog(
+    shot: ProjectShot,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+    onToggleFavorite: (String, Boolean) -> Unit,
+    onDiscard: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    var showDiscarded by remember(shot.id) { mutableStateOf(false) }
+    val takes = shot.takes
+        .filter { showDiscarded || it.status != "discarded" }
+        .sortedWith(compareByDescending<ShotTake> { it.favorite }.thenByDescending { it.createdAt })
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.proj_takes_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                if (shot.takes.size > 1) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = showDiscarded, onCheckedChange = { showDiscarded = it })
+                        Text(
+                            stringResource(R.string.proj_takes_show_discarded),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (takes.isEmpty()) {
+                    Text(
+                        stringResource(R.string.proj_takes_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    takes.forEach { take ->
+                        val selected = shot.selectedTakeId == take.id
+                        Column(Modifier.fillMaxWidth().padding(vertical = Spacing.xs)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                            ) {
+                                take.resultPath?.let { path ->
+                                    MediaThumbnail(
+                                        path,
+                                        56.dp,
+                                        Modifier.clip(MaterialTheme.shapes.medium),
+                                    )
+                                }
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                                    ) {
+                                        if (take.favorite) {
+                                            Icon(
+                                                Icons.Filled.Star,
+                                                null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(14.dp),
+                                            )
+                                        }
+                                        if (selected) {
+                                            Text(
+                                                stringResource(R.string.proj_takes_primary),
+                                                style = IrisType.metaSmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
+                                        Text(
+                                            takeStatusLabel(take.status),
+                                            style = IrisType.metaSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Text(
+                                        buildString {
+                                            append(take.workflowPath.ifBlank { "-" })
+                                            take.seed?.let { append(" · seed ").append(it) }
+                                        },
+                                        style = IrisType.metaSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    take.costEstimate?.let {
+                                        Text(
+                                            stringResource(R.string.proj_takes_cost, it),
+                                            style = IrisType.metaSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    take.error?.let {
+                                        Text(
+                                            it,
+                                            style = IrisType.metaSmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                            maxLines = 2,
+                                        )
+                                    }
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                if (take.status == "done" && !selected) {
+                                    TextAction(stringResource(R.string.proj_takes_select), onClick = { onSelect(take.id) })
+                                }
+                                TextAction(
+                                    stringResource(if (take.favorite) R.string.proj_takes_unfavorite else R.string.proj_takes_favorite),
+                                    onClick = { onToggleFavorite(take.id, !take.favorite) },
+                                )
+                                if (take.status == "done") {
+                                    TextAction(
+                                        stringResource(R.string.proj_takes_discard),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        onClick = { onDiscard(take.id) },
+                                    )
+                                }
+                                TextAction(
+                                    stringResource(R.string.action_delete),
+                                    color = MaterialTheme.colorScheme.error,
+                                    onClick = { onDelete(take.id) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextAction(stringResource(R.string.action_cancel), onClick = onDismiss, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+    )
+}
+
+@Composable
+private fun takeStatusLabel(status: String): String = when (status) {
+    "done" -> stringResource(R.string.board_status_done)
+    "running" -> stringResource(R.string.board_status_running)
+    "failed" -> stringResource(R.string.board_status_failed)
+    "cancelled" -> stringResource(R.string.phase_cancelled)
+    "discarded" -> stringResource(R.string.proj_takes_discarded)
+    else -> status
+}
+
+/** Single-asset picker used by the first/last-frame quick actions. */
+@Composable
+internal fun AssetSinglePickerDialog(
+    project: VideoProject,
+    title: String,
+    onDismiss: () -> Unit,
+    onPick: (String) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            if (project.assets.isEmpty()) {
+                Text(stringResource(R.string.board_assets_empty))
+            } else {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    project.assets.forEach { asset ->
+                        TextButton(onClick = { onPick(asset.id) }) {
+                            Text(
+                                "${referenceRoleLabel(asset.role)} · " +
+                                    assetDisplayLabel(project, asset).ifBlank { asset.path.substringAfterLast('/') },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         },
     )
 }
@@ -410,6 +663,11 @@ internal fun AssetPickerDialog(
                 Text(stringResource(R.string.board_assets_empty))
             } else {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        stringResource(R.string.proj_shot_order_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     assets.forEach { asset ->
                         val checked = asset.id in selectedAssetIds
                         Row(

@@ -16,11 +16,12 @@ data class ShotTake(
     val seed: String? = null,
     val values: Map<String, String> = emptyMap(),
     val referenceAssetIds: List<String> = emptyList(),
-    val status: String = "running", // running | done | failed | cancelled
+    val status: String = "running", // running | done | failed | cancelled | discarded
     val taskId: String? = null,
     val resultPath: String? = null,
     val error: String? = null,
     val costEstimate: Double? = null,
+    val favorite: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
 )
 

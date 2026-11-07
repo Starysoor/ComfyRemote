@@ -16,6 +16,7 @@ import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -125,6 +126,7 @@ internal fun ShotTimelineItem(
     index: Int,
     shot: ProjectShot,
     workflowLabel: String?,
+    referenceAssets: List<ProjectAsset>,
     referenceFromPrevious: Boolean,
     feedsNext: Boolean,
     canMoveUp: Boolean,
@@ -141,6 +143,10 @@ internal fun ShotTimelineItem(
     onPickWorkflow: () -> Unit,
     onPickAsset: () -> Unit,
     onClearReference: () -> Unit,
+    onEditShot: () -> Unit,
+    onPickFirstFrame: (() -> Unit)?,
+    onPickLastFrame: (() -> Unit)?,
+    onOpenTakes: (() -> Unit)?,
 ) {
     var shotMenu by remember { mutableStateOf(false) }
     val (statusLabel, tone) = when (shot.status) {
@@ -149,9 +155,10 @@ internal fun ShotTimelineItem(
         "failed" -> stringResource(R.string.board_status_failed) to ChipTone.Error
         else -> stringResource(R.string.board_status_draft) to ChipTone.Neutral
     }
-    val reference = shot.referencePath
+    val takeCount = shot.takes.size
+    val running = shot.status == "running"
     val tailFrame = shot.lastFramePath?.takeIf {
-        it != shot.resultPath && it != reference
+        it != shot.resultPath && shot.referenceAssetIds.isEmpty()
     }
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         IrisCard {
@@ -168,6 +175,14 @@ internal fun ShotTimelineItem(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f),
                         )
+                        if (takeCount > 0) {
+                            Text(
+                                stringResource(R.string.proj_takes_count, takeCount),
+                                style = IrisType.metaSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = Spacing.sm),
+                            )
+                        }
                         StatusChip(statusLabel, tone = tone)
                     }
                     Text(
@@ -176,6 +191,26 @@ internal fun ShotTimelineItem(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    shot.cameraNotes?.let {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                        ) {
+                            Icon(
+                                Icons.Outlined.Videocam,
+                                null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Text(
+                                it,
+                                style = IrisType.metaSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                     workflowLabel?.let {
                         Text(
                             stringResource(R.string.board_shot_workflow_value, it),
@@ -185,9 +220,27 @@ internal fun ShotTimelineItem(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    if (reference != null || shot.resultPath != null || tailFrame != null) {
+                    // Ordered references carry their semantic role as a badge;
+                    // the submission maps them to image fields in this order.
+                    if (referenceAssets.isNotEmpty()) {
                         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                            reference?.let { ShotMedia(it, stringResource(R.string.board_reference)) }
+                            referenceAssets.forEach { asset ->
+                                ShotMedia(
+                                    asset.path,
+                                    if (asset.role != ReferenceRole.AUTO) referenceRoleLabel(asset.role) else null,
+                                )
+                            }
+                        }
+                    } else if (shot.referencePath != null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                            ShotMedia(
+                                shot.referencePath!!,
+                                if (shot.referenceRole != ReferenceRole.AUTO) referenceRoleLabel(shot.referenceRole) else null,
+                            )
+                        }
+                    }
+                    if (shot.resultPath != null || tailFrame != null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
                             shot.resultPath?.let { ShotMedia(it, stringResource(R.string.board_result)) }
                             tailFrame?.let { ShotMedia(it, stringResource(R.string.board_tail_frame)) }
                         }
@@ -207,12 +260,21 @@ internal fun ShotTimelineItem(
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Spacer(Modifier.weight(1f))
-                        val running = shot.status == "running"
                         Box {
                             IconButton(onClick = { shotMenu = true }) {
                                 Icon(Icons.Outlined.MoreVert, stringResource(R.string.action_more))
                             }
                             DropdownMenu(shotMenu, { shotMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.proj_shot_edit)) },
+                                    enabled = !running,
+                                    onClick = { shotMenu = false; onEditShot() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.proj_takes_open, takeCount)) },
+                                    enabled = takeCount > 0,
+                                    onClick = { shotMenu = false; onOpenTakes?.invoke() },
+                                )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.board_move_up)) },
                                     enabled = canMoveUp && !running,
@@ -242,6 +304,16 @@ internal fun ShotTimelineItem(
                                     text = { Text(stringResource(R.string.board_use_asset)) },
                                     enabled = canUseAssets && !running,
                                     onClick = { shotMenu = false; onPickAsset() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.proj_shot_set_first_frame)) },
+                                    enabled = canUseAssets && !running && onPickFirstFrame != null,
+                                    onClick = { shotMenu = false; onPickFirstFrame?.invoke() },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.proj_shot_set_last_frame)) },
+                                    enabled = canUseAssets && !running && onPickLastFrame != null,
+                                    onClick = { shotMenu = false; onPickLastFrame?.invoke() },
                                 )
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.board_use_previous_frame)) },
