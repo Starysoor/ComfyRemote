@@ -406,7 +406,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         val shotId = pendingStoryboardShotId
         val storyboard = projectId != null && shotId != null
         if (storyboard) {
-            val status = container.storyboardStore.project(projectId)
+            val status = container.projectStore.project(projectId)
                 ?.shots?.firstOrNull { it.id == shotId }?.status
             if (status == "running") {
                 _state.update { it.copy(message = AppStrings.get(R.string.gen_vm_storyboard_running)) }
@@ -429,7 +429,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             }
             if (ids.isEmpty()) return@launch
             if (projectId != null && shotId != null) {
-                container.storyboardStore.attachTask(projectId, shotId, ids.first())
+                container.projectStore.attachTask(projectId, shotId, ids.first())
                 pendingStoryboardProjectId = null
                 pendingStoryboardShotId = null
             }
@@ -450,7 +450,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         val workflowPath = if (draft.isCloud) draft.workflowPath else ""
         val workflowId = workflowPath.substringAfter(':').takeIf { workflowPath.isNotBlank() }
         val providerId = container.cloudProviders.forPath(workflowPath)?.id.orEmpty()
-        container.storyboardStore.updateShot(projectId, shotId) {
+        container.projectStore.updateShot(projectId, shotId) {
             it.copy(
                 values = values,
                 workflowPath = workflowPath.takeIf { it.isNotBlank() },
@@ -462,7 +462,7 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Persists a manually changed reference so Regenerate opens the same image. */
     private fun syncStoryboardReference(projectId: String, shotId: String, draft: WorkflowDraft) {
-        val shot = container.storyboardStore.project(projectId)
+        val shot = container.projectStore.project(projectId)
             ?.shots?.firstOrNull { it.id == shotId } ?: return
         // Multi-reference shots are already described by their project asset ids.
         if (shot.referenceAssetIds.isNotEmpty()) return
@@ -471,13 +471,13 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         val initial = storyboardReferenceValuesAtLoad[imageField.key]
         if (current.isBlank()) {
             if (initial != null) {
-                container.storyboardStore.setReference(projectId, shotId, null, manual = true)
+                container.projectStore.setReference(projectId, shotId, null, manual = true)
             }
             return
         }
         if (current == initial) return
         val localPath = container.cloudInputStore.localPath(current) ?: return
-        container.storyboardStore.setReference(projectId, shotId, localPath, manual = true)
+        container.projectStore.setReference(projectId, shotId, localPath, manual = true)
     }
 
     private fun fieldValue(

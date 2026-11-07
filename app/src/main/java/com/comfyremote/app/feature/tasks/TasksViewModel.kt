@@ -170,7 +170,7 @@ class TasksViewModel(private val container: AppContainer) : ViewModel() {
 
     fun storyboardLabel(task: GenerationTask): String? {
         val projectId = task.request.storyboardProjectId ?: return null
-        val project = container.storyboardStore.project(projectId) ?: return projectId
+        val project = container.projectStore.project(projectId) ?: return projectId
         val index = project.shots.indexOfFirst { it.id == task.request.storyboardShotId }
         return if (index >= 0) "${project.title} · ${index + 1}" else project.title
     }

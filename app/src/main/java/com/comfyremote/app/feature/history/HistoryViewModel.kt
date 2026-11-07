@@ -45,13 +45,14 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
-    val storyboardProjects = container.storyboardStore.projects
+    /** Projects shown by the "add to project" picker; reads the Studio index. */
+    val storyboardProjects = container.projectStore.projects
 
     fun addToProject(projectId: String, role: ReferenceRole, path: String, label: String) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { container.storyboardAssetStore.importFile(path, role, label) }
                 .onSuccess { asset ->
-                    container.storyboardStore.addAsset(projectId, asset)
+                    container.projectStore.addAsset(projectId, asset)
                     _message.value = AppStrings.get(R.string.history_msg_added_to_project)
                 }
                 .onFailure { e ->

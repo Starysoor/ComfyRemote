@@ -50,6 +50,11 @@ import com.comfyremote.app.data.storyboard.StoryboardStore
 class AppContainer(val app: Application) {
     private val prefs: SharedPreferences = app.getSharedPreferences("comfyremote", Application.MODE_PRIVATE)
 
+    // Migrates the legacy storyboard index to the Studio project index before
+    // any store is constructed; the legacy file stays frozen as rollback anchor.
+    private val projectMigration =
+        com.comfyremote.app.data.project.ProjectMigration.migrateIfNeeded(app.filesDir)
+
     val appSettingsStore = AppSettingsStore(prefs)
     private val secretStore = SecretStore(prefs)
 
@@ -86,9 +91,8 @@ class AppContainer(val app: Application) {
     val storyboardStore = StoryboardStore(app)
     val storyboardAssetStore = StoryboardAssetStore(app)
 
-    // Studio project index. Empty until the legacy storyboard index migrates;
-    // migration activates together with the project UI (P0-2) so the legacy
-    // store and the new store never diverge while both are writable.
+    // Studio project index; holds the migrated legacy projects from here on.
+    // storyboardStore stays readable as the frozen pre-migration snapshot.
     val projectStore = ProjectStore(app)
 
     val aiSettingsStore = AiSettingsStore(prefs, secretStore)

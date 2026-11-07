@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Project list -->
+    <string name="proj_title">Projects</string>
+    <string name="proj_subtitle">AI video workbench · %1$d</string>
+    <string name="proj_new">New project</string>
+    <string name="proj_empty_title">No projects yet</string>
+    <string name="proj_empty_detail">Create a project, import characters and scenes, build shots and turn them into a finished video</string>
+
+    <!-- Project home -->
+    <string name="proj_not_found">Project not found</string>
+    <string name="proj_open_workspace">Open shot workspace</string>
+    <string name="proj_tasks">Project tasks</string>
+    <string name="proj_tasks_empty">No generation tasks in this project yet</string>
+    <string name="proj_task_id">Task %1$s…</string>
+    <string name="proj_duration_minutes">~%1$d min</string>
+    <string name="proj_duration_seconds">%1$d s</string>
+    <string name="proj_style_set">Style set</string>
+
+    <!-- Dialogs -->
+    <string name="proj_field_synopsis">Synopsis / script (optional)</string>
+    <string name="proj_field_duration">Target duration (seconds, optional)</string>
+</resources>
