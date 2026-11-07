@@ -182,6 +182,7 @@ class ProjectStoreTest {
         val freshOrphan = File(mediaDir, "fresh.png").apply { writeText("fresh") }
         val project = store.create("Studio", "wf")!!
         val shot = store.addShot(project.id, "scene")!!
+        store.attachTask(project.id, shot.id, "task-media")
         store.markDone(project.id, shot.id, referenced.absolutePath, null)
 
         assertTrue(store.delete(project.id))
@@ -366,6 +367,7 @@ class ProjectStoreTest {
         val project = store.create("Studio", "wf")!!
         val first = store.addShot(project.id, "first")!!
         val second = store.addShot(project.id, "second")!!
+        store.attachTask(project.id, first.id, "task-chain")
         store.markDone(project.id, first.id, "/tmp/r.mp4", "/tmp/last.png")
 
         val relayed = store.project(project.id)!!.shots[1]

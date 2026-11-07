@@ -515,7 +515,7 @@ internal fun TakeWorkshopDialog(
                                 }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                                if (take.status == "done" && !selected) {
+                                if (take.status == "done" && !selected && shot.status != "running") {
                                     TextAction(stringResource(R.string.proj_takes_select), onClick = { onSelect(take.id) })
                                 }
                                 TextAction(
@@ -529,11 +529,13 @@ internal fun TakeWorkshopDialog(
                                         onClick = { onDiscard(take.id) },
                                     )
                                 }
-                                TextAction(
-                                    stringResource(R.string.action_delete),
-                                    color = MaterialTheme.colorScheme.error,
-                                    onClick = { onDelete(take.id) },
-                                )
+                                if (take.status != "running" && shot.status != "running") {
+                                    TextAction(
+                                        stringResource(R.string.action_delete),
+                                        color = MaterialTheme.colorScheme.error,
+                                        onClick = { onDelete(take.id) },
+                                    )
+                                }
                             }
                         }
                     }

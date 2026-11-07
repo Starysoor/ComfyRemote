@@ -252,23 +252,24 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
         val take = shot.takes.firstOrNull { it.id == takeId } ?: return
         if (!container.projectStore.selectTake(projectId, shotId, takeId)) return
         val resultPath = take.resultPath ?: return
-        if (!syncing.add(shotId)) return
+        // Each switch can complete out of order; only the currently selected take may write back.
         viewModelScope.launch {
-            try {
-                val index = project.shots.indexOfFirst { it.id == shotId }
-                val lastFrame = extractLastFrame(shotId, resultPath)
-                if (lastFrame != null) {
-                    container.projectStore.updateShot(projectId, shotId) {
-                        it.copy(lastFramePath = lastFrame, tailFrameStored = false)
-                    }
-                    val fresh = container.projectStore.project(projectId)
-                        ?.shots?.firstOrNull { it.id == shotId } ?: shot
-                    if (addTailFrameArtifacts(project, fresh, index, resultPath, lastFrame)) {
-                        markTailFrameStored(projectId, shotId)
-                    }
-                }
-            } finally {
-                syncing.remove(shotId)
+            val index = project.shots.indexOfFirst { it.id == shotId }
+            val lastFrame = extractLastFrame(shotId, resultPath) ?: return@launch
+            fun isCurrent(): Boolean = container.projectStore.project(projectId)
+                ?.shots?.firstOrNull { it.id == shotId }
+                ?.let { it.selectedTakeId == takeId && it.resultPath == resultPath } == true
+            if (!isCurrent()) return@launch
+            if (!container.projectStore.updateShot(projectId, shotId) { current ->
+                    if (current.selectedTakeId == takeId && current.resultPath == resultPath) {
+                        current.copy(lastFramePath = lastFrame, tailFrameStored = false)
+                    } else current
+                }) return@launch
+            if (!isCurrent()) return@launch
+            val fresh = container.projectStore.project(projectId)
+                ?.shots?.firstOrNull { it.id == shotId } ?: return@launch
+            if (addTailFrameArtifacts(project, fresh, index, resultPath, lastFrame) && isCurrent()) {
+                markTailFrameStored(projectId, shotId)
             }
         }
     }
@@ -282,7 +283,13 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun deleteTake(projectId: String, shotId: String, takeId: String) {
-        container.projectStore.deleteTake(projectId, shotId, takeId)
+        if (!container.projectStore.deleteTake(projectId, shotId, takeId)) {
+            _message.value = AppStrings.get(R.string.board_err_delete_running_shot)
+            return
+        }
+        val selected = container.projectStore.project(projectId)
+            ?.shots?.firstOrNull { it.id == shotId }?.selectedTakeId
+        if (selected != null) switchToTake(projectId, shotId, selected)
     }
 
     fun moveShot(projectId: String, shotId: String, delta: Int) =
@@ -839,6 +846,10 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
                     )
                     return@forEach
                 }
+                // A user-promoted finished Take must not be overwritten by an old task emission.
+                if (shot.status == "done" && shot.selectedTakeId != null &&
+                    shot.takes.any { it.id == shot.selectedTakeId && it.status == "done" && it.resultPath == shot.resultPath }
+                ) return@forEach
                 val task = shot.taskId?.let(byId::get) ?: return@forEach
                 if (task.isActive) {
                     if (shot.status != "running") {
