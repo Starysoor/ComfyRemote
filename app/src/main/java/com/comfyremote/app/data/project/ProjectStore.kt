@@ -75,6 +75,8 @@ class ProjectStore internal constructor(private val file: File) {
     }
 
     fun delete(projectId: String) = synchronized(lock) {
+        val project = _projects.value.firstOrNull { it.id == projectId } ?: return@synchronized false
+        if (project.shots.any { it.status == "running" }) return@synchronized false
         if (write(_projects.value.filterNot { it.id == projectId })) {
             gcOrphanMediaLocked()
             true
@@ -368,18 +370,20 @@ class ProjectStore internal constructor(private val file: File) {
         }
 
     fun deleteShot(projectId: String, shotId: String): Boolean = synchronized(lock) {
+        var deleted = false
         val persisted = updateLocked(projectId) { project ->
             val index = project.shots.indexOfFirst { it.id == shotId }
             if (index < 0) return@updateLocked project
             if (project.shots[index].status == "running") return@updateLocked project
+            deleted = true
             val remaining = project.shots.toMutableList().apply { removeAt(index) }
             project.copy(
                 shots = rebaseAutoReferences(remaining, project.chainFrames),
                 updatedAt = System.currentTimeMillis(),
             )
         }
-        if (persisted) gcOrphanMediaLocked()
-        persisted
+        if (persisted && deleted) gcOrphanMediaLocked()
+        deleted && persisted
     }
 
     /**

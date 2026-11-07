@@ -386,6 +386,20 @@ class ProjectStoreTest {
     }
 
     @Test
+    fun storeRejectsDeletingRunningShotsOrProjectsWithoutFalseSuccess() {
+        val store = store()
+        val project = store.create("Studio", "wf")!!
+        val shot = store.addShot(project.id, "paying shot")!!
+        assertTrue(store.attachTask(project.id, shot.id, "active-task"))
+        assertFalse(store.deleteShot(project.id, shot.id))
+        assertFalse(store.delete(project.id))
+        assertEquals("active-task", store.project(project.id)!!.shots.single().taskId)
+        assertTrue(store.markTaskCancelled(project.id, shot.id, "active-task"))
+        assertTrue(store.deleteShot(project.id, shot.id))
+        assertTrue(store.delete(project.id))
+    }
+
+    @Test
     fun chainFrameToggleClearsOnlyAutomaticReferences() {
         val store = store()
         val project = store.create("Studio", "wf")!!
