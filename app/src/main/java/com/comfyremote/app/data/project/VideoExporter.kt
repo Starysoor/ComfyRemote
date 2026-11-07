@@ -33,7 +33,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * in place after the transform completes, so an interrupted export can never
  * leave a broken "finished" file behind (source media stays read-only).
  */
-@OptIn(UnstableApi::class)
+@androidx.annotation.OptIn(UnstableApi::class)
 class VideoExporter(private val context: Context) {
 
     sealed interface Result {

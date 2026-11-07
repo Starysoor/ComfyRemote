@@ -568,7 +568,7 @@ private fun EditClipDialog(
  * Sequential preview of the video track: trims apply through clipping; speed,
  * volume and mute are previewed at 1x (the export is authoritative).
  */
-@OptIn(UnstableApi::class)
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun PreviewDialog(timeline: Timeline, onDismiss: () -> Unit) {
     val context = LocalContext.current
