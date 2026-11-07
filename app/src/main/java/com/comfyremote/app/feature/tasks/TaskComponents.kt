@@ -111,7 +111,7 @@ private fun TaskLeading(task: GenerationTask) {
 
 /** Queue position, app-side wait, current node and error, each only when present. */
 @Composable
-private fun TaskStatusLines(task: GenerationTask) {
+internal fun TaskStatusLines(task: GenerationTask) {
     task.queuePosition?.let {
         Text(stringResource(R.string.tasks_queue_position, it), style = IrisType.meta, color = MaterialTheme.colorScheme.primary)
     }
