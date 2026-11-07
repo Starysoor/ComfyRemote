@@ -14,6 +14,8 @@ import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.project.AssetProfile
 import com.comfyremote.app.data.project.ProfileKind
 import com.comfyremote.app.data.project.ProjectShot
+import com.comfyremote.app.data.project.TimelineClip
+import com.comfyremote.app.data.project.TrackKind
 import com.comfyremote.app.data.project.VideoProject
 import com.comfyremote.app.data.project.isOrphanedRunningShot
 import com.comfyremote.app.data.reference.ProjectAsset
@@ -477,6 +479,68 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun clearMessage() { _message.value = null }
+
+    // ---- Timeline ----
+
+    fun ensureTimeline(projectId: String) {
+        container.projectStore.ensureTimeline(projectId)
+    }
+
+    /** Adds a full-length clip for [sourcePath]; duration is read on IO. */
+    fun addTimelineClip(projectId: String, kind: TrackKind, sourcePath: String, sourceLabel: String) {
+        viewModelScope.launch {
+            val duration = withContext(Dispatchers.IO) { mediaDurationMs(sourcePath) }
+            if (duration == null || duration <= 0L) {
+                _message.value = AppStrings.get(R.string.proj_timeline_unreadable)
+                return@launch
+            }
+            container.projectStore.addClip(
+                projectId,
+                kind,
+                TimelineClip(sourcePath = sourcePath, sourceLabel = sourceLabel, sourceOutMs = duration),
+            )
+        }
+    }
+
+    fun updateTimelineClip(
+        projectId: String,
+        kind: TrackKind,
+        clipId: String,
+        sourceInMs: Long,
+        sourceOutMs: Long,
+        speed: Float,
+        volume: Float,
+        muted: Boolean,
+    ) {
+        container.projectStore.updateClip(projectId, kind, clipId) {
+            it.copy(
+                sourceInMs = sourceInMs.coerceAtLeast(0L),
+                sourceOutMs = sourceOutMs.coerceAtLeast(sourceInMs.coerceAtLeast(0L) + 1),
+                speed = speed.coerceIn(0.25f, 4f),
+                volume = volume.coerceIn(0f, 2f),
+                muted = muted,
+            )
+        }
+    }
+
+    fun moveTimelineClip(projectId: String, kind: TrackKind, clipId: String, delta: Int) {
+        container.projectStore.moveClip(projectId, kind, clipId, delta)
+    }
+
+    fun removeTimelineClip(projectId: String, kind: TrackKind, clipId: String) {
+        container.projectStore.removeClip(projectId, kind, clipId)
+    }
+
+    /** Best-effort media duration in ms; null when the file cannot be probed. */
+    private fun mediaDurationMs(path: String): Long? = runCatching {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(path)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+        } finally {
+            retriever.release()
+        }
+    }.getOrNull()
 
     private fun syncTasks(tasks: List<GenerationTask>) {
         val byId = tasks.associateBy { it.taskId }

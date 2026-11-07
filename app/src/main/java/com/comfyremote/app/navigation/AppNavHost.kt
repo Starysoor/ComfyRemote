@@ -74,6 +74,7 @@ import com.comfyremote.app.feature.settings.CloudSettingsScreen
 import com.comfyremote.app.feature.settings.CloudSettingsViewModel
 import com.comfyremote.app.feature.settings.SettingsScreen
 import com.comfyremote.app.feature.project.AssetLibraryScreen
+import com.comfyremote.app.feature.project.TimelineScreen
 import com.comfyremote.app.feature.project.ProjectHomeScreen
 import com.comfyremote.app.feature.project.ProjectListScreen
 import com.comfyremote.app.feature.project.ProjectViewModel
@@ -235,6 +236,11 @@ private fun AppNavHost(
                             Routes.projectAssets(entry.arguments?.getString("projectId").orEmpty()),
                         )
                     },
+                    onOpenTimeline = {
+                        navController.navigate(
+                            Routes.projectTimeline(entry.arguments?.getString("projectId").orEmpty()),
+                        )
+                    },
                     onOpenTask = { taskId -> navController.navigate(Routes.task(taskId)) },
                 )
             }
@@ -248,6 +254,28 @@ private fun AppNavHost(
                     projectId = entry.arguments?.getString("projectId").orEmpty(),
                     onBack = { navController.popBackStack() },
                     onOpenShot = { path, name -> navController.navigate(Routes.generate(path, name)) },
+                )
+            }
+            composable(
+                Routes.PROJECT_TIMELINE_PATTERN,
+                arguments = listOf(navArgument("projectId") { type = NavType.StringType })
+            ) { entry ->
+                val vm: ProjectViewModel = viewModel(factory = factory)
+                TimelineScreen(
+                    viewModel = vm,
+                    projectId = entry.arguments?.getString("projectId").orEmpty(),
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(
+                Routes.PROJECT_ASSETS_PATTERN,
+                arguments = listOf(navArgument("projectId") { type = NavType.StringType })
+            ) { entry ->
+                val vm: ProjectViewModel = viewModel(factory = factory)
+                AssetLibraryScreen(
+                    viewModel = vm,
+                    projectId = entry.arguments?.getString("projectId").orEmpty(),
+                    onBack = { navController.popBackStack() },
                 )
             }
             composable(

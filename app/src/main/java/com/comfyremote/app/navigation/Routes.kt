@@ -22,6 +22,7 @@ object Routes {
     const val PROJECT_PATTERN = "project/{projectId}"
     const val PROJECT_SHOTS_PATTERN = "project/{projectId}/shots"
     const val PROJECT_ASSETS_PATTERN = "project/{projectId}/assets"
+    const val PROJECT_TIMELINE_PATTERN = "project/{projectId}/timeline"
 
     fun generate(path: String, name: String): String =
         "generate?path=${Uri.encode(path)}&name=${Uri.encode(name)}"
@@ -33,6 +34,8 @@ object Routes {
     fun projectShots(projectId: String): String = "project/${Uri.encode(projectId)}/shots"
 
     fun projectAssets(projectId: String): String = "project/${Uri.encode(projectId)}/assets"
+
+    fun projectTimeline(projectId: String): String = "project/${Uri.encode(projectId)}/timeline"
 
     fun cloudProvider(providerId: String): String = "cloud-provider/${Uri.encode(providerId)}"
 }
