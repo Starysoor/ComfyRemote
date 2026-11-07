@@ -595,7 +595,7 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
             if (missing.isNotEmpty()) {
                 _exportState.value = ExportState.Failed(AppStrings.get(
                     R.string.proj_export_skipped,
-                    missing.joinToString(", ") { it.sourceLabel.ifBlank { label -> it.sourcePath.substringAfterLast('/') } },
+                    missing.joinToString(", ") { it.sourceLabel.ifBlank { it.sourcePath.substringAfterLast('/') } },
                 ))
                 return@launch
             }
