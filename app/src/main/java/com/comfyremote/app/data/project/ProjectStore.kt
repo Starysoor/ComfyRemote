@@ -400,6 +400,9 @@ class ProjectStore internal constructor(private val file: File) {
                         values = shot.values,
                         referenceAssetIds = shot.referenceAssetIds,
                     )).copy(
+                        prompt = takeSeed?.prompt?.ifBlank { shot.prompt } ?: shot.prompt,
+                        referenceAssetIds = takeSeed?.referenceAssetIds?.takeIf { it.isNotEmpty() }
+                            ?: shot.referenceAssetIds,
                         id = UUID.randomUUID().toString(),
                         status = "running",
                         taskId = taskId,

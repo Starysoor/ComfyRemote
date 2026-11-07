@@ -71,6 +71,7 @@ class ProjectStoreTest {
         assertEquals("task-1", take.taskId)
         assertEquals("running", take.status)
         assertEquals("replicate:owner/model", take.workflowPath)
+        assertEquals("scene", take.prompt)
         assertEquals("42", take.seed)
         assertEquals(0.2, take.costEstimate!!, 1e-9)
         assertEquals(take.id, running.selectedTakeId)

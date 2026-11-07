@@ -69,7 +69,7 @@
     <string name="proj_takes_cost">Est. %1$s points</string>
     <string name="proj_tasks_summary">%1$d tasks · est. %2$s points</string>
     <string name="proj_task_cost">~%1$d pts</string>
-    <string name="proj_budget_exceeded">Estimated spend (%2$s points) exceeds this project budget (%1$s points). Submissions keep working; block-at-budget arrives in a later release.</string>
+    <string name="proj_budget_exceeded">Estimated spend (%2$s points) exceeds this project budget (%1$s points). Further cloud submissions in this project are blocked until the budget changes.</string>
     <string name="proj_open_timeline">Open timeline</string>
     <string name="proj_timeline_title">Timeline</string>
     <string name="proj_timeline_duration">Total %1$s</string>
