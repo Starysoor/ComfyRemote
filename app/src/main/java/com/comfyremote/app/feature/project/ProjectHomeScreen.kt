@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
 import com.comfyremote.app.data.generation.GenerationPhase
+import com.comfyremote.app.data.project.taskCostStats
 import com.comfyremote.app.feature.generate.MediaThumbnail
 import com.comfyremote.app.feature.tasks.ElapsedText
 import com.comfyremote.app.feature.tasks.RunningNodeProgress
@@ -78,6 +79,7 @@ fun ProjectHomeScreen(
     onOpenWorkspace: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenTimeline: () -> Unit,
+    onOpenDirector: () -> Unit,
     onOpenTask: (String) -> Unit,
 ) {
     val projects by viewModel.projects.collectAsState()
@@ -163,7 +165,10 @@ fun ProjectHomeScreen(
                 )
             }
             item("timeline") {
-                TextAction(stringResource(R.string.proj_open_timeline), onClick = onOpenTimeline)
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.lg)) {
+                    TextAction(stringResource(R.string.proj_open_timeline), onClick = onOpenTimeline)
+                    TextAction(stringResource(R.string.proj_open_director), onClick = onOpenDirector)
+                }
             }
             item("assets-heading") {
                 SectionHeader(stringResource(R.string.board_assets)) {
@@ -197,7 +202,7 @@ fun ProjectHomeScreen(
                 }
             }
             item("tasks-heading") {
-                val stats = projectTaskStats(tasks, projectId)
+                val stats = taskCostStats(tasks, projectId)
                 SectionHeader(stringResource(R.string.proj_tasks)) {
                     if (stats.count > 0) {
                         Text(
@@ -209,13 +214,13 @@ fun ProjectHomeScreen(
                     }
                 }
             }
-            if (project.budget != null && projectTaskStats(tasks, projectId).costSum > project.budget!!) {
+            if (project.budget != null && taskCostStats(tasks, projectId).costSum > project.budget!!) {
                 item("budget-warning") {
                     InfoBanner(
                         text = stringResource(
                             R.string.proj_budget_exceeded,
                             project.budget!!,
-                            projectTaskStats(tasks, projectId).costSum,
+                            taskCostStats(tasks, projectId).costSum,
                         ),
                         tone = BannerTone.Warning,
                     )
@@ -392,15 +397,4 @@ private fun ProjectTaskRow(
         }
         RunningNodeProgress(task)
     }
-}
-
-/** Read-only aggregation for the in-project task view. */
-internal data class ProjectTaskStats(val count: Int, val costSum: Double)
-
-internal fun projectTaskStats(tasks: List<com.comfyremote.app.data.generation.GenerationTask>, projectId: String): ProjectTaskStats {
-    val project = tasks.filter { it.request.storyboardProjectId == projectId }
-    return ProjectTaskStats(
-        count = project.size,
-        costSum = project.sumOf { it.request.estimatedCloudCost?.toDouble() ?: 0.0 },
-    )
 }

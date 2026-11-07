@@ -107,4 +107,10 @@
     <string name="proj_export_no_clips">No exportable video clips on the timeline</string>
     <string name="proj_export_skipped">Skipped clips with missing media: %1$s</string>
     <string name="proj_export_history_name">%1$s · Final cut</string>
+    <string name="proj_open_director">AI director</string>
+    <string name="proj_director_title">AI director</string>
+    <string name="proj_director_checks">Project checks</string>
+    <string name="proj_director_checks_clean">No issues found. Keep going!</string>
+    <string name="proj_director_warning">WARN</string>
+    <string name="proj_director_info">INFO</string>
 </resources>

@@ -25,7 +25,9 @@ import com.comfyremote.app.data.cloud.CloudInputStore
 import com.comfyremote.app.data.cloud.CloudWorkflowMapping
 import com.comfyremote.app.data.cloud.CloudWorkflowSpec
 import com.comfyremote.app.data.generation.GenerationPhase
+import com.comfyremote.app.data.project.BudgetGate
 import com.comfyremote.app.data.project.ShotTake
+import com.comfyremote.app.data.project.taskCostStats
 import com.comfyremote.app.data.generation.GenerationRequest
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.media.ImagePreprocessor
@@ -420,6 +422,29 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         persistDraftNow(draft)
         val count = effectiveBatchCount(storyboard, _state.value.batchCount)
         val requests = (0 until count).map { index -> buildRequest(draft, cv, index) }
+        // Project budget gate (#57 P3): a shot belonging to a project with a
+        // budget is blocked BEFORE the paid-confirmation dialog when this
+        // submission would push the project's estimated spend past it.
+        if (storyboard) {
+            val budget = container.projectStore.project(projectId)?.budget
+            val stats = taskCostStats(tasks.value, projectId)
+            when (val decision = BudgetGate.check(stats.costSum, requests.sumOf { it.estimatedCloudCost?.toDouble() ?: 0.0 }, budget)) {
+                is BudgetGate.Decision.Blocked -> {
+                    _state.update {
+                        it.copy(
+                            message = AppStrings.get(
+                                R.string.gen_vm_budget_blocked,
+                                decision.budget,
+                                decision.spentEstimate,
+                                decision.newCost,
+                            ),
+                        )
+                    }
+                    return
+                }
+                BudgetGate.Decision.Allowed -> Unit
+            }
+        }
         val localQueue = _state.value.batchLocalQueue
         submitJob = viewModelScope.launch {
             val ids = try {

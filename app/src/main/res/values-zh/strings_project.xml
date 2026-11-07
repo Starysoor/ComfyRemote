@@ -107,4 +107,10 @@
     <string name="proj_export_no_clips">时间线上没有可导出的视频片段</string>
     <string name="proj_export_skipped">已跳过缺失媒体的片段：%1$s</string>
     <string name="proj_export_history_name">%1$s · 成片</string>
+    <string name="proj_open_director">AI 导演</string>
+    <string name="proj_director_title">AI 导演</string>
+    <string name="proj_director_checks">项目检查</string>
+    <string name="proj_director_checks_clean">未发现问题，继续加油！</string>
+    <string name="proj_director_warning">警告</string>
+    <string name="proj_director_info">提示</string>
 </resources>
