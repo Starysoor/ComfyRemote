@@ -13,6 +13,7 @@ import okhttp3.OkHttpClient
 import org.json.JSONObject
 import java.net.Inet4Address
 import java.net.InetSocketAddress
+import java.net.URI
 import java.net.NetworkInterface
 import java.util.concurrent.TimeUnit
 
@@ -47,15 +48,27 @@ internal fun isCgnatAddress(address: String): Boolean {
     return octets[0] == 100 && octets[1] in 64..127
 }
 
+/** Validates known server URLs before any direct HTTPS/HTTP health probes. */
+internal fun savedComfyProbeUrls(saved: List<String>): List<String> =
+    saved.mapNotNull { candidate ->
+        val raw = candidate.trim().trimEnd('/')
+        val uri = runCatching { URI(raw) }.getOrNull() ?: return@mapNotNull null
+        val scheme = uri.scheme?.lowercase()
+        if (scheme !in setOf("http", "https") || uri.host.isNullOrBlank() ||
+            uri.rawUserInfo != null || uri.rawQuery != null || uri.rawFragment != null
+        ) null else raw
+    }.distinct().take(8)
+
 /**
- * Discovers ComfyUI servers reachable from this device. Today that is a /24
- * subnet scan of the primary Wi-Fi interface; the Flow interface leaves room
- * for mDNS, Tailscale, VPN or IPv6 strategies later.
+ * Discovers nearby LAN ComfyUI as well as explicitly remembered servers.
+ * Tailnet peers can be on arbitrary CGNAT subnets, so remembered IP/MagicDNS
+ * servers are probed directly rather than scanning the entire 100.64.0.0/10.
  */
 class LanServerDiscovery(
     private val port: Int = 8188,
     private val probeTimeoutMs: Int = 400,
     private val verifyTimeoutMs: Long = 1500,
+    private val knownUrls: () -> List<String> = { emptyList() },
 ) {
     private val verifyClient = OkHttpClient.Builder()
         .connectTimeout(probeTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
@@ -63,38 +76,53 @@ class LanServerDiscovery(
         .build()
 
     private data class Subnet(val prefix: String, val vpn: Boolean)
+    private data class Probe(val host: String, val url: String, val remembered: Boolean)
 
     fun discover(): Flow<DiscoveryEvent> = channelFlow {
-        val subnet = withContext(Dispatchers.IO) { localSubnet() }
-        if (subnet == null) {
+        val subnets = withContext(Dispatchers.IO) { localSubnets() }
+        val remembered = savedComfyProbeUrls(knownUrls())
+        if (subnets.isEmpty() && remembered.isEmpty()) {
             send(DiscoveryEvent.Error("not-on-wifi"))
             send(DiscoveryEvent.Finished)
             return@channelFlow
         }
-        if (subnet.vpn) send(DiscoveryEvent.Warning("vpn-only"))
-        val prefix = subnet.prefix
-        val total = 254
-        var scanned = 0
-        coroutineScope {
-            (1..total).map { n ->
-                async(Dispatchers.IO) {
-                    val ip = "$prefix$n"
-                    if (isComfyAt(ip)) {
-                        send(DiscoveryEvent.Found(DiscoveredServer(ip, "http://$ip:$port")))
-                    }
-                    val progress = synchronized(this@LanServerDiscovery) { ++scanned }
-                    send(DiscoveryEvent.Progress(progress, total))
+        // Even when VPN is connected, the subnet scanner cannot enumerate
+        // unknown peers on arbitrary Tailnet IP ranges.
+        if (subnets.any { it.vpn }) send(DiscoveryEvent.Warning("vpn-only"))
+        val probes = (
+            remembered.map { url ->
+                Probe(URI(url).host, url, remembered = true)
+            } + subnets.flatMap { subnet ->
+                (1..254).map { n ->
+                    val host = "${subnet.prefix}$n"
+                    Probe(host, "http://$host:$port", remembered = false)
                 }
-            }.awaitAll()
+            }
+        ).distinctBy { it.url }
+        var scanned = 0
+        // Bound concurrency; 508 simultaneous connections can exhaust sockets.
+        coroutineScope {
+            probes.chunked(24).forEach { batch ->
+                batch.map { probe ->
+                    async(Dispatchers.IO) {
+                        val found = if (probe.remembered) isComfyAtUrl(probe.url)
+                            else isComfyAt(probe.host)
+                        if (found) send(DiscoveryEvent.Found(DiscoveredServer(probe.host, probe.url)))
+                        val progress = synchronized(this@LanServerDiscovery) { ++scanned }
+                        send(DiscoveryEvent.Progress(progress, probes.size))
+                    }
+                }.awaitAll()
+            }
         }
         send(DiscoveryEvent.Finished)
     }.flowOn(Dispatchers.IO)
 
-    /** Best-effort: prefers Wi-Fi site-local addresses, then VPN/CGNAT interfaces. */
-    private fun localSubnet(): Subnet? {
-        val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
-        var siteFallback: Subnet? = null
-        var vpnFallback: Subnet? = null
+    /** Keep one local LAN and one VPN subnet, while probing known Tailnet peers by URL. */
+    private fun localSubnets(): List<Subnet> {
+        val interfaces = NetworkInterface.getNetworkInterfaces() ?: return emptyList()
+        var wifi: Subnet? = null
+        var lan: Subnet? = null
+        var vpn: Subnet? = null
         while (interfaces.hasMoreElements()) {
             val network = interfaces.nextElement()
             if (!network.isUp || network.isLoopback) continue
@@ -108,19 +136,26 @@ class LanServerDiscovery(
                 val host = address.hostAddress ?: continue
                 val prefix = ipv4SubnetPrefix(host) ?: continue
                 when {
-                    address.isSiteLocalAddress -> {
-                        val candidate = Subnet(prefix, vpn = false)
-                        if (network.name.startsWith("wlan")) return candidate
-                        siteFallback = siteFallback ?: candidate
-                    }
-                    isCgnatAddress(host) || vpnInterface -> {
-                        vpnFallback = vpnFallback ?: Subnet(prefix, vpn = true)
-                    }
+                    vpnInterface || isCgnatAddress(host) -> vpn = vpn ?: Subnet(prefix, vpn = true)
+                    address.isSiteLocalAddress && network.name.startsWith("wlan") ->
+                        wifi = wifi ?: Subnet(prefix, vpn = false)
+                    address.isSiteLocalAddress -> lan = lan ?: Subnet(prefix, vpn = false)
                 }
             }
         }
-        return siteFallback ?: vpnFallback
+        return listOfNotNull(wifi ?: lan, vpn).distinctBy { it.prefix }
     }
+
+    /** Saved MagicDNS, private/VPN IP, and reverse-proxy URL health checks. */
+    private suspend fun isComfyAtUrl(baseUrl: String): Boolean = runCatching {
+        verifyClient.newCall(
+            okhttp3.Request.Builder().url(baseUrl.trimEnd('/') + "/system_stats").build()
+        ).execute().use { response ->
+            response.isSuccessful &&
+                JSONObject(response.body?.string() ?: "")
+                    .optJSONObject("system")?.has("comfyui_version") == true
+        }
+    }.getOrDefault(false)
 
     private suspend fun isComfyAt(ip: String): Boolean = runCatching {
         val socket = java.net.Socket()

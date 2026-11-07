@@ -90,7 +90,11 @@ class AppContainer(val app: Application) {
 
     val serverRepository = ServerRepository(prefs)
     val serverSession = ServerSessionRepository()
-    val serverDiscoveryRepository = ServerDiscoveryRepository(LanServerDiscovery())
+    val serverDiscoveryRepository = ServerDiscoveryRepository(
+        LanServerDiscovery(knownUrls = {
+            serverRepository.load().map { it.url } + listOfNotNull(serverRepository.savedLastUrl())
+        })
+    )
     val serverHealthRepository = ServerHealthRepository()
 
     val updateSettingsStore = UpdateSettingsStore(prefs, secretStore)
