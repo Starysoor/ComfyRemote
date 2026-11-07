@@ -52,6 +52,10 @@ Iris v2.4 起，创作工作台的持久化中心从「分镜」（`storyboards.
 - 删除规则：**先提交索引、再删文件**；仅清理「未被引用 **且** `lastModified` 早于 10 分钟宽限期」的文件（宽限防止清理仍在生成流程中的文件）。
 - 跨 Store 保护：`AppContainer` 将 legacy store 与 project store 的引用集**并集**注入 `HistoryStore` 的 protectedMedia 钩子，结果页 History 的媒体清理永不破坏任一侧仍在引用的文件。
 
+## 预算字段语义（P1）
+
+`VideoProject.budget` 是项目级软预算上限（平台点数，非货币）。P1 行为：项目主页任务区汇总本项目任务的 `estimatedCloudCost`，超过预算时显示警示横幅；**提交不受阻断**——预算达标自动阻止批量提交是 P3（AI 导演阶段）的交付项，需要用户在设置中明确开启后才生效。
+
 ## Room 评估（P0 结论）
 
 **结论：P0/P1 维持 JSON 方案，P2 时间线落地时重评。**

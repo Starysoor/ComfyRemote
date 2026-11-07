@@ -1,5 +1,6 @@
 package com.comfyremote.app.feature.project
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -7,9 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -40,10 +43,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
 import com.comfyremote.app.data.generation.GenerationPhase
+import com.comfyremote.app.feature.generate.MediaThumbnail
+import com.comfyremote.app.feature.tasks.ElapsedText
+import com.comfyremote.app.feature.tasks.RunningNodeProgress
+import com.comfyremote.app.feature.tasks.TaskChips
+import com.comfyremote.app.feature.tasks.TaskStatusLines
+import com.comfyremote.app.feature.tasks.taskTone
 import com.comfyremote.app.ui.IrisType
 import com.comfyremote.app.ui.Spacing
+import androidx.compose.material.icons.outlined.Image
+import com.comfyremote.app.ui.components.BannerTone
 import com.comfyremote.app.ui.components.ChipTone
 import com.comfyremote.app.ui.components.EmptyState
+import com.comfyremote.app.ui.components.InfoBanner
 import com.comfyremote.app.ui.components.IrisCard
 import com.comfyremote.app.ui.components.IrisPrimaryButton
 import com.comfyremote.app.ui.components.IrisScaffold
@@ -181,7 +193,29 @@ fun ProjectHomeScreen(
                 }
             }
             item("tasks-heading") {
-                SectionHeader(stringResource(R.string.proj_tasks))
+                val stats = projectTaskStats(tasks, projectId)
+                SectionHeader(stringResource(R.string.proj_tasks)) {
+                    if (stats.count > 0) {
+                        Text(
+                            stringResource(R.string.proj_tasks_summary, stats.count, stats.costSum),
+                            style = IrisType.meta,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = Spacing.xs),
+                        )
+                    }
+                }
+            }
+            if (project.budget != null && projectTaskStats(tasks, projectId).costSum > project.budget!!) {
+                item("budget-warning") {
+                    InfoBanner(
+                        text = stringResource(
+                            R.string.proj_budget_exceeded,
+                            project.budget!!,
+                            projectTaskStats(tasks, projectId).costSum,
+                        ),
+                        tone = BannerTone.Warning,
+                    )
+                }
             }
             if (projectTasks.isEmpty()) {
                 item("tasks-empty") {
@@ -299,20 +333,30 @@ private fun ProjectTaskRow(
     task: com.comfyremote.app.data.generation.GenerationTask,
     onClick: () -> Unit,
 ) {
-    val (label, tone) = when {
-        task.localPending -> stringResource(R.string.phase_local_pending) to ChipTone.Neutral
-        task.phase == GenerationPhase.SUCCEEDED -> stringResource(R.string.phase_succeeded) to ChipTone.Success
-        task.phase == GenerationPhase.FAILED -> stringResource(R.string.phase_failed) to ChipTone.Error
-        task.phase == GenerationPhase.CANCELLED -> stringResource(R.string.phase_cancelled) to ChipTone.Neutral
-        task.phase == GenerationPhase.CANCELLING -> stringResource(R.string.phase_cancelling) to ChipTone.Warning
-        else -> stringResource(R.string.phase_running) to ChipTone.Accent
-    }
     IrisCard(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            val result = task.results.firstOrNull()
+            Box(
+                Modifier
+                    .size(48.dp)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (result != null) {
+                    MediaThumbnail(result.localPath, 48.dp, Modifier.size(48.dp))
+                } else {
+                    Icon(
+                        Icons.Outlined.Image,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     task.request.workflowName.ifBlank { task.request.workflowPath },
@@ -320,13 +364,39 @@ private fun ProjectTaskRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    stringResource(R.string.proj_task_id, task.taskId.take(8)),
-                    style = IrisType.metaSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                TaskStatusLines(task)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    TaskChips(task, recoveredLabel = stringResource(R.string.tasks_recovered))
+                    if (task.request.provider != "comfyui") {
+                        StatusChip(
+                            task.request.providerLabel.ifBlank { task.request.provider },
+                            tone = ChipTone.Neutral,
+                        )
+                    }
+                    task.request.estimatedCloudCost?.let {
+                        StatusChip(
+                            stringResource(R.string.proj_task_cost, it),
+                            tone = ChipTone.Neutral,
+                        )
+                    }
+                    ElapsedText(task, IrisType.metaSmall)
+                }
             }
-            StatusChip(label, tone = tone)
         }
+        RunningNodeProgress(task)
     }
+}
+
+/** Read-only aggregation for the in-project task view. */
+internal data class ProjectTaskStats(val count: Int, val costSum: Double)
+
+internal fun projectTaskStats(tasks: List<com.comfyremote.app.data.generation.GenerationTask>, projectId: String): ProjectTaskStats {
+    val project = tasks.filter { it.request.storyboardProjectId == projectId }
+    return ProjectTaskStats(
+        count = project.size,
+        costSum = project.sumOf { it.request.estimatedCloudCost?.toDouble() ?: 0.0 },
+    )
 }
