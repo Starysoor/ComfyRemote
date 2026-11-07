@@ -592,6 +592,7 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private val exporter by lazy { VideoExporter(container.app) }
+    private var exportJob: Job? = null
     private val _exportState = MutableStateFlow<ExportState>(ExportState.Idle)
     val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
 
@@ -601,14 +602,14 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
      * file never becomes a finished result); the user retries manually.
      */
     fun startExport(projectId: String) {
-        if (_exportState.value is ExportState.Running) return
+        if (_exportState.value is ExportState.Running || exportJob?.isActive == true) return
         val project = container.projectStore.project(projectId) ?: return
         val timeline = project.timeline
         if (timeline == null || timeline.videoTrack.isEmpty()) {
             _exportState.value = ExportState.Failed(AppStrings.get(R.string.proj_export_no_clips))
             return
         }
-        viewModelScope.launch {
+        exportJob = viewModelScope.launch {
             val available = withContext(Dispatchers.IO) {
                 timeline.videoTrack.map { it.sourcePath }.filter { File(it).isFile }.toSet()
             }
@@ -697,13 +698,17 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
                 }
             }.onFailure { error ->
                 tmp.delete()
-                _exportState.value = ExportState.Failed(error.message ?: error.javaClass.simpleName)
+                _exportState.value = if (error is CancellationException) ExportState.Idle
+                    else ExportState.Failed(error.message ?: error.javaClass.simpleName)
             }
         }
     }
 
     fun cancelExport() {
-        if (_exportState.value is ExportState.Running) exporter.cancel()
+        exporter.cancel()
+        // Media3 cancellation may not invoke the completion listener; cancelling
+        // the coroutine resumes the cancellable continuation and unblocks the UI.
+        exportJob?.cancel()
     }
 
     fun dismissExport() {

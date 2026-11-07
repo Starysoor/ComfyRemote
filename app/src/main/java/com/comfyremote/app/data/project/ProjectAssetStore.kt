@@ -133,7 +133,9 @@ class ProjectAssetStore private constructor(
                         context.ensureActive()
                         onProgress(copied)
                     }
+                    out.fd.sync()
                 }
+                context.ensureActive()
                 if (!tmp.renameTo(file) || !file.isFile) {
                     throw IOException("Cannot save media asset")
                 }
