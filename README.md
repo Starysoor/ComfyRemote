@@ -7,7 +7,7 @@
 
 One lens, every model. Android client for local ComfyUI **and** hosted cloud workflows — pick a model, write a prompt, generate images, video or audio.
 
-**v2.3.2-dev** · [Download APK](https://github.com/Starysoor/Iris/releases/latest) · [Cloud provider guide](docs/CloudProviders.md) · [AutoDL guide](docs/AutoDL.md) · [Screenshots](docs/verification)
+**v2.3.2** · [Download APK](https://github.com/Starysoor/Iris/releases/latest) · [Cloud provider guide](docs/CloudProviders.md) · [AutoDL guide](docs/AutoDL.md) · [Screenshots](docs/verification)
 
 <a href="docs/verification/redesign/light-create.png"><img src="docs/verification/redesign/light-create.png" width="200"/></a>
 <a href="docs/verification/redesign/light-generate.png"><img src="docs/verification/redesign/light-generate.png" width="200"/></a>
@@ -55,6 +55,8 @@ One lens, every model. Android client for local ComfyUI **and** hosted cloud wor
 
 ### 连接方式
 
+Iris 现支持 Tailscale 设备发现：普通局域网和 VPN 网段搜索无需额外凭据；如需发现从未保存的其他 Tailnet 节点，可以在连接页或服务器管理页配置只读 `devices:core:read` Tailscale API 访问令牌。详见 [Tailscale 设备发现指南](docs/TAILSCALE_DISCOVERY.md)。
+
 | 场景 | 地址 |
 |---|---|
 | 模拟器 | `http://10.0.2.2:8188` |
@@ -91,6 +93,7 @@ Release builds are produced by GitHub Actions on `v*` tags (signing key provided
 
 - [Cloud services: providers, configuration, recovery and known limits](docs/CloudProviders.md)
 - [AutoDL cloud workflows, parameters and billing](docs/AutoDL.md)
+- [v2.3.2 release notes](docs/releases/v2.3.2.md)
 - [v2.3.0 release notes](docs/releases/v2.3.0.md)
 - [Verification screenshots](docs/verification)
 - [v2.2 redesign screenshots](docs/verification/redesign)

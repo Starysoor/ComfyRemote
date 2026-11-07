@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.3.2 — 2026-11-04
+## 2.3.2 — 2026-11-07
 
 ### Added
 
@@ -17,7 +17,7 @@
 - SiliconFlow's removed image `batch_size` field is no longer shown or sent; multi-image runs use Iris' own batch queue.
 - SiliconFlow `MiniMaxAI/MiniMax-H3` is recognized as video and uses the new duration/resolution/ratio/`images[]` contract; Wan2.2 models show a retirement warning.
 - Custom OpenAI manually saved model ids are no longer filtered by Iris media-name keywords.
-- The catalog schema migration now removes only known legacy preset ids and preserves user-selected models and explicitly empty lists.
+- The catalog schema migration preserves all previously saved model IDs and explicitly empty lists rather than deleting entries that may have been user-selected.
 - Gemini capability matrices now match model families: Flash gets extreme ratios and 0.5K/2K/4K, Pro gets 1K/2K/4K without the unsupported extreme ratios.
 - The emulator smoke workflow now runs for PRs, release branches, version tags and manual dispatches, and submits a debug-only local smoke task.
 - SiliconFlow random seeds now respect the provider limit (9,999,999,999), so image generation no longer fails with HTTP 400 `seed: Must be less than or equal to 9.999999999e+09`.
@@ -28,6 +28,24 @@
 - OpenAI 2048px sizes are only shown for GPT Image 2.5 models, and custom OpenAI endpoints no longer list pure text models.
 - The generation foreground service now calls `startForeground()` immediately, preventing `ForegroundServiceDidNotStartInTimeException` crashes on cloud submit.
 - Cloud catalog errors now include the exception class when the provider supplies no message.
+
+### Reliability, security and connectivity follow-up
+
+- Multi-provider generation history now uses a local unique task identity; remote provider IDs cannot collide across services or become unsafe media filenames. Estimated cloud spend deduplicates by provider, endpoint and remote ID.
+- Cancellation is durable before reporting success. Local-pending cancellation is atomic with queue dispatch, preventing a task that was already submitted from being falsely reported as cancelled.
+- A slow automatic ComfyUI reconnect can no longer overwrite a newer manual connection or disconnect; health probes use short timeouts.
+- Storyboard shots whose task records were deleted or pruned become recoverable, with a warning to check the remote task before any paid retry.
+- App-imported image and audio streams now have bounded input sizes; audio writes stream to disk instead of loading the whole input into memory.
+- Tailscale discovery now checks LAN/VPN ranges, remembered URLs and, when explicitly enabled, read-only official Tailnet device listings. Saved or newly listed cross-subnet IP/MagicDNS peers are validated as ComfyUI servers before display.
+- Optional Tailnet API tokens are stored in the existing credential vault, sent only to the fixed Tailscale HTTPS API without redirects, and can be removed from Connect / Server Manager. No token is sent to ComfyUI peers.
+- Added JVM regression tests for history and spend identity, cancel/dispatch races, reconnect ordering, orphaned storyboard tasks, bounded media, and read-only Tailnet device API handling.
+
+### Release validation and limitations
+
+- Android 34 emulator smoke, JVM unit tests, debug/release-candidate build and Android lint passed on the merged pull-request head before release; the signed release workflow independently tests and validates APK package/version/signature.
+- The emulator smoke verifies app launch/relaunch and basic workflows; it is not a paid end-to-end test for every remote model.
+- Tailnet discovery requires an opt-in Tailscale token with `devices:core:read` to find previously unknown peers; connections still depend on Tailnet access controls and ComfyUI being reachable on port 8188.
+- A remote provider accepting a job during a simultaneous local storage failure can still require manual recovery. Verify the remote job state before resubmitting to avoid duplicate charges.
 
 ### Verified
 
