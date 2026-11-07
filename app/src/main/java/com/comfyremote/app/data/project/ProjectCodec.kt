@@ -169,6 +169,7 @@ object ProjectCodec {
         .put("resultPath", take.resultPath ?: JSONObject.NULL)
         .put("error", take.error ?: JSONObject.NULL)
         .put("costEstimate", take.costEstimate ?: JSONObject.NULL)
+        .put("favorite", take.favorite)
         .put("createdAt", take.createdAt)
 
     private fun takeFromJson(o: JSONObject): ShotTake = ShotTake(
@@ -184,6 +185,7 @@ object ProjectCodec {
         resultPath = nullableString(o, "resultPath"),
         error = nullableString(o, "error"),
         costEstimate = nullableDouble(o, "costEstimate"),
+        favorite = o.optBoolean("favorite", false),
         createdAt = o.optLong("createdAt"),
     )
 

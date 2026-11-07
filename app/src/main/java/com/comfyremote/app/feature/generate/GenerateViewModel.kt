@@ -25,6 +25,7 @@ import com.comfyremote.app.data.cloud.CloudInputStore
 import com.comfyremote.app.data.cloud.CloudWorkflowMapping
 import com.comfyremote.app.data.cloud.CloudWorkflowSpec
 import com.comfyremote.app.data.generation.GenerationPhase
+import com.comfyremote.app.data.project.ShotTake
 import com.comfyremote.app.data.generation.GenerationRequest
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.media.ImagePreprocessor
@@ -429,7 +430,22 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             }
             if (ids.isEmpty()) return@launch
             if (projectId != null && shotId != null) {
-                container.projectStore.attachTask(projectId, shotId, ids.first())
+                // Record the attempt's model/params/seed/cost snapshot on the take.
+                val request = requests.firstOrNull()
+                val seed = request?.fields?.firstOrNull { it.kind == FieldKind.SEED }
+                    ?.let { field -> request.fieldValues[field.key] }
+                container.projectStore.attachTask(
+                    projectId,
+                    shotId,
+                    ids.first(),
+                    takeSeed = ShotTake(
+                        providerId = request?.provider.orEmpty(),
+                        workflowPath = request?.workflowPath.orEmpty(),
+                        values = request?.fieldValues.orEmpty(),
+                        seed = seed,
+                        costEstimate = request?.estimatedCloudCost?.toDouble(),
+                    ),
+                )
                 pendingStoryboardProjectId = null
                 pendingStoryboardShotId = null
             }

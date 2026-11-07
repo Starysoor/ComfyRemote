@@ -490,6 +490,117 @@ class ProjectStore internal constructor(private val file: File) {
         return cancelled && persisted
     }
 
+    /**
+     * Promotes a finished take to the shot's primary version: its result becomes
+     * the live result. Only done takes can be selected.
+     */
+    fun selectTake(projectId: String, shotId: String, takeId: String): Boolean =
+        synchronized(lock) {
+            var selected = false
+            val persisted = updateLocked(projectId) { project ->
+                val shots = project.shots.map { shot ->
+                    if (shot.id != shotId) return@map shot
+                    val take = shot.takes.firstOrNull { it.id == takeId } ?: return@map shot
+                    if (take.status != "done" || take.resultPath.isNullOrBlank()) return@map shot
+                    selected = true
+                    shot.copy(
+                        status = "done",
+                        resultPath = take.resultPath,
+                        // The promoted result needs its own tail-frame artifacts.
+                        tailFrameStored = false,
+                        error = null,
+                        selectedTakeId = take.id,
+                    )
+                }
+                project.copy(shots = shots, updatedAt = System.currentTimeMillis())
+            }
+            selected && persisted
+        }
+
+    fun setTakeFavorite(projectId: String, shotId: String, takeId: String, favorite: Boolean): Boolean =
+        transformTake(projectId, shotId, takeId) { it.copy(favorite = favorite) }
+
+    /** Marks a take discarded; the record and its files stay untouched. */
+    fun discardTake(projectId: String, shotId: String, takeId: String): Boolean =
+        transformTake(projectId, shotId, takeId) { take ->
+            if (take.status == "done") take.copy(status = "discarded") else take
+        }
+
+    /**
+     * Deletes a take record entirely. If it was the primary version the shot
+     * falls back to draft; the result file is deleted only once nothing else
+     * references it.
+     */
+    fun deleteTake(projectId: String, shotId: String, takeId: String): Boolean =
+        synchronized(lock) {
+            var removedPath: String? = null
+            var removed = false
+            val persisted = updateLocked(projectId) { project ->
+                val shots = project.shots.map { shot ->
+                    if (shot.id != shotId) return@map shot
+                    val take = shot.takes.firstOrNull { it.id == takeId } ?: return@map shot
+                    removed = true
+                    removedPath = take.resultPath
+                    val takes = shot.takes.filterNot { it.id == takeId }
+                    val wasSelected = shot.selectedTakeId == takeId
+                    val fallback = takes.lastOrNull { it.status == "done" && !it.resultPath.isNullOrBlank() }
+                    when {
+                        // Promote the newest remaining done take so the shot keeps its result.
+                        wasSelected && fallback != null -> shot.copy(
+                            status = "done",
+                            resultPath = fallback.resultPath,
+                            selectedTakeId = fallback.id,
+                            tailFrameStored = false,
+                            takes = takes,
+                        )
+                        // Primary version gone with no replacement: back to draft.
+                        wasSelected -> shot.copy(
+                            status = "draft",
+                            taskId = null,
+                            resultPath = null,
+                            selectedTakeId = null,
+                            tailFrameStored = false,
+                            takes = takes,
+                        )
+                        else -> shot.copy(takes = takes)
+                    }
+                }
+                project.copy(shots = shots, updatedAt = System.currentTimeMillis())
+            }
+            if (persisted && removed) {
+                removedPath?.takeIf { path -> path.isNotBlank() && path !in referencedMediaPaths() }
+                    ?.let { path -> runCatching { File(path).delete() } }
+                gcOrphanMediaLocked()
+            }
+            removed && persisted
+        }
+
+    private fun transformTake(
+        projectId: String,
+        shotId: String,
+        takeId: String,
+        transform: (ShotTake) -> ShotTake,
+    ): Boolean = synchronized(lock) {
+        var changed = false
+        val persisted = updateLocked(projectId) { project ->
+            val shots = project.shots.map { shot ->
+                if (shot.id != shotId) return@map shot
+                val takes = shot.takes.map { take ->
+                    if (take.id == takeId) {
+                        changed = true
+                        transform(take)
+                    } else {
+                        take
+                    }
+                }
+                shot.copy(takes = takes)
+            }
+            if (!changed) return@updateLocked project
+            project.copy(shots = shots, updatedAt = System.currentTimeMillis())
+        }
+        changed && persisted
+    }
+
     fun setReference(
         projectId: String,
         shotId: String,

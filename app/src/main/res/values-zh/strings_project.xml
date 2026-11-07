@@ -43,4 +43,25 @@
     <string name="proj_profile_assets_hint">勾选属于该档案的素材；应用到镜头时按此顺序作为参考。</string>
     <string name="proj_profile_apply">应用到镜头</string>
     <string name="proj_profile_unnamed">未命名档案</string>
+
+    <!-- Shot workshop -->
+    <string name="proj_shot_edit">编辑镜头</string>
+    <string name="proj_shot_camera_notes">动作 / 运镜描述（可选）</string>
+    <string name="proj_shot_set_first_frame">指定首帧素材…</string>
+    <string name="proj_shot_set_last_frame">指定尾帧素材…</string>
+    <string name="proj_shot_order_hint">参考按此顺序映射到工作流图片字段（第一项即首帧）。</string>
+
+    <!-- Take workshop -->
+    <string name="proj_takes_title">生成版本</string>
+    <string name="proj_takes_open">版本（%1$d）</string>
+    <string name="proj_takes_count">%1$d 个版本</string>
+    <string name="proj_takes_empty">还没有生成记录。生成本镜头后会自动记录一个版本。</string>
+    <string name="proj_takes_show_discarded">显示已弃用版本</string>
+    <string name="proj_takes_primary">主版本</string>
+    <string name="proj_takes_select">设为主版本</string>
+    <string name="proj_takes_favorite">收藏</string>
+    <string name="proj_takes_unfavorite">取消收藏</string>
+    <string name="proj_takes_discard">弃用</string>
+    <string name="proj_takes_discarded">已弃用</string>
+    <string name="proj_takes_cost">预估 %1$s 点</string>
 </resources>

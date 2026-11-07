@@ -177,12 +177,12 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
         )
     }
 
-    fun addShot(projectId: String, prompt: String) {
+    fun addShot(projectId: String, prompt: String, cameraNotes: String? = null) {
         if (prompt.isBlank()) {
             _message.value = AppStrings.get(R.string.board_err_empty_prompt)
             return
         }
-        container.projectStore.addShot(projectId, prompt)
+        container.projectStore.addShot(projectId, prompt, cameraNotes)
     }
 
     fun deleteShot(projectId: String, shotId: String) {
@@ -205,14 +205,80 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
             it.copy(prompt = prompt.trim())
         }
 
+    fun updateShotCameraNotes(projectId: String, shotId: String, notes: String) =
+        container.projectStore.updateShot(projectId, shotId) {
+            it.copy(cameraNotes = notes.trim().ifBlank { null })
+        }
+
+    /**
+     * Ordered-reference helpers: the submission maps references to workflow
+     * image fields by order, so "first frame" inserts at the head and "last
+     * frame" appends at the tail.
+     */
+    fun setShotFrameAsset(projectId: String, shotId: String, assetId: String, first: Boolean) {
+        val project = container.projectStore.project(projectId) ?: return
+        if (project.assets.none { it.id == assetId }) return
+        container.projectStore.updateShot(projectId, shotId) { shot ->
+            val ids = (shot.referenceAssetIds - assetId).toMutableList()
+            if (first) ids.add(0, assetId) else ids.add(assetId)
+            val assets = ids.mapNotNull { id -> project.assets.firstOrNull { it.id == id } }
+            shot.copy(
+                referenceAssetIds = ids,
+                referencePath = assets.firstOrNull()?.path,
+                referenceManual = true,
+                referenceRole = assets.firstOrNull()?.role ?: ReferenceRole.AUTO,
+            )
+        }
+    }
+
+    /** Promotes a finished take and rebuilds the shot's tail-frame artifacts. */
+    fun switchToTake(projectId: String, shotId: String, takeId: String) {
+        val project = container.projectStore.project(projectId) ?: return
+        val shot = project.shots.firstOrNull { it.id == shotId } ?: return
+        val take = shot.takes.firstOrNull { it.id == takeId } ?: return
+        if (!container.projectStore.selectTake(projectId, shotId, takeId)) return
+        val resultPath = take.resultPath ?: return
+        if (!syncing.add(shotId)) return
+        viewModelScope.launch {
+            try {
+                val index = project.shots.indexOfFirst { it.id == shotId }
+                val lastFrame = extractLastFrame(shotId, resultPath)
+                if (lastFrame != null) {
+                    container.projectStore.updateShot(projectId, shotId) {
+                        it.copy(lastFramePath = lastFrame, tailFrameStored = false)
+                    }
+                    val fresh = container.projectStore.project(projectId)
+                        ?.shots?.firstOrNull { it.id == shotId } ?: shot
+                    if (addTailFrameArtifacts(project, fresh, index, resultPath, lastFrame)) {
+                        markTailFrameStored(projectId, shotId)
+                    }
+                }
+            } finally {
+                syncing.remove(shotId)
+            }
+        }
+    }
+
+    fun setTakeFavorite(projectId: String, shotId: String, takeId: String, favorite: Boolean) {
+        container.projectStore.setTakeFavorite(projectId, shotId, takeId, favorite)
+    }
+
+    fun discardTake(projectId: String, shotId: String, takeId: String) {
+        container.projectStore.discardTake(projectId, shotId, takeId)
+    }
+
+    fun deleteTake(projectId: String, shotId: String, takeId: String) {
+        container.projectStore.deleteTake(projectId, shotId, takeId)
+    }
+
     fun moveShot(projectId: String, shotId: String, delta: Int) =
         container.projectStore.moveShot(projectId, shotId, delta)
 
     fun duplicateShot(projectId: String, shotId: String) =
         container.projectStore.duplicateShot(projectId, shotId)
 
-    fun insertShotAfter(projectId: String, shotId: String, prompt: String) =
-        container.projectStore.insertShotAfter(projectId, shotId, prompt)
+    fun insertShotAfter(projectId: String, shotId: String, prompt: String, cameraNotes: String? = null) =
+        container.projectStore.insertShotAfter(projectId, shotId, prompt, cameraNotes)
 
     fun assignAssetsToShot(projectId: String, shotId: String, assetIds: List<String>) {
         val project = container.projectStore.project(projectId) ?: return
@@ -349,8 +415,9 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
         }
         val reference = if (shot.referenceManual) shot.referencePath
         else shot.referencePath ?: if (project.chainFrames) previous?.lastFramePath else null
-        val prompt = listOf(project.stylePrompt, shot.prompt)
-            .filter { it.isNotBlank() }
+        val prompt = listOf(project.stylePrompt, shot.prompt, shot.cameraNotes)
+            .filterNotNull()
+            .filter(String::isNotBlank)
             .joinToString(", ")
         val name = "${project.title} · ${index + 1}"
         val workflowPath = shot.workflowPath?.takeIf { it.isNotBlank() }

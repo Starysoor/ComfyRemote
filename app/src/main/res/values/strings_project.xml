@@ -43,4 +43,25 @@
     <string name="proj_profile_assets_hint">Pick the assets that belong to this profile; applying it assigns them to a shot in this order.</string>
     <string name="proj_profile_apply">Apply to shot</string>
     <string name="proj_profile_unnamed">Unnamed profile</string>
+
+    <!-- Shot workshop -->
+    <string name="proj_shot_edit">Edit shot</string>
+    <string name="proj_shot_camera_notes">Camera / action notes (optional)</string>
+    <string name="proj_shot_set_first_frame">Set first-frame asset…</string>
+    <string name="proj_shot_set_last_frame">Set last-frame asset…</string>
+    <string name="proj_shot_order_hint">References map to workflow image fields in this order (first item → first frame).</string>
+
+    <!-- Take workshop -->
+    <string name="proj_takes_title">Takes</string>
+    <string name="proj_takes_open">Takes (%1$d)</string>
+    <string name="proj_takes_count">%1$d takes</string>
+    <string name="proj_takes_empty">No recorded takes yet. Generate this shot to record one.</string>
+    <string name="proj_takes_show_discarded">Show discarded takes</string>
+    <string name="proj_takes_primary">PRIMARY</string>
+    <string name="proj_takes_select">Set primary</string>
+    <string name="proj_takes_favorite">Favorite</string>
+    <string name="proj_takes_unfavorite">Unfavorite</string>
+    <string name="proj_takes_discard">Discard</string>
+    <string name="proj_takes_discarded">DISCARDED</string>
+    <string name="proj_takes_cost">Est. %1$s points</string>
 </resources>

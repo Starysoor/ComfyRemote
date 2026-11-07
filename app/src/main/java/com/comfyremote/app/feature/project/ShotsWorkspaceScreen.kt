@@ -78,6 +78,9 @@ fun ShotsWorkspaceScreen(
     var assetShotId by remember { mutableStateOf<String?>(null) }
     var selectedAssetIds by remember { mutableStateOf(setOf<String>()) }
     var shotWorkflowFor by remember { mutableStateOf<String?>(null) }
+    var takesForShotId by remember { mutableStateOf<String?>(null) }
+    var editingShotId by remember { mutableStateOf<String?>(null) }
+    var framePick by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     val assetPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val role = pendingAssetRole
         if (uri != null && role != null) viewModel.addAsset(projectId, role, uri)
@@ -264,6 +267,9 @@ fun ShotsWorkspaceScreen(
                         index = index,
                         shot = shot,
                         workflowLabel = shotWorkflowLabel(shot, project, workflows),
+                        referenceAssets = shot.referenceAssetIds.mapNotNull { id ->
+                            project.assets.firstOrNull { it.id == id }
+                        },
                         referenceFromPrevious = !shot.referenceManual && shot.referencePath != null &&
                             shot.referencePath == previous?.lastFramePath,
                         feedsNext = project.chainFrames && shot.lastFramePath != null &&
@@ -292,6 +298,14 @@ fun ShotsWorkspaceScreen(
                             assetShotId = shot.id
                             selectedAssetIds = shot.referenceAssetIds.toSet()
                         },
+                        onEditShot = { editingShotId = shot.id },
+                        onPickFirstFrame = { framePick = shot.id to true },
+                        onPickLastFrame = { framePick = shot.id to false },
+                        onOpenTakes = if (shot.takes.isNotEmpty()) {
+                            { takesForShotId = shot.id }
+                        } else {
+                            null
+                        },
                         onClearReference = { viewModel.clearShotReference(project.id, shot.id) },
                     )
                 }
@@ -302,8 +316,8 @@ fun ShotsWorkspaceScreen(
     if (addingShot) {
         AddShotDialog(
             onDismiss = { addingShot = false },
-            onAdd = { prompt ->
-                viewModel.addShot(projectId, prompt)
+            onAdd = { prompt, notes ->
+                viewModel.addShot(projectId, prompt, notes)
                 addingShot = false
             },
         )
@@ -311,8 +325,8 @@ fun ShotsWorkspaceScreen(
     insertAfterShotId?.let { shotId ->
         AddShotDialog(
             onDismiss = { insertAfterShotId = null },
-            onAdd = { prompt ->
-                viewModel.insertShotAfter(projectId, shotId, prompt)
+            onAdd = { prompt, notes ->
+                viewModel.insertShotAfter(projectId, shotId, prompt, notes)
                 insertAfterShotId = null
             },
         )
@@ -364,6 +378,62 @@ fun ShotsWorkspaceScreen(
             )
         } else {
             assetShotId = null
+        }
+    }
+    editingShotId?.let { shotId ->
+        val shot = project?.shots?.firstOrNull { it.id == shotId }
+        if (shot == null) {
+            editingShotId = null
+        } else {
+            EditShotDialog(
+                shot = shot,
+                onDismiss = { editingShotId = null },
+                onSave = { prompt, notes ->
+                    viewModel.updateShot(projectId, shotId, prompt)
+                    viewModel.updateShotCameraNotes(projectId, shotId, notes.orEmpty())
+                    editingShotId = null
+                },
+            )
+        }
+    }
+    takesForShotId?.let { shotId ->
+        val shot = project?.shots?.firstOrNull { it.id == shotId }
+        if (shot == null) {
+            takesForShotId = null
+        } else {
+            TakeWorkshopDialog(
+                shot = shot,
+                onDismiss = { takesForShotId = null },
+                onSelect = { takeId ->
+                    viewModel.switchToTake(projectId, shotId, takeId)
+                },
+                onToggleFavorite = { takeId, favorite ->
+                    viewModel.setTakeFavorite(projectId, shotId, takeId, favorite)
+                },
+                onDiscard = { takeId ->
+                    viewModel.discardTake(projectId, shotId, takeId)
+                },
+                onDelete = { takeId ->
+                    viewModel.deleteTake(projectId, shotId, takeId)
+                },
+            )
+        }
+    }
+    framePick?.let { (shotId, first) ->
+        if (project == null) {
+            framePick = null
+        } else {
+            AssetSinglePickerDialog(
+                project = project,
+                title = stringResource(
+                    if (first) R.string.proj_shot_set_first_frame else R.string.proj_shot_set_last_frame,
+                ),
+                onDismiss = { framePick = null },
+                onPick = { assetId ->
+                    viewModel.setShotFrameAsset(projectId, shotId, assetId, first)
+                    framePick = null
+                },
+            )
         }
     }
 }
