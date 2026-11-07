@@ -56,6 +56,7 @@ object ProjectCodec {
         .put("shots", JSONArray().apply { project.shots.forEach { put(shotToJson(it)) } })
         .put("assets", JSONArray().apply { project.assets.forEach { put(assetToJson(it)) } })
         .put("profiles", JSONArray().apply { project.profiles.forEach { put(profileToJson(it)) } })
+        .put("timeline", project.timeline?.let(::timelineToJson) ?: JSONObject.NULL)
 
     private fun projectFromJson(o: JSONObject): VideoProject? {
         val id = o.optString("id").takeIf { it.isNotBlank() } ?: return null
@@ -92,6 +93,7 @@ object ProjectCodec {
             shots = shots,
             assets = assets,
             profiles = profiles,
+            timeline = o.optJSONObject("timeline")?.let(::timelineFromJson),
             createdAt = o.optLong("createdAt"),
             updatedAt = o.optLong("updatedAt"),
         )
@@ -215,6 +217,58 @@ object ProjectCodec {
                 AssetKind.fromPath(path)
             },
             tags = stringList(o.optJSONArray("tags")),
+        )
+    }
+
+    private fun timelineToJson(timeline: Timeline): JSONObject = JSONObject()
+        .put("id", timeline.id)
+        .put("createdAt", timeline.createdAt)
+        .put("updatedAt", timeline.updatedAt)
+        .put("videoTrack", JSONArray().apply { timeline.videoTrack.forEach { put(clipToJson(it)) } })
+        .put("audioTrack", JSONArray().apply { timeline.audioTrack.forEach { put(clipToJson(it)) } })
+
+    private fun timelineFromJson(o: JSONObject): Timeline? {
+        val id = o.optString("id").takeIf { it.isNotBlank() } ?: return null
+        return Timeline(
+            id = id,
+            videoTrack = clipList(o.optJSONArray("videoTrack")),
+            audioTrack = clipList(o.optJSONArray("audioTrack")),
+            createdAt = o.optLong("createdAt"),
+            updatedAt = o.optLong("updatedAt"),
+        )
+    }
+
+    private fun clipList(array: JSONArray?): List<TimelineClip> {
+        if (array == null) return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            array.optJSONObject(index)?.let(::clipFromJson)
+        }
+    }
+
+    private fun clipToJson(clip: TimelineClip): JSONObject = JSONObject()
+        .put("id", clip.id)
+        .put("sourcePath", clip.sourcePath)
+        .put("sourceLabel", clip.sourceLabel)
+        .put("sourceInMs", clip.sourceInMs)
+        .put("sourceOutMs", clip.sourceOutMs)
+        .put("speed", clip.speed.toDouble())
+        .put("volume", clip.volume.toDouble())
+        .put("muted", clip.muted)
+
+    private fun clipFromJson(o: JSONObject): TimelineClip? {
+        val path = o.optString("sourcePath").takeIf { it.isNotBlank() } ?: return null
+        val sourceIn = o.optLong("sourceInMs", 0L).coerceAtLeast(0L)
+        return TimelineClip(
+            id = o.optString("id").takeIf { it.isNotBlank() } ?: "tlc:" + UUID.randomUUID(),
+            sourcePath = path,
+            sourceLabel = o.optString("sourceLabel"),
+            sourceInMs = sourceIn,
+            // A zero/absent out point falls back to just past the in point so
+            // damaged rows still decode to a non-negative trim window.
+            sourceOutMs = o.optLong("sourceOutMs", sourceIn + 1).coerceAtLeast(sourceIn + 1),
+            speed = o.optDouble("speed", 1.0).toFloat().coerceIn(0.25f, 4f),
+            volume = o.optDouble("volume", 1.0).toFloat().coerceIn(0f, 2f),
+            muted = o.optBoolean("muted", false),
         )
     }
 

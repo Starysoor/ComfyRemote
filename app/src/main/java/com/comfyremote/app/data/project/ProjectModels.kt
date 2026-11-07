@@ -95,6 +95,49 @@ data class AssetProfile(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
+/** Logical track kind of a timeline clip. */
+enum class TrackKind { VIDEO, AUDIO }
+
+/**
+ * One clip on a timeline track. Clips reference media **by path**, so the same
+ * take result or asset can be reused by many clips; deleting the source only
+ * loses the clip's media when nothing else references it (GC rule). A clip is
+ * never the same entity as the shot, take, task or file it points at.
+ */
+data class TimelineClip(
+    val id: String = "tlc:" + UUID.randomUUID(),
+    val sourcePath: String,
+    /** Display-only origin, e.g. "镜头 3 · take-a" or the asset label. */
+    val sourceLabel: String = "",
+    /** Trim window inside the source media, in milliseconds. */
+    val sourceInMs: Long = 0,
+    val sourceOutMs: Long = 0,
+    /** Playback speed applied to the trimmed range (export is authoritative). */
+    val speed: Float = 1f,
+    /** Gain applied to the clip's own audio; 0 when muted. */
+    val volume: Float = 1f,
+    val muted: Boolean = false,
+) {
+    /** Timeline duration after speed; the authoritative trim sanity check. */
+    val trimmedMs: Long get() = (sourceOutMs - sourceInMs).coerceAtLeast(0L)
+    val durationMs: Long get() = if (speed > 0f) (trimmedMs / speed).toLong() else 0L
+}
+
+/** A project timeline with one ordered video track and one audio track. */
+data class Timeline(
+    val id: String = UUID.randomUUID().toString(),
+    val videoTrack: List<TimelineClip> = emptyList(),
+    val audioTrack: List<TimelineClip> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+) {
+    fun track(kind: TrackKind): List<TimelineClip> =
+        if (kind == TrackKind.VIDEO) videoTrack else audioTrack
+
+    val totalDurationMs: Long
+        get() = (videoTrack.sumOf { it.durationMs } + audioTrack.sumOf { it.durationMs })
+}
+
 /**
  * The Studio-era project: one self-contained video work carrying its shots,
  * assets, default workflow and (stored-only, not yet enforced) budget.
@@ -122,6 +165,8 @@ data class VideoProject(
     val assets: List<com.comfyremote.app.data.reference.ProjectAsset> = emptyList(),
     /** Consistency profiles (characters/scenes); optional and always safe to omit. */
     val profiles: List<AssetProfile> = emptyList(),
+    /** Final-cut timeline; optional and always safe to omit. */
+    val timeline: Timeline? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 )

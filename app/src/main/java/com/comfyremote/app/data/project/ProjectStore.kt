@@ -610,6 +610,79 @@ class ProjectStore internal constructor(private val file: File) {
         it.copy(referencePath = path, referenceManual = manual)
     }
 
+    /** Creates the empty timeline once; a no-op when one already exists. */
+    fun ensureTimeline(projectId: String): Boolean =
+        updateTimeline(projectId) { timeline -> timeline ?: Timeline() }
+
+    fun addClip(projectId: String, kind: TrackKind, clip: TimelineClip): Boolean =
+        updateTimeline(projectId) { timeline ->
+            (timeline ?: Timeline()).withTrack(kind) { it + clip }
+        }
+
+    fun insertClipAt(projectId: String, kind: TrackKind, index: Int, clip: TimelineClip): Boolean =
+        updateTimeline(projectId) { timeline ->
+            (timeline ?: Timeline()).withTrack(kind) { track ->
+                val target = index.coerceIn(0, track.size)
+                track.toMutableList().apply { add(target, clip) }
+            }
+        }
+
+    fun moveClip(projectId: String, kind: TrackKind, clipId: String, delta: Int): Boolean =
+        updateTimeline(projectId) { timeline ->
+            timeline?.withTrack(kind) { track ->
+                val index = track.indexOfFirst { it.id == clipId }
+                val target = index + delta
+                if (index < 0 || target !in track.indices) return@withTrack track
+                track.toMutableList().apply {
+                    add(target, removeAt(index))
+                }
+            }
+        }
+
+    /** Removes a clip record only; the referenced media file is never touched here. */
+    fun removeClip(projectId: String, kind: TrackKind, clipId: String): Boolean =
+        updateTimeline(projectId) { timeline ->
+            timeline?.withTrack(kind) { track -> track.filterNot { it.id == clipId } }
+        }
+
+    fun updateClip(
+        projectId: String,
+        kind: TrackKind,
+        clipId: String,
+        transform: (TimelineClip) -> TimelineClip,
+    ): Boolean = updateTimeline(projectId) { timeline ->
+        timeline?.withTrack(kind) { track ->
+            track.map { if (it.id == clipId) transform(it) else it }
+        }
+    } ?: false
+
+    // Reference identity, not data equality: track transforms return the same
+    // instance when nothing changed, so updatedAt-only churn stays a no-op.
+    private fun updateTimeline(
+        projectId: String,
+        transform: (Timeline?) -> Timeline?,
+    ): Boolean = synchronized(lock) {
+        var changed = false
+        val persisted = updateLocked(projectId) { project ->
+            val next = transform(project.timeline)
+            if (next === project.timeline) return@updateLocked project
+            changed = true
+            project.copy(timeline = next, updatedAt = System.currentTimeMillis())
+        }
+        changed && persisted
+    }
+
+    private fun Timeline.withTrack(kind: TrackKind, transform: (List<TimelineClip>) -> List<TimelineClip>): Timeline {
+        val current = if (kind == TrackKind.VIDEO) videoTrack else audioTrack
+        val next = transform(current)
+        if (next == current) return this
+        return if (kind == TrackKind.VIDEO) {
+            copy(videoTrack = next, updatedAt = System.currentTimeMillis())
+        } else {
+            copy(audioTrack = next, updatedAt = System.currentTimeMillis())
+        }
+    }
+
     fun nextShot(projectId: String): ProjectShot? {
         val project = _projects.value.firstOrNull { it.id == projectId } ?: return null
         // Do not skip over a running shot: its last frame feeds the next reference.
@@ -630,7 +703,13 @@ class ProjectStore internal constructor(private val file: File) {
         val assets = _projects.value.asSequence()
             .flatMap { it.assets.asSequence() }
             .map { it.path }
-        return (shotMedia + assets).filter { it.isNotBlank() }.toSet()
+        // Timeline clips reference media by path, so any clip source keeps its
+        // file alive even after the shot/take/asset that produced it is gone.
+        val timelineMedia = _projects.value.asSequence()
+            .mapNotNull { it.timeline }
+            .flatMap { it.videoTrack.asSequence() + it.audioTrack.asSequence() }
+            .map { it.sourcePath }
+        return (shotMedia + assets + timelineMedia).filter { it.isNotBlank() }.toSet()
     }
 
     /**
