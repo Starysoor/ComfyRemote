@@ -3,6 +3,7 @@ package com.comfyremote.app.data.project
 import android.content.Context
 import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.reference.ProjectAsset
+import com.comfyremote.app.data.storyboard.StoryboardCodec
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -826,7 +827,22 @@ class ProjectStore internal constructor(private val file: File) {
     /** Deletes app-owned project media that no shot or asset references anymore. */
     private fun gcOrphanMediaLocked() {
         val mediaDir = File(file.parentFile, "storyboards")
-        val referenced = referencedMediaPaths()
+        // The old storyboard index remains a rollback anchor after migration.
+        // Protect its media too; otherwise deleting a migrated project can remove
+        // files still needed when a user installs the old APK.
+        val legacyFile = File(file.parentFile, "storyboards.json")
+        val legacyRefs = if (legacyFile.isFile) {
+            val raw = runCatching { legacyFile.readText() }.getOrNull() ?: return
+            val projects = StoryboardCodec.decode(raw)
+            val rows = runCatching { JSONArray(raw).length() }.getOrNull()
+            if (rows == null || rows != projects.size) return // damaged anchor: never GC blindly
+            projects.flatMap { legacy ->
+                legacy.assets.map { it.path } + legacy.shots.flatMap { shot ->
+                    listOfNotNull(shot.referencePath, shot.resultPath, shot.lastFramePath)
+                }
+            }.toSet()
+        } else emptySet()
+        val referenced = referencedMediaPaths() + legacyRefs
         val cutoff = System.currentTimeMillis() - MEDIA_GC_GRACE_MS
         mediaDir.walkTopDown().filter { it.isFile }.forEach { candidate ->
             if (candidate.absolutePath !in referenced && candidate.lastModified() < cutoff) {

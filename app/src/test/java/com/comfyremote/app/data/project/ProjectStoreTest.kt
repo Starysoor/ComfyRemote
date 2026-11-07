@@ -195,6 +195,29 @@ class ProjectStoreTest {
     }
 
     @Test
+    fun legacyStoryboardRollbackAnchorKeepsReferencedMediaAfterNewProjectDeletion() {
+        val mediaDir = File(temp.root, "storyboards").apply { mkdirs() }
+        val preserved = File(mediaDir, "old-reference.png").apply {
+            writeText("rollback media")
+            setLastModified(System.currentTimeMillis() - 60 * 60_000L)
+        }
+        val legacyProject = com.comfyremote.app.data.storyboard.StoryboardProject(
+            id = "legacy-project", title = "Legacy", workflowId = "workflow",
+            assets = listOf(ProjectAsset(
+                id = "legacy-asset", path = preserved.absolutePath,
+                role = ReferenceRole.CHARACTER_REFERENCE,
+            )),
+        )
+        File(temp.root, "storyboards.json").writeText(
+            com.comfyremote.app.data.storyboard.StoryboardCodec.encode(listOf(legacyProject)),
+        )
+        val store = store()
+        val newProject = store.create("New", "wf")!!
+        assertTrue(store.delete(newProject.id))
+        assertTrue(preserved.exists())
+    }
+
+    @Test
     fun takeResultsCountAsReferencedMedia() {
         val store = store()
         val project = store.create("Studio", "wf")!!
