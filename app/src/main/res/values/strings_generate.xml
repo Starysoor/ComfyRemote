@@ -146,4 +146,5 @@
     <string name="gen_vm_vision_current">Current prompt: %1$s</string>
     <string name="gen_vm_vision_look">Look at this image and output the rewritten prompt.</string>
     <string name="gen_vm_read_image_failed">Failed to read image</string>
+    <string name="gen_vm_budget_blocked">Project budget reached: limit %1$s pts, spent %2$s pts, this submission %3$s pts. Raise the budget in project settings or trim the batch.</string>
 </resources>
