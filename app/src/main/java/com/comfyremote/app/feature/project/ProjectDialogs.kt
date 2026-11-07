@@ -284,7 +284,7 @@ internal fun ProjectSettingsDialog(
                 )
                 IrisTextField(
                     value = budgetText,
-                    onValueChange = { budgetText = it.filter { ch -> ch.isDigit() || ch == '.' }.take(16) },
+                    onValueChange = { budgetText = it.take(16) },
                     label = stringResource(R.string.proj_field_budget),
                     supportingText = stringResource(R.string.proj_field_budget_hint),
                     singleLine = true,

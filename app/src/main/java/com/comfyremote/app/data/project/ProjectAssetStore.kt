@@ -67,6 +67,7 @@ class ProjectAssetStore private constructor(
                 if (expectedSize != null && expectedSize > limit) {
                     throw IllegalArgumentException("Media source exceeds ${limit / (1024 * 1024)} MiB")
                 }
+                ensureFreeSpace(expectedSize)
                 resolver.openInputStream(uri)?.use { input ->
                     copyBounded(input, ext, role, label, tags, kind) { copied ->
                         onProgress(copied, expectedSize)
@@ -89,6 +90,7 @@ class ProjectAssetStore private constructor(
         if (source.length() > limit) {
             throw IllegalArgumentException("Media source exceeds ${limit / (1024 * 1024)} MiB")
         }
+        ensureFreeSpace(source.length())
         // Stream long videos; never load their entire contents into the heap.
         when (kind) {
             AssetKind.IMAGE -> saveImage(source.readBytes(), null, role, label, tags)
@@ -145,6 +147,16 @@ class ProjectAssetStore private constructor(
             throw error
         }
         return asset(file, role, label, tags, kind)
+    }
+
+    /** Preflight only when the provider supplies a size; streaming also handles unknown sizes. */
+    private fun ensureFreeSpace(expectedBytes: Long?) {
+        if (expectedBytes == null || expectedBytes <= 0L) return
+        if (!dir.isDirectory && !dir.mkdirs()) throw IOException("Cannot create media directory")
+        val available = dir.usableSpace
+        if (available > 0 && expectedBytes > (available - 8L * 1024 * 1024).coerceAtLeast(0L)) {
+            throw IOException("Not enough free storage for media import")
+        }
     }
 
     private fun newAssetFile(ext: String): File {
