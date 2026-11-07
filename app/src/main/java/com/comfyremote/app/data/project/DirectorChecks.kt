@@ -16,8 +16,12 @@ object DirectorChecks {
         val shotId: String? = null,
     )
 
-    /** Pixel-difference threshold above which adjacent shots count as a cut. */
-    const val CONTINUITY_DIFF_THRESHOLD = 0.30
+    /**
+     * Pixel-difference threshold above which adjacent shots count as a cut,
+     * on the 0..255 mean per-channel scale of FrameStrip.gridDistance
+     * (~30% of full range).
+     */
+    const val CONTINUITY_DIFF_THRESHOLD = 76.5
 
     /** Target-duration deviation that earns an info note (30% per #57). */
     const val DURATION_DRIFT = 0.30

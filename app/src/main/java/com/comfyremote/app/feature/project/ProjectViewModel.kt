@@ -1,6 +1,7 @@
 package com.comfyremote.app.feature.project
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -9,6 +10,7 @@ import com.comfyremote.app.AppContainer
 import com.comfyremote.app.HistoryItem
 import com.comfyremote.app.LabeledText
 import com.comfyremote.app.data.cloud.AutoDlConfig
+import com.comfyremote.app.data.media.FrameStrip
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.project.AssetProfile
@@ -54,6 +56,10 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
     private val syncing = mutableSetOf<String>()
+
+    private companion object {
+        const val STRIP_FRAMES = 6
+    }
 
     /** Providers whose catalogue loaded at least once; lets us flag removed workflows. */
     private val catalogReadyProviders = mutableSetOf<String>()
@@ -647,6 +653,102 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    // ---- Continuity strips (P3-2) ----
+
+    data class ShotStrip(
+        val shotId: String,
+        val index: Int,
+        val label: String,
+        val durationMs: Long,
+        val frames: List<Bitmap>,
+    )
+
+    data class SeamCheck(
+        val fromShotId: String,
+        val toShotId: String,
+        val fromLabel: String,
+        val toLabel: String,
+        val diff: Double,
+        val frameA: Bitmap,
+        val frameB: Bitmap,
+    )
+    data class ContinuityState(
+        val strips: List<ShotStrip> = emptyList(),
+        val seams: List<SeamCheck> = emptyList(),
+        val loading: Boolean = false,
+    )
+
+    private val _continuity = MutableStateFlow(ContinuityState())
+    val continuity: StateFlow<ContinuityState> = _continuity.asStateFlow()
+
+    /** Extracts per-second strips and adjacent-seam diffs on IO; cached in state. */
+    fun loadContinuity(projectId: String) {
+        val project = container.projectStore.project(projectId) ?: return
+        if (_continuity.value.loading) return
+        viewModelScope.launch {
+            _continuity.value = ContinuityState(loading = true)
+            val result = withContext(Dispatchers.IO) {
+                val done = project.shots.withIndex().filter { (index, shot) ->
+                    val path = shot.resultPath
+                    shot.status == "done" && path != null && File(path).isFile
+                }
+                val strips = done.mapNotNull { (index, shot) ->
+                    val duration = mediaDurationMs(shot.resultPath!!) ?: 0L
+                    val frames = FrameStrip.extractFrames(shot.resultPath, STRIP_FRAMES)
+                    if (frames.isNullOrEmpty()) null
+                    else ShotStrip(shot.id, index, "镜头 ${index + 1}", duration, frames)
+                }
+                val seams = done.zipWithNext().mapNotNull { (a, b) ->
+                    val lastA = seamFrame(a.value, seamAtEnd = true) ?: return@mapNotNull null
+                    val firstB = seamFrame(b.value, seamAtEnd = false) ?: return@mapNotNull null
+                    val indexA = project.shots.indexOfFirst { it.id == a.value.id }
+                    val indexB = project.shots.indexOfFirst { it.id == b.value.id }
+                    SeamCheck(
+                        a.value.id,
+                        b.value.id,
+                        "镜头 ${indexA + 1}",
+                        "镜头 ${indexB + 1}",
+                        FrameStrip.gridDistance(FrameStrip.averageGrid(lastA), FrameStrip.averageGrid(firstB)),
+                        lastA,
+                        firstB,
+                    )
+                }
+                ContinuityState(strips = strips, seams = seams, loading = false)
+            }
+            _continuity.value = result
+        }
+    }
+
+    /** The seam frame of a shot: its own tail frame, else the media edge. */
+    private fun seamFrame(shot: ProjectShot, seamAtEnd: Boolean): Bitmap? {
+        val path = shot.resultPath ?: return null
+        val side = if (seamAtEnd) shot.lastFramePath else null
+        if (side != null && File(side).isFile) {
+            runCatching {
+                val bitmap = BitmapFactory.decodeFile(side)
+                if (bitmap != null) return bitmap
+            }
+        }
+        return runCatching {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(path)
+                if (seamAtEnd) {
+                    val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                        ?.toLongOrNull() ?: 0L
+                    retriever.getFrameAtTime(
+                        (durationMs * 1000L - 1000L).coerceAtLeast(0L),
+                        MediaMetadataRetriever.OPTION_CLOSEST,
+                    )
+                } else {
+                    retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                }
+            } finally {
+                retriever.release()
+            }
+        }.getOrNull()
+    }
+
     private fun syncTasks(tasks: List<GenerationTask>) {
         val byId = tasks.associateBy { it.taskId }
         projects.value.forEach { project ->
@@ -759,7 +861,7 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    private fun tailAssetId(shotId: String): String = "tail:$shotId"
+    private fun tailAssetId(shotId: String) = "tail:$shotId"
 
     private fun markTailFrameStored(projectId: String, shotId: String) =
         container.projectStore.updateShot(projectId, shotId) {
