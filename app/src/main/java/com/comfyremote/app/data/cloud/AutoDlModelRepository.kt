@@ -40,12 +40,14 @@ class AutoDlModelRepository(
 
     override fun endpoint(): String = account().baseUrl
 
-    override suspend fun discoverModels(): List<String> = imageApi.discoverModels()
+    override suspend fun discoverModels(): List<String> =
+        imageApi.discoverModels().filter(CloudModelParameters::looksLikeMediaModel)
 
     override suspend fun catalog(force: Boolean): List<CloudWorkflowSummary> {
         val account = account()
         if (account.token.isBlank()) return emptyList()
         val models = pulledModels(settings, id, account.baseUrl, account.token) { discoverModels() }
+            .filter(CloudModelParameters::looksLikeMediaModel)
         return settings.enabledModels(id, models).map { model ->
             val family = familyOf(model)
             CloudWorkflowSummary(
@@ -104,12 +106,13 @@ class AutoDlModelRepository(
             else -> null
         }?.takeIf { it.isNotBlank() }
             ?: throw ComfyException(CloudHttp.errorMessage(response, "AutoDL returned no task id"))
-        pending[taskId] = Pending(family, submitUrl, base)
-        taskStore.savePending(
+        taskStore.saveAcceptedTask(
             id,
             taskId,
             JSONObject().put("family", family).put("submitUrl", submitUrl).put("base", base),
+            label,
         )
+        pending[taskId] = Pending(family, submitUrl, base)
         return taskId
     }
 
@@ -139,6 +142,8 @@ class AutoDlModelRepository(
 
     override fun forgetTask(taskId: String) {
         pending.remove(taskId)
+        // Image results (including base64 data) live in the delegated OpenAI repo.
+        imageApi.forgetTask(taskId)
         taskStore.clear(id, taskId)
     }
 
@@ -324,7 +329,7 @@ class AutoDlModelRepository(
         url.substringBefore('?').substringAfterLast('.', "").lowercase().takeIf { it.length in 2..5 }.orEmpty()
 
     private fun familyOf(model: String): String = when {
-        model.startsWith("wan3.0") -> "wan"
+        model.startsWith("wan2") || model.startsWith("wan3") -> "wan"
         model.startsWith("MiniMax-H3") -> "h3"
         model.startsWith("MiniMax-Hailuo") -> "minimax"
         model.contains("seedance") -> "seedance"

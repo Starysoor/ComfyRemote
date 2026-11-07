@@ -16,6 +16,7 @@ import com.comfyremote.app.data.reference.ReferenceRole
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.storyboard.StoryboardProject
 import com.comfyremote.app.data.storyboard.StoryboardShot
+import com.comfyremote.app.data.storyboard.isOrphanedRunningShot
 import com.comfyremote.app.feature.generate.isVideoPath
 import com.comfyremote.app.R
 import com.comfyremote.app.ui.AppStrings
@@ -51,6 +52,14 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     init {
         refreshWorkflows()
         migrateLegacyTailFrames()
+        viewModelScope.launch {
+            container.storyboardStore.persistenceError.collect { error ->
+                if (error != null) {
+                    _message.value = error
+                    container.storyboardStore.clearPersistenceError()
+                }
+            }
+        }
         viewModelScope.launch {
             container.generationManager.tasks.collect { tasks -> syncTasks(tasks) }
         }
@@ -91,7 +100,10 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                             }
                         }
                         .onFailure { error ->
-                            errors += "${provider.label}: ${error.message ?: "error"}"
+                            errors += "${provider.label}: ${
+                                error.message?.takeIf(String::isNotBlank)
+                                    ?: error.javaClass.simpleName
+                            }"
                         }
                 }
                 Triple(options, errors, ready)
@@ -123,7 +135,9 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
             stylePrompt = stylePrompt,
             workflowPath = option.path,
             providerId = option.providerId,
-        )
+        ).also { created ->
+            if (created == null) _message.value = AppStrings.get(R.string.board_err_persist)
+        }
     }
 
     fun deleteProject(id: String): Boolean {
@@ -132,8 +146,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
             _message.value = AppStrings.get(R.string.board_err_delete_running_project)
             return false
         }
-        container.storyboardStore.delete(id)
-        return true
+        return container.storyboardStore.delete(id)
     }
 
     fun setStyle(projectId: String, style: String) = container.storyboardStore.setStyle(projectId, style)
@@ -351,8 +364,17 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         val byId = tasks.associateBy { it.taskId }
         projects.value.forEach { project ->
             project.shots.forEach { shot ->
-                val taskId = shot.taskId ?: return@forEach
-                val task = byId[taskId] ?: return@forEach
+                if (isOrphanedRunningShot(shot, byId.keys)) {
+                    // The remote job may still exist: unlock for manual recovery,
+                    // but never automatically create another paid generation.
+                    container.storyboardStore.markFailed(
+                        project.id,
+                        shot.id,
+                        AppStrings.get(R.string.board_err_missing_task),
+                    )
+                    return@forEach
+                }
+                val task = shot.taskId?.let(byId::get) ?: return@forEach
                 if (task.isActive) {
                     if (shot.status != "running") {
                         container.storyboardStore.updateShot(project.id, shot.id) {
@@ -397,8 +419,13 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                         try {
                             val index = project.shots.indexOfFirst { it.id == shot.id }
                             val lastFrame = extractLastFrame(shot.id, resultPath)
-                            container.storyboardStore.markDone(project.id, shot.id, resultPath, lastFrame)
-                            if (lastFrame != null &&
+                            val done = container.storyboardStore.markDone(
+                                project.id,
+                                shot.id,
+                                resultPath,
+                                lastFrame,
+                            )
+                            if (done && lastFrame != null &&
                                 addTailFrameArtifacts(project, shot, index, resultPath, lastFrame)
                             ) {
                                 markTailFrameStored(project.id, shot.id)
@@ -473,7 +500,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
             createdAt = existing?.createdAt ?: System.currentTimeMillis(),
         )
         if (existing?.path != asset.path || existing?.label != asset.label) {
-            container.storyboardStore.addAsset(project.id, asset)
+            if (!container.storyboardStore.addAsset(project.id, asset)) return false
         }
         // An image result is already in History; only a video needs its tail frame added.
         return lastFramePath == resultPath ||

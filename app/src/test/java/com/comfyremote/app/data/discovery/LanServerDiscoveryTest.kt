@@ -28,4 +28,40 @@ class LanServerDiscoveryTest {
         assertFalse(isCgnatAddress("100.128.0.1"))
         assertFalse(isCgnatAddress("192.168.1.2"))
     }
+    @Test
+    fun rememberedTailnetAndMagicDnsCanBeProbedAcrossSubnets() {
+        val urls = savedComfyProbeUrls(
+            listOf(
+                "http://100.105.22.9:8188",
+                "http://desktop.tail123.ts.net:8188/",
+                "https://my-comfy.example.com/proxy/",
+                "http://100.105.22.9:8188",
+                "ftp://host:8188",
+                "http://secret:password@server:8188",
+                "not-a-url",
+            )
+        )
+        assertEquals(
+            listOf(
+                "http://100.105.22.9:8188",
+                "http://desktop.tail123.ts.net:8188",
+                "https://my-comfy.example.com/proxy",
+            ),
+            urls,
+        )
+    }
+
+    @Test
+    fun savedTailnetHostsOutsideThePhoneVpnSubnetAreAlwaysIncluded() {
+        val peers = listOf(
+            "http://100.124.90.22:8188",
+            "http://laptop.my-tailnet.ts.net:8188",
+        )
+        val probes = discoveryProbePlan(peers, listOf("192.168.2.", "100.65.10."), 8188)
+        assertEquals(2 + 254 * 2, probes.size)
+        assertTrue(probes.any { it.remembered && it.url == peers[0] })
+        assertTrue(probes.any { it.remembered && it.url == peers[1] })
+        assertFalse(probes.any { it.url == "http://100.64.0.1:8188" })
+    }
+
 }

@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.comfyremote.app.AppContainer
 import com.comfyremote.app.ComfyApi
+import com.comfyremote.app.ComfyException
 import com.comfyremote.app.PromptValidationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -39,6 +40,10 @@ class GenerationManager(
     private val _localQueuePaused = MutableStateFlow(false)
     val localQueuePaused: StateFlow<Boolean> = _localQueuePaused.asStateFlow()
 
+    /** Last durable-state write failure; surfaced by Generate/Tasks instead of being silent. */
+    private val _persistenceError = MutableStateFlow<String?>(null)
+    val persistenceError: StateFlow<String?> = _persistenceError.asStateFlow()
+
     private val jobs = ConcurrentHashMap<String, Job>()
     private val spendRecordedIds = ConcurrentHashMap.newKeySet<String>().apply {
         addAll(_tasks.value.filter { it.spendRecorded }.map { it.taskId })
@@ -46,7 +51,8 @@ class GenerationManager(
 
     init {
         // Persist normalization before any recovery/local-queue work starts.
-        taskStore.save(_tasks.value)
+        runCatching { taskStore.save(_tasks.value) }
+            .onFailure { _persistenceError.value = it.message ?: it.javaClass.simpleName }
         val persistedActive = _tasks.value.filter { it.isActive }
         if (persistedActive.isNotEmpty()) startService()
         persistedActive
@@ -58,11 +64,20 @@ class GenerationManager(
     /** Submits one request immediately to its bound server. */
     fun submit(request: GenerationRequest): String {
         val task = newTask(request)
-        mutateTasks { prune(listOf(task) + it) }
+        if (!mutateTasks { prune(listOf(task) + it) }) {
+            throw ComfyException(persistenceMessage("task was not submitted"))
+        }
         startService()
         launchTracked(task.taskId) { execute(task) }
         return task.taskId
     }
+
+    fun clearPersistenceError() {
+        _persistenceError.value = null
+    }
+
+    private fun persistenceMessage(action: String): String =
+        "Cannot persist task state ($action): ${_persistenceError.value ?: "unknown storage error"}"
 
     /**
      * Adds a batch. When [localQueue] is true, each server receives at most one app-managed
@@ -80,7 +95,9 @@ class GenerationManager(
                 recoveryNote = if (localQueue) "Waiting in local queue" else null,
             )
         }
-        mutateTasks { prune(tasks + it) }
+        if (!mutateTasks { prune(tasks + it) }) {
+            throw ComfyException(persistenceMessage("batch was not submitted"))
+        }
         startService()
         if (localQueue) {
             pumpLocalQueue()
@@ -113,24 +130,34 @@ class GenerationManager(
         val cloud = task.request.provider != "comfyui"
         return when (cancelActionFor(task.phase, cloud, task.localPending)) {
             CancelAction.LOCAL_PENDING -> {
-                patch(taskId) {
-                    it.copy(
-                        localPending = false,
-                        phase = GenerationPhase.CANCELLED,
-                        completedAt = System.currentTimeMillis(),
-                        recoveryNote = "Removed from local queue",
-                        queuePosition = null,
-                        progress = null,
-                        preview = null,
-                    )
+                var cancelledWhilePending = false
+                // Queue pumping and cancellation compete for the same lock.
+                // Only treat this as a not-yet-submitted cancellation when the
+                // *current* persisted task still belongs to the local queue.
+                val committed = mutateTasks { list ->
+                    val updated = list.firstOrNull { it.taskId == taskId }
+                        ?.cancelIfStillLocalPending(System.currentTimeMillis())
+                    if (updated == null) list else {
+                        cancelledWhilePending = true
+                        prune(list.map { if (it.taskId == taskId) updated else it })
+                    }
                 }
-                pumpLocalQueue()
-                CancelOutcome(taskId, true)
+                when {
+                    !committed -> CancelOutcome(taskId, false, persistenceMessage("cancel was not saved; task may still run"))
+                    !cancelledWhilePending -> cancel(taskId) // It left the queue: apply remote cancellation semantics.
+                    else -> {
+                        pumpLocalQueue()
+                        CancelOutcome(taskId, true)
+                    }
+                }
             }
             CancelAction.CANCEL_JOB -> {
-                patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }
-                finishCancel(taskId)
-                CancelOutcome(taskId, true)
+                if (!patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }) {
+                    CancelOutcome(taskId, false, persistenceMessage("cancel could not be persisted"))
+                } else {
+                    finishCancel(taskId)
+                    CancelOutcome(taskId, true)
+                }
             }
             CancelAction.DELETE_QUEUE -> {
                 val promptId = task.promptId
@@ -143,9 +170,12 @@ class GenerationManager(
                     patch(taskId) { it.copy(recoveryNote = "Server queue delete failed: $message") }
                     return CancelOutcome(taskId, false, message)
                 }
-                patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }
-                finishCancel(taskId)
-                CancelOutcome(taskId, true)
+                if (!patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }) {
+                    CancelOutcome(taskId, false, persistenceMessage("remote queue removal succeeded; local cancel was not saved"))
+                } else {
+                    finishCancel(taskId)
+                    CancelOutcome(taskId, true)
+                }
             }
             CancelAction.INTERRUPT_SERVER -> {
                 // ComfyUI /interrupt is server-scoped, not a per-prompt cancel.
@@ -160,9 +190,12 @@ class GenerationManager(
                     }
                     return CancelOutcome(taskId, false, message)
                 }
-                patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }
-                finishCancel(taskId)
-                CancelOutcome(taskId, true)
+                if (!patch(taskId) { it.copy(phase = GenerationPhase.CANCELLING, recoveryNote = null) }) {
+                    CancelOutcome(taskId, false, persistenceMessage("server interrupt succeeded; local cancel was not saved"))
+                } else {
+                    finishCancel(taskId)
+                    CancelOutcome(taskId, true)
+                }
             }
             CancelAction.NOT_CANCELLABLE -> CancelOutcome(taskId, false)
         }
@@ -230,7 +263,7 @@ class GenerationManager(
             queuePosition = null,
             localPending = false,
         )
-        patch(taskId, allowTerminalExit = true) { recovering }
+        if (!patch(taskId, allowTerminalExit = true) { recovering }) return false
         startService()
         launchRecovery(recovering)
         return true
@@ -255,13 +288,22 @@ class GenerationManager(
                 points = updated.request.estimatedCloudCost,
                 remoteTaskId = updated.promptId,
                 providerId = updated.request.provider,
+                endpoint = updated.request.serverUrl,
             )
         }
-        patch(updated.taskId, allowTerminalExit) {
+        val persisted = patch(updated.taskId, allowTerminalExit) {
             updated.copy(
                 localPending = false,
                 spendRecorded = updated.spendRecorded || firstCloudSubmit || updated.taskId in spendRecordedIds,
             )
+        }
+        if (!persisted) {
+            // Never discard provider recovery data after a failed local commit.
+            // The remote job may already be paid for, so include its ID and
+            // prevent the runner from reporting a durable SUCCESS.
+            val remote = updated.promptId?.takeIf { it.isNotBlank() }
+            val suffix = remote?.let { "; remote task ID=$it; check the provider before retrying" }.orEmpty()
+            throw ComfyException(persistenceMessage("generation task could not be saved$suffix"))
         }
     }
 
@@ -437,9 +479,13 @@ class GenerationManager(
                     if (current?.localPending == true && current.isActive && !serverBusyNow && !_localQueuePaused.value) {
                         val updated = current.copy(localPending = false, recoveryNote = null)
                         val next = prune(_tasks.value.map { if (it.taskId == current.taskId) updated else it })
-                        _tasks.value = next
-                        taskStore.save(next)
-                        launch = updated
+                        try {
+                            taskStore.save(next)
+                            _tasks.value = next
+                            launch = updated
+                        } catch (error: Exception) {
+                            _persistenceError.value = error.message ?: error.javaClass.simpleName
+                        }
                     }
                 }
                 launch?.let { task -> launchTracked(task.taskId) { execute(task) } }
@@ -457,25 +503,38 @@ class GenerationManager(
         taskId: String,
         allowTerminalExit: Boolean = false,
         transform: (GenerationTask) -> GenerationTask,
-    ) {
-        mutateTasks { list ->
-            prune(list.map { current ->
-                if (current.taskId != taskId) current
-                else {
-                    val next = transform(current)
-                    if (current.isTerminal && !next.isTerminal && !allowTerminalExit) current else next
-                }
-            })
-        }
+    ): Boolean = mutateTasks { list ->
+        prune(list.map { current ->
+            if (current.taskId != taskId) current
+            else {
+                val next = transform(current)
+                if (current.isTerminal && !next.isTerminal && !allowTerminalExit) current else next
+            }
+        })
     }
 
-    private fun mutateTasks(transform: (List<GenerationTask>) -> List<GenerationTask>) {
+    /**
+     * Publishes memory only after durable state was written. A failed write keeps
+     * the previous queue (and surfaces [persistenceError]) instead of pretending
+     * that a paid/recoverable task was saved.
+     */
+    private fun mutateTasks(transform: (List<GenerationTask>) -> List<GenerationTask>): Boolean {
         synchronized(taskLock) {
             val old = _tasks.value
             val next = transform(old)
-            _tasks.value = next
             // Preview/progress can update many times per second; only durable recovery state hits disk.
-            if (durable(old) != durable(next)) taskStore.save(next)
+            if (durable(old) == durable(next)) {
+                _tasks.value = next
+                return true
+            }
+            return try {
+                taskStore.save(next)
+                _tasks.value = next
+                true
+            } catch (error: Exception) {
+                _persistenceError.value = error.message ?: error.javaClass.simpleName
+                false
+            }
         }
     }
 

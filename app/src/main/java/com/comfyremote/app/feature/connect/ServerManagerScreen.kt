@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -50,6 +51,7 @@ fun ServerManagerScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var managing by remember { mutableStateOf<ServerEntry?>(null) }
+    var configuringTailnet by remember { mutableStateOf(false) }
     LaunchedEffect(viewModel) { viewModel.connectedEvents.collect { onConnected() } }
 
     IrisScaffold(
@@ -82,6 +84,16 @@ fun ServerManagerScreen(
                     )
                 }
             }
+            item("tailscale-directory-settings") {
+                IrisTonalButton(
+                    text = stringResource(
+                        if (state.tailscaleConfigured) R.string.connect_tailscale_enabled
+                        else R.string.connect_tailscale_setup
+                    ),
+                    onClick = { configuringTailnet = true },
+                    icon = Icons.Outlined.Dns,
+                )
+            }
             state.error?.let { error ->
                 item("error") { InfoBanner(text = error, tone = BannerTone.Error) }
             }
@@ -98,6 +110,20 @@ fun ServerManagerScreen(
                 }
             }
         }
+    }
+
+    if (configuringTailnet) {
+        TailscaleDiscoveryDialog(
+            configured = state.tailscaleConfigured,
+            onDismiss = { configuringTailnet = false },
+            onSave = { token ->
+                if (viewModel.configureTailscaleDiscovery(token)) configuringTailnet = false
+            },
+            onDisable = {
+                viewModel.disableTailscaleDiscovery()
+                configuringTailnet = false
+            },
+        )
     }
 
     managing?.let { server ->

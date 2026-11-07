@@ -10,15 +10,24 @@
     <string name="connect_connecting">连接中…</string>
     <string name="connect_saved">已保存</string>
     <string name="connect_cloud_only">跳过本地连接，仅使用云端模型</string>
-    <string name="connect_find_nearby">查找附近的 ComfyUI</string>
-    <string name="connect_scanning">扫描局域网…</string>
+    <string name="connect_find_nearby">搜索 ComfyUI（局域网 / VPN / 已保存）</string>
+    <string name="connect_scanning">扫描网络及已保存服务器…</string>
     <string name="connect_found">发现 ComfyUI</string>
     <string name="connect_manage_server">管理服务器</string>
     <string name="connect_alias">别名</string>
 
     <!-- 消息 -->
     <string name="connect_failed">连接失败：%1$s</string>
-    <string name="connect_scan_none">未发现 ComfyUI（确认手机与电脑在同一 Wi-Fi）</string>
+    <string name="connect_scan_none">在扫描的局域网 / VPN 网段和已保存地址中未发现服务器；其他 Tailscale 节点仍可能通过 IP 或 MagicDNS 连接。</string>
     <string name="connect_not_on_wifi">无法确定 Wi-Fi 网段（未连接或使用流量）</string>
-    <string name="connect_scan_vpn_hint">只扫描了本机 /24 网段。Tailscale/VPN 场景请手动输入设备 IP 或 MagicDNS 名称。</string>
+    <string name="connect_scan_vpn_hint">已检查局域网 / VPN 的 /24 网段和已保存服务器，并未枚举整个 Tailnet。其他 Tailscale 节点可手动输入 IP 或 MagicDNS 名称连接。</string>
+    <string name="connect_tailscale_setup">启用 Tailnet 设备发现（可选）</string>
+    <string name="connect_tailscale_enabled">已配置 Tailnet 设备发现</string>
+    <string name="connect_tailscale_title">发现未保存的 Tailnet 设备</string>
+    <string name="connect_tailscale_description">可选：提供仅具备 devices:core:read 权限的 Tailscale API 访问令牌。Iris 将从 api.tailscale.com 获取设备列表，探测 8188 端口，仅显示可访问的 ComfyUI；不配置令牌仍可搜索局域网、VPN 网段和已保存服务器。</string>
+    <string name="connect_tailscale_token">只读 Tailscale API 令牌</string>
+    <string name="connect_tailscale_token_hint">保存在应用的本地凭据库中，不会发送给 ComfyUI 服务器。</string>
+    <string name="connect_tailscale_disable">停用 Tailnet API 发现</string>
+    <string name="connect_tailscale_access_denied">Tailscale 设备列表访问被拒绝，请检查令牌及 devices:core:read 权限。</string>
+    <string name="connect_tailscale_api_unavailable">暂时无法获取 Tailscale 设备列表，仍将扫描局域网、VPN 和已保存的地址。</string>
 </resources>

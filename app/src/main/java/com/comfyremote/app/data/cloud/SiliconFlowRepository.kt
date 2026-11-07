@@ -40,6 +40,7 @@ class SiliconFlowRepository(
         val account = account()
         if (account.token.isBlank()) return emptyList()
         val models = pulledModels(settings, id, account.baseUrl, account.token) { discoverModels() }
+            .filter(CloudModelParameters::looksLikeMediaModel)
         return settings.enabledModels(id, models).map { model ->
             CloudWorkflowSummary(
                 id = model,
@@ -65,39 +66,17 @@ class SiliconFlowRepository(
         val headers = auth(account)
         val base = account.baseUrl.trimEnd('/')
         return if (kindOf(workflowId) == "video") {
-            val payload = JSONObject()
-                .put("model", workflowId)
-                .put("prompt", body.optString("prompt"))
-            body.optString("image_size").takeIf { it.isNotBlank() }?.let { payload.put("image_size", it) }
-            body.optString("negative_prompt").takeIf { it.isNotBlank() }?.let { payload.put("negative_prompt", it) }
-            body.opt("seed")?.let { payload.put("seed", it) }
-            if (workflowId.contains("I2V", ignoreCase = true)) {
-                val image = body.optString("image").takeIf { it.isNotBlank() }
-                    ?: throw ComfyException("This video model requires a first-frame image")
-                payload.put("image", image)
-            }
+            val payload = buildSiliconFlowVideoPayload(workflowId, body)
             val response = CloudHttp.postJson("$base/video/submit", payload, headers)
             val requestId = response.optString("requestId")
                 .takeIf { it.isNotBlank() }
                 ?: response.optJSONObject("data")?.optString("requestId")?.takeIf { it.isNotBlank() }
                 ?: throw ComfyException(CloudHttp.errorMessage(response, "SiliconFlow returned no requestId"))
+            taskStore.saveAcceptedTask(id, requestId, JSONObject().put("base", base), label)
             pending[requestId] = Pending(workflowId, "video", base)
-            taskStore.savePending(id, requestId, JSONObject().put("base", base))
             requestId
         } else {
-            val payload = JSONObject()
-                .put("model", workflowId)
-                .put("prompt", body.optString("prompt"))
-            listOf("negative_prompt", "image_size", "prompt_enhancement").forEach { key ->
-                body.optString(key).takeIf { it.isNotBlank() }?.let { payload.put(key, it) }
-            }
-            body.opt("image")?.toString()?.takeIf { it.isNotBlank() }?.let { payload.put("image", it) }
-            body.optInt("batch_size", 1).takeIf { it > 0 }?.let { payload.put("batch_size", it) }
-            body.optInt("num_inference_steps", 20).takeIf { it > 0 }?.let { payload.put("num_inference_steps", it) }
-            body.opt("guidance_scale")?.let {
-                it.toString().toDoubleOrNull()?.let { value -> payload.put("guidance_scale", value) }
-            }
-            body.opt("seed")?.let { payload.put("seed", it) }
+            val payload = buildSiliconFlowImagePayload(workflowId, body)
             val response = CloudHttp.postJson("$base/images/generations", payload, headers)
             val items = response.optJSONArray("images") ?: response.optJSONArray("data")
                 ?: throw ComfyException(CloudHttp.errorMessage(response, "SiliconFlow returned no images"))
@@ -181,14 +160,8 @@ class SiliconFlowRepository(
 
     private fun kindOf(model: String): String = CloudModelParameters.kindOf(model)
 
-    private fun looksLikeMediaModel(model: String): Boolean {
-        val lower = model.lowercase()
-        return listOf(
-            "image", "kolors", "flux", "stable", "sd3", "sdxl", "wan2", "video",
-            "seedance", "seedream", "kling", "hailuo", "cogvideo", "z-image",
-            "hunyuanvideo", "hunyuan-video", "hunyuanimage", "hunyuan-image",
-        ).any { it in lower }
-    }
+    private fun looksLikeMediaModel(model: String): Boolean =
+        CloudModelParameters.looksLikeMediaModel(model)
 
     private fun extensionOf(url: String): String =
         url.substringBefore('?').substringAfterLast('.', "").lowercase().takeIf { it.length in 2..5 }.orEmpty()
@@ -200,4 +173,58 @@ class SiliconFlowRepository(
         const val PROVIDER = "siliconflow"
         const val DEFAULT_BASE = "https://api.siliconflow.cn/v1"
     }
+}
+
+/** Strict JSON types matter: SiliconFlow rejects stringified booleans and oversized seeds. */
+internal fun buildSiliconFlowImagePayload(workflowId: String, body: JSONObject): JSONObject {
+    val payload = JSONObject()
+        .put("model", workflowId)
+        .put("prompt", body.optString("prompt"))
+    listOf("negative_prompt", "image_size").forEach { key ->
+        body.optString(key).takeIf { it.isNotBlank() }?.let { payload.put(key, it) }
+    }
+    if (body.has("prompt_enhancement")) {
+        payload.put("prompt_enhancement", body.optBoolean("prompt_enhancement", false))
+    }
+    // Re-number non-blank slots so image, image3 still becomes image, image2.
+    CloudModelParameters.referenceImageInputs(body).forEachIndexed { index, (_, value) ->
+        payload.put(if (index == 0) "image" else "image${index + 1}", value)
+    }
+    body.optInt("num_inference_steps", 20).takeIf { it > 0 }?.let { payload.put("num_inference_steps", it) }
+    body.opt("guidance_scale")?.let {
+        it.toString().toDoubleOrNull()?.let { value -> payload.put("guidance_scale", value) }
+    }
+    body.opt("seed")?.let { payload.put("seed", it) }
+    return payload
+}
+
+/** MiniMax-H3 on SiliconFlow uses the newer duration/resolution/ratio/images contract. */
+internal fun buildSiliconFlowVideoPayload(workflowId: String, body: JSONObject): JSONObject {
+    val payload = JSONObject()
+        .put("model", workflowId)
+        .put("prompt", body.optString("prompt"))
+    if (workflowId.contains("MiniMax-H3", ignoreCase = true)) {
+        body.opt("duration")?.toString()?.toIntOrNull()
+            ?.let { payload.put("duration", it.coerceIn(5, 15)) }
+        body.optString("resolution").takeIf { it.isNotBlank() }?.let { payload.put("resolution", it) }
+        body.optString("ratio").takeIf { it.isNotBlank() }?.let { payload.put("ratio", it) }
+        val images = JSONArray()
+        body.optString("first_frame_image").takeIf { it.isNotBlank() }?.let { url ->
+            images.put(JSONObject().put("url", url).put("role", "first_frame"))
+        }
+        body.optString("last_frame_image").takeIf { it.isNotBlank() }?.let { url ->
+            images.put(JSONObject().put("url", url).put("role", "last_frame"))
+        }
+        if (images.length() > 0) payload.put("images", images)
+        return payload
+    }
+    body.optString("image_size").takeIf { it.isNotBlank() }?.let { payload.put("image_size", it) }
+    body.optString("negative_prompt").takeIf { it.isNotBlank() }?.let { payload.put("negative_prompt", it) }
+    body.opt("seed")?.let { payload.put("seed", it) }
+    if (workflowId.contains("I2V", ignoreCase = true)) {
+        val image = body.optString("image").takeIf { it.isNotBlank() }
+            ?: throw ComfyException("This video model requires a first-frame image")
+        payload.put("image", image)
+    }
+    return payload
 }

@@ -291,7 +291,7 @@ class GenerationRunner(
         var failedDownloads = 0
         outputImages.forEachIndexed { index, image ->
             runCatching {
-                val file = history.newMediaFile(promptId, index, extensionFor(image))
+                val file = history.newMediaFile(task.taskId, index, extensionFor(image))
                 if (!file.isFile || file.length() == 0L) {
                     // Write to .tmp and rename so a crash cannot leave a half file as a result.
                     val temp = java.io.File(file.parentFile, file.name + ".tmp")
@@ -306,7 +306,7 @@ class GenerationRunner(
                         throw t
                     }
                 }
-                results += ResultImage(id = "$promptId:$index", localPath = file.absolutePath)
+                results += ResultImage(id = "${task.taskId}:$index", localPath = file.absolutePath)
             }.onFailure { failedDownloads++ }
         }
         if (outputImages.isNotEmpty() && results.isEmpty()) {
@@ -330,7 +330,7 @@ class GenerationRunner(
 
         history.add(
             HistoryItem(
-                id = promptId,
+                id = task.taskId,
                 wfPath = task.request.workflowPath,
                 wfName = task.request.workflowName,
                 time = System.currentTimeMillis(),

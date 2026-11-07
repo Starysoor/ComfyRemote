@@ -12,6 +12,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.comfyremote.app.data.generation.GenerationNotificationController
+import com.comfyremote.app.data.generation.GenerationRequest
 import com.comfyremote.app.navigation.ComfyRemoteRoot
 import com.comfyremote.app.navigation.Routes
 import com.comfyremote.app.ui.IrisTheme
@@ -64,6 +65,26 @@ class MainActivity : ComponentActivity() {
 
     private fun handleEntryIntent(intent: Intent?) {
         intent ?: return
+        if (BuildConfig.DEBUG && intent.action == ACTION_QA_SMOKE) {
+            // Debug-only CI smoke task: exercises persistence + foreground service
+            // against an unreachable local port, never a paid cloud provider.
+            runCatching {
+                container.generationManager.submit(
+                    GenerationRequest(
+                        provider = "comfyui",
+                        serverUrl = "http://127.0.0.1:9",
+                        workflowPath = "qa-smoke.json",
+                        workflowName = "QA smoke",
+                        fieldValues = emptyMap(),
+                        randomSeed = false,
+                        nodeTitles = emptyMap(),
+                        fields = emptyList(),
+                        convertedPrompt = org.json.JSONObject(),
+                    )
+                )
+            }
+            return
+        }
         intent.getStringExtra(GenerationNotificationController.EXTRA_TASK_ID)?.let { taskId ->
             container.navigationRequests.request(Routes.task(taskId))
         }
@@ -71,5 +92,9 @@ class MainActivity : ComponentActivity() {
             // Cloud workflows can consume shared media without a local ComfyUI session.
             container.navigationRequests.request(Routes.CREATE)
         }
+    }
+
+    companion object {
+        const val ACTION_QA_SMOKE = "com.comfyremote.app.QA_SMOKE"
     }
 }

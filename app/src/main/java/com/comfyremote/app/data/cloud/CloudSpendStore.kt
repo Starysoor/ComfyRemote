@@ -18,8 +18,19 @@ data class CloudSpendEntry(
     val estimated: Boolean = true,
     /** Provider task id, used to avoid double-counting after recovery. */
     val remoteTaskId: String? = null,
+    /** Endpoint identity for this submitted task, null for legacy records. */
+    val endpoint: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
 )
+
+/** Identity includes provider and endpoint: two providers may issue the same job number. */
+internal fun isSameBilledTask(
+    entry: CloudSpendEntry,
+    remoteTaskId: String,
+    providerId: String?,
+    endpoint: String?,
+): Boolean = entry.remoteTaskId == remoteTaskId &&
+    entry.providerId == providerId && entry.endpoint == endpoint
 
 /** Local, best-effort ledger of submitted cloud jobs. Never represents a bill. */
 class CloudSpendStore(private val prefs: SharedPreferences) {
@@ -34,8 +45,11 @@ class CloudSpendStore(private val prefs: SharedPreferences) {
         points: Int?,
         remoteTaskId: String? = null,
         providerId: String? = null,
+        endpoint: String? = null,
     ) = synchronized(lock) {
-        if (remoteTaskId != null && _entries.value.any { it.remoteTaskId == remoteTaskId }) {
+        if (remoteTaskId != null && _entries.value.any {
+                isSameBilledTask(it, remoteTaskId, providerId, endpoint)
+            }) {
             return@synchronized
         }
         val entry = CloudSpendEntry(
@@ -43,6 +57,7 @@ class CloudSpendStore(private val prefs: SharedPreferences) {
             providerId = providerId,
             points = points,
             remoteTaskId = remoteTaskId,
+            endpoint = endpoint,
         )
         val list = (listOf(entry) + _entries.value).take(MAX_ENTRIES)
         write(list)
@@ -65,6 +80,7 @@ class CloudSpendStore(private val prefs: SharedPreferences) {
                 points = if (o.has("points") && !o.isNull("points")) o.optInt("points") else null,
                 estimated = o.optBoolean("estimated", true),
                 remoteTaskId = o.optString("remoteTaskId").ifEmpty { null },
+                endpoint = o.optString("endpoint").ifEmpty { null },
                 createdAt = o.optLong("at"),
             )
         }
@@ -81,6 +97,7 @@ class CloudSpendStore(private val prefs: SharedPreferences) {
                     .put("points", entry.points ?: JSONObject.NULL)
                     .put("estimated", entry.estimated)
                     .put("remoteTaskId", entry.remoteTaskId ?: "")
+                    .put("endpoint", entry.endpoint ?: "")
                     .put("at", entry.createdAt)
             )
         }

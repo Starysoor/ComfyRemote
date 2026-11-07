@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudQueue
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -51,6 +52,7 @@ fun ConnectScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var managing by remember { mutableStateOf<ServerEntry?>(null) }
+    var configuringTailnet by remember { mutableStateOf(false) }
     LaunchedEffect(viewModel) { viewModel.connectedEvents.collect { onConnected() } }
 
     IrisScaffold { pad ->
@@ -82,6 +84,14 @@ fun ConnectScreen(
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
             ScanResults(state = state, onPick = viewModel::setUrl)
+            IrisSecondaryButton(
+                text = stringResource(
+                    if (state.tailscaleConfigured) R.string.connect_tailscale_enabled
+                    else R.string.connect_tailscale_setup
+                ),
+                onClick = { configuringTailnet = true },
+                icon = Icons.Outlined.Dns,
+            )
 
             if (state.servers.isNotEmpty()) {
                 SectionHeader(stringResource(R.string.connect_saved))
@@ -106,6 +116,20 @@ fun ConnectScreen(
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
         }
+    }
+
+    if (configuringTailnet) {
+        TailscaleDiscoveryDialog(
+            configured = state.tailscaleConfigured,
+            onDismiss = { configuringTailnet = false },
+            onSave = { token ->
+                if (viewModel.configureTailscaleDiscovery(token)) configuringTailnet = false
+            },
+            onDisable = {
+                viewModel.disableTailscaleDiscovery()
+                configuringTailnet = false
+            },
+        )
     }
 
     managing?.let { server ->

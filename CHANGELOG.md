@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.3.2 — 2026-11-04
+
+### Added
+
+- Multi-reference image inputs follow the real model contract: GPT Image / AutoDL Models / custom OpenAI-compatible models expose up to 4 image slots and send repeated `image[]` multipart parts; Gemini image models send every reference as its own `inlineData` part (up to 4 slots); SiliconFlow `Qwen-Image-Edit-2509` exposes `image` / `image2` / `image3`.
+- Real emulator verification covers AutoDL multi-image editing and SiliconFlow `Qwen-Image-Edit-2509` multi-image editing.
+- SiliconFlow reference slots are re-numbered contiguously, so filling `image` + `image3` still sends `image` + `image2`.
+
+### Fixed
+
+- Third-party reference-image URLs are downloaded without provider credentials, so an image host can never receive `Authorization` / `x-goog-api-key`.
+- A filled but unreadable optional reference image now blocks submission instead of silently becoming a cheaper request with missing references.
+- Task and storyboard persistence now writes atomically before publishing state; failed writes surface an error, block task submission, and never delete media that the old project still references.
+- AutoDL Models image tasks now clear the delegated base64 result cache on `forgetTask`, preventing long-session memory growth.
+- SiliconFlow's removed image `batch_size` field is no longer shown or sent; multi-image runs use Iris' own batch queue.
+- SiliconFlow `MiniMaxAI/MiniMax-H3` is recognized as video and uses the new duration/resolution/ratio/`images[]` contract; Wan2.2 models show a retirement warning.
+- Custom OpenAI manually saved model ids are no longer filtered by Iris media-name keywords.
+- The catalog schema migration now removes only known legacy preset ids and preserves user-selected models and explicitly empty lists.
+- Gemini capability matrices now match model families: Flash gets extreme ratios and 0.5K/2K/4K, Pro gets 1K/2K/4K without the unsupported extreme ratios.
+- The emulator smoke workflow now runs for PRs, release branches, version tags and manual dispatches, and submits a debug-only local smoke task.
+- SiliconFlow random seeds now respect the provider limit (9,999,999,999), so image generation no longer fails with HTTP 400 `seed: Must be less than or equal to 9.999999999e+09`.
+- SiliconFlow boolean parameters such as `prompt_enhancement` are sent as JSON booleans instead of strings.
+- AutoDL Models `/models` is filtered to real image/video models; Claude, DeepSeek and GPT text models no longer appear as image models and cannot be selected by mistake.
+- SiliconFlow edit models no longer show the unsupported `image_size` field; Qwen-Image-Edit step limits are capped at 20 and CFG is omitted for edit models.
+- Gemini image aspect-ratio options now include the documented wider/taller ratios; the extra wide/tall ratios are only shown for Gemini 3 Pro Image.
+- OpenAI 2048px sizes are only shown for GPT Image 2.5 models, and custom OpenAI endpoints no longer list pure text models.
+- The generation foreground service now calls `startForeground()` immediately, preventing `ForegroundServiceDidNotStartInTimeException` crashes on cloud submit.
+- Cloud catalog errors now include the exception class when the provider supplies no message.
+
+### Verified
+
+- Emulator with real AutoDL Models and SiliconFlow keys: AutoDL `gpt-image-2` text/reference/multi-reference generation, SiliconFlow `Kwai-Kolors/Kolors` and reference/multi-reference `Qwen-Image-Edit-2509` all completed; AutoDL model list shows only six media models; no foreground-service crash on submit.
+- Version `2.3.2` (versionCode 28).
+
 ## 2.3.1 — 2026-11-04
 
 ### Added

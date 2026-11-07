@@ -29,19 +29,14 @@ class CloudProviderSettingsStore(
     }
 
     /**
-     * Earlier builds filled official provider model lists from hard-coded
-     * presets when settings were saved. Drop those lists once so every model in
-     * the picker is genuinely pulled from the provider. Custom providers keep
-     * their manually entered identifiers.
+     * Never erase saved model IDs during upgrade. In schema v2 any model list
+     * could already have come from manual selection or a real provider pull.
+     * A known older preset ID is indistinguishable from a user's choice.
      */
     private fun migratePresetCatalogs() {
-        val version = prefs.getInt(CATALOG_SCHEMA_KEY, 0)
-        if (version >= CATALOG_SCHEMA_VERSION) return
-        val editor = prefs.edit()
-        listOf("openai", "gemini", "replicate", "siliconflow", "autodl_model").forEach { providerId ->
-            editor.remove("cloud_${providerId}_models")
+        if (prefs.getInt(CATALOG_SCHEMA_KEY, 0) < CATALOG_SCHEMA_VERSION) {
+            prefs.edit().putInt(CATALOG_SCHEMA_KEY, CATALOG_SCHEMA_VERSION).apply()
         }
-        editor.putInt(CATALOG_SCHEMA_KEY, CATALOG_SCHEMA_VERSION).apply()
     }
 
     private fun bump() {
@@ -217,7 +212,7 @@ class CloudProviderSettingsStore(
 
     companion object {
         private const val CATALOG_SCHEMA_KEY = "cloud_catalog_schema"
-        private const val CATALOG_SCHEMA_VERSION = 2
+        private const val CATALOG_SCHEMA_VERSION = 3
 
         const val MIN_POLL_SECONDS = 2
         const val MAX_POLL_SECONDS = 60

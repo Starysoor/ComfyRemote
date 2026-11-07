@@ -3,11 +3,14 @@ name: QA Android Emulator Smoke
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: ['release/**']
+    tags: ['v*']
+  workflow_dispatch:
 
 jobs:
   emulator-smoke:
-    # Release-only device smoke gate; never runs on normal feature PRs.
-    if: github.event.pull_request.number == 39
+    # Runs for release-candidate PRs, release/* branches, version tags and manual dispatches.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -45,7 +48,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: iris-v2.3.0-qa-emulator-evidence
+          name: iris-qa-emulator-evidence-${{ github.sha }}
           path: tools/qa-screens/
           retention-days: 7
           if-no-files-found: warn

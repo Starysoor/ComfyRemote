@@ -112,6 +112,7 @@
     <string name="gen_vm_cloud_token_missing">Configure %1$s credentials in Settings → Cloud services</string>
     <string name="gen_vm_cloud_provider_disabled">%1$s is disabled. Enable it in Cloud services to run this model.</string>
     <string name="gen_vm_fix_compat">Fix compatibility issue first: %1$s</string>
+    <string name="gen_vm_persist_failed">Could not save task state: %1$s. Nothing was submitted.</string>
     <plurals name="gen_vm_batch_created">
         <item quantity="one">Created %1$d batch task</item>
         <item quantity="other">Created %1$d batch tasks</item>

@@ -24,6 +24,15 @@ class GenerationService : Service() {
         super.onCreate()
         controller = GenerationNotificationController(this)
         controller.ensureChannels()
+        // Android requires startForeground() within 5s of startForegroundService().
+        // Do it synchronously before collecting tasks so a slow first emission
+        // can never crash the app with ForegroundServiceDidNotStartInTimeException.
+        ServiceCompat.startForeground(
+            this,
+            GenerationNotificationController.RUNNING_NOTIFICATION_ID,
+            controller.startingNotification(),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+        )
         val manager = (application as com.comfyremote.app.ComfyRemoteApp).container.generationManager
         scope.launch {
             manager.tasks.collect { tasks ->

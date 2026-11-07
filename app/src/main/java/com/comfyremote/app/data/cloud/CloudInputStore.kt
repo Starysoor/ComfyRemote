@@ -3,9 +3,12 @@ package com.comfyremote.app.data.cloud
 import android.content.Context
 import android.net.Uri
 import com.comfyremote.app.data.media.ImagePreprocessor
+import com.comfyremote.app.data.media.BoundedMediaInput
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.util.Base64
 
 /**
@@ -20,7 +23,9 @@ class CloudInputStore(private val context: Context) {
 
     /** Copies a gallery/camera Uri into app storage and returns `local:<path>`. */
     suspend fun saveFromUri(uri: Uri, maxDimension: Int = 1024): String = withContext(Dispatchers.IO) {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        val bytes = context.contentResolver.openInputStream(uri)?.use {
+            BoundedMediaInput.read(it, BoundedMediaInput.MAX_IMAGE_BYTES)
+        }
             ?: throw IllegalStateException("读取图片失败")
         val mime = context.contentResolver.getType(uri)
         saveBytes(bytes, mime, maxDimension)
@@ -30,18 +35,32 @@ class CloudInputStore(private val context: Context) {
     suspend fun saveFromFile(path: String, maxDimension: Int = 1024): String = withContext(Dispatchers.IO) {
         val file = File(path)
         if (!file.isFile) throw IllegalStateException("图片文件不存在")
+        if (file.length() > BoundedMediaInput.MAX_IMAGE_BYTES) {
+            throw IllegalArgumentException("Image source exceeds 32 MiB")
+        }
         saveBytes(file.readBytes(), mimeForExt(file.extension), maxDimension)
     }
 
     /** Copies an audio file used by a hosted TTS/lip-sync workflow. */
     suspend fun saveAudioFromUri(uri: Uri): String = withContext(Dispatchers.IO) {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw IllegalStateException("读取音频失败")
         val mime = context.contentResolver.getType(uri)
         val ext = extensionForAudio(mime, uri.lastPathSegment)
         val target = File(audioDir, "cloud_audio_${System.currentTimeMillis()}_${(1000..9999).random()}.$ext")
-        target.writeBytes(bytes)
-        PREFIX + target.absolutePath
+        val tmp = File(audioDir, target.name + ".tmp")
+        try {
+            val input = context.contentResolver.openInputStream(uri)
+                ?: throw IllegalStateException("读取音频失败")
+            input.use { source ->
+                FileOutputStream(tmp).use { output ->
+                    BoundedMediaInput.copy(source, output, BoundedMediaInput.MAX_AUDIO_BYTES)
+                    output.fd.sync()
+                }
+            }
+            if (!tmp.renameTo(target)) throw IOException("Cannot store audio safely")
+            PREFIX + target.absolutePath
+        } finally {
+            tmp.delete()
+        }
     }
 
     fun isAudioValue(value: String): Boolean {
@@ -51,6 +70,9 @@ class CloudInputStore(private val context: Context) {
 
     suspend fun saveBytes(bytes: ByteArray, mime: String?, maxDimension: Int = 1024): String =
         withContext(Dispatchers.IO) {
+            if (bytes.size > BoundedMediaInput.MAX_IMAGE_BYTES) {
+                throw IllegalArgumentException("Image source exceeds 32 MiB")
+            }
             // Always normalize to JPEG: phone galleries may return HEIC/AVIF/GIF or a
             // null MIME, and hosted workflows only accept JPEG/PNG/WebP. Re-encoding
             // also keeps the base64 request small.
@@ -65,7 +87,9 @@ class CloudInputStore(private val context: Context) {
     fun readBytes(value: String): ByteArray? {
         val path = localPath(value) ?: return null
         val file = File(path)
-        return if (file.isFile) runCatching { file.readBytes() }.getOrNull() else null
+        return if (file.isFile && file.length() <= BoundedMediaInput.MAX_AUDIO_BYTES) {
+            runCatching { file.readBytes() }.getOrNull()
+        } else null
     }
 
     fun localPath(value: String): String? =
@@ -84,7 +108,7 @@ class CloudInputStore(private val context: Context) {
         }
         val path = localPath(value) ?: return null
         val file = File(path)
-        if (!file.isFile) return null
+        if (!file.isFile || file.length() > BoundedMediaInput.MAX_AUDIO_BYTES) return null
         val bytes = runCatching { file.readBytes() }.getOrNull() ?: return null
         val encoded = Base64.getEncoder().encodeToString(bytes)
         return "data:${mimeForExt(file.extension)};base64,$encoded"

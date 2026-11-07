@@ -42,6 +42,20 @@ The `redesign/` folder contains the light and dark Iris design-system screens:
 | `iris-appsettings.png` | App/interface settings |
 | `iris-launcher.png` | Launcher icon |
 
+## v2.3.2 provider connectivity
+
+Captured on `deck34` with real AutoDL Models and SiliconFlow API keys. The keys
+are not stored in the repository.
+
+| File | What it shows |
+|---|---|
+| `iris-v232-autodl-models.png` | AutoDL `/models` filtered to six real media models; Claude/DeepSeek/GPT text models are gone |
+| `iris-v232-gptimage-task.png` | Real AutoDL Models `gpt-image-2` text generation completed |
+| `iris-v232-multi-filled.png` | Four multi-reference slots exposed; two images filled |
+| `iris-v232-multi-task.png` | Real AutoDL multi-image edit completed (green/yellow + orange/purple references combined) |
+| `iris-v232-sf-multi-filled4.png` | SiliconFlow `Qwen-Image-Edit-2509` exposes three slots; two images filled |
+| `iris-v232-sf-multi-task.png` | Real SiliconFlow multi-image edit completed with `image` / `image2` |
+
 ## Storyboard workspace polish
 
 Captured on `deck34` against a previously completed real storyboard project, so

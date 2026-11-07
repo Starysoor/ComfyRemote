@@ -28,6 +28,7 @@ import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationRequest
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.media.ImagePreprocessor
+import com.comfyremote.app.data.media.BoundedMediaInput
 import com.comfyremote.app.data.media.decodeSampled
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.data.repository.PromptPreset
@@ -163,6 +164,16 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     private val storyboardReferenceValuesAtLoad = mutableMapOf<String, String>()
 
     init {
+        viewModelScope.launch {
+            container.generationManager.persistenceError.collect { error ->
+                if (error != null) {
+                    _state.update {
+                        it.copy(message = AppStrings.get(R.string.gen_vm_persist_failed, error))
+                    }
+                    container.generationManager.clearPersistenceError()
+                }
+            }
+        }
         viewModelScope.launch {
             container.promptPresetRepository.presets.collect { presets ->
                 _state.update { it.copy(presets = presets) }
@@ -410,7 +421,12 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
         val requests = (0 until count).map { index -> buildRequest(draft, cv, index) }
         val localQueue = _state.value.batchLocalQueue
         submitJob = viewModelScope.launch {
-            val ids = container.cloudSubmissionGate.submit(requests, localQueue, draft.cloud?.pricing?.label)
+            val ids = try {
+                container.cloudSubmissionGate.submit(requests, localQueue, draft.cloud?.pricing?.label)
+            } catch (error: Exception) {
+                _state.update { it.copy(message = error.message ?: error.javaClass.simpleName) }
+                return@launch
+            }
             if (ids.isEmpty()) return@launch
             if (projectId != null && shotId != null) {
                 container.storyboardStore.attachTask(projectId, shotId, ids.first())
@@ -537,7 +553,12 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
             createdAt = System.currentTimeMillis(),
         )
         viewModelScope.launch {
-            val ids = container.cloudSubmissionGate.submit(listOf(request), localQueue = false)
+            val ids = try {
+                container.cloudSubmissionGate.submit(listOf(request), localQueue = false)
+            } catch (error: Exception) {
+                _state.update { it.copy(message = error.message ?: error.javaClass.simpleName) }
+                return@launch
+            }
             ids.firstOrNull()?.let { newId -> _state.update { it.copy(activeTaskId = newId) } }
         }
     }
@@ -1000,7 +1021,9 @@ class GenerateViewModel(private val container: AppContainer) : ViewModel() {
     private suspend fun uploadOne(api: ComfyApi, uri: Uri, seq: Int): String {
         val ctx = container.app
         val raw = withContext(Dispatchers.IO) {
-            ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ctx.contentResolver.openInputStream(uri)?.use {
+                BoundedMediaInput.read(it, BoundedMediaInput.MAX_IMAGE_BYTES)
+            }
         } ?: throw ComfyException(AppStrings.get(R.string.gen_vm_read_image_failed))
         val (bytes, ext) = withContext(Dispatchers.IO) {
             ImagePreprocessor.prepare(

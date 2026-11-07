@@ -50,6 +50,7 @@
     <string name="tasks_local_interrupt_text">ComfyUI\'s /interrupt stops the server\'s current execution and may affect other clients using the same server. Iris cannot cancel only this running prompt.</string>
     <string name="tasks_msg_cancel_failed">Could not cancel: %1$s</string>
     <string name="tasks_msg_cancel_partial">%1$d task(s) could not be removed from the server queue</string>
+    <string name="tasks_msg_persist_failed">Could not save task state: %1$s</string>
     <string name="tasks_bulk_cancel_cloud_title">Cancel queued tasks?</string>
     <string name="tasks_bulk_cancel_cloud_text">%1$d already-submitted cloud job(s) may keep running and billing after you cancel.</string>
     <string name="tasks_cloud_cancel_title">Cancel cloud task?</string>

@@ -39,7 +39,7 @@ class GenerationRecoveryTest {
         assertEquals(GenerationPhase.SUCCEEDED, final.phase)
         assertTrue(final.recovered)
         assertTrue(updates.any { it.phase == GenerationPhase.QUEUED && it.queuePosition == 2 })
-        assertEquals("prompt-1", sink.items.single().id)
+        assertEquals("task-1", sink.items.single().id)
     }
 
     @Test

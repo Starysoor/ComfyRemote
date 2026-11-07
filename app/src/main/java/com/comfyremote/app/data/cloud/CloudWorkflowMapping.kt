@@ -117,6 +117,9 @@ object CloudWorkflowMapping {
         } else if (spec.rules.any { it.isVideo }) {
             out += "此工作流支持视频参考；当前版本会忽略这些可选素材"
         }
+        if (spec.id.contains("Wan2.2", ignoreCase = true)) {
+            out += "Wan2.2 系列将于 2026-11-10 停用，请尽快切换到 MiniMax-H3 等新模型"
+        }
         return out
     }
 
@@ -169,6 +172,8 @@ object CloudWorkflowMapping {
         name == "first_frame" || name == "first_frame_image" -> "首帧 · First frame"
         name == "last_frame" || name == "last_frame_image" -> "尾帧 · Last frame"
         name == "image" -> "参考图 · Reference image"
+        name.matches(Regex("image\\d+")) ->
+            "参考图 ${name.removePrefix("image").toIntOrNull() ?: ""} · Reference"
         name == "mask" -> "蒙版 · Mask"
         name == "aspect_ratio" || name == "ratio" -> "画幅 · Aspect ratio"
         name == "image_size" || name == "size" -> "尺寸 · Size"
@@ -212,18 +217,24 @@ object CloudPromptBuilder {
                 }
                 FieldKind.IMAGE, FieldKind.AUDIO -> {
                     if (raw.isNotBlank()) {
+                        // A filled slot is a user intent. Never silently drop it and
+                        // submit a cheaper request with missing references.
                         val resolved = resolveImage(raw)
-                        if (resolved != null) body.put(field.input, resolved)
-                        else if (field.required) throw PromptValidationException("${field.label} 读取失败")
+                            ?: throw PromptValidationException("${field.label} 读取失败，请重新选择素材")
+                        body.put(field.input, resolved)
                     } else if (field.required) {
                         throw PromptValidationException("${field.label} 不能为空")
                     }
                 }
                 FieldKind.SEED -> {
+                    val max = spec.rule(field.input)?.max
+                        ?.toLong()
+                        ?.coerceIn(1L, SEED_LIMIT)
+                        ?: SEED_LIMIT
                     val used = if (randomSeed) {
-                        Random.nextLong(1L, SEED_LIMIT)
+                        Random.nextLong(1L, max + 1L)
                     } else {
-                        raw.toLongOrNull() ?: 1L
+                        (raw.toLongOrNull() ?: 1L).coerceIn(1L, max)
                     }
                     body.put(field.input, used)
                     seeds[field.key] = used.toString()

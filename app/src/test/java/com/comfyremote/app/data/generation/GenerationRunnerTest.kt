@@ -68,7 +68,7 @@ class GenerationRunnerTest {
         val submittedSeed = backend.capturedPrompt!!.getJSONObject("2").getJSONObject("inputs").getLong("seed").toString()
         assertNotEquals("777", submittedSeed)
         assertEquals(submittedSeed, final.seedValues["2:seed"])
-        assertEquals("prompt-1", sink.items.single().id)
+        assertEquals("req-1", sink.items.single().id)
         assertEquals(submittedSeed, sink.items.single().values["2:seed"])
         assertEquals(submittedSeed, sink.items.single().seeds)
         assertTrue(phases.containsAll(listOf(GenerationPhase.QUEUEING, GenerationPhase.QUEUED, GenerationPhase.SUCCEEDED)))
@@ -159,8 +159,24 @@ class GenerationRunnerTest {
 
         assertEquals(GenerationPhase.SUCCEEDED, final.phase)
         assertEquals(1, final.results.size)
-        assertTrue(final.results.single().localPath.endsWith("prompt-1_1.png"))
+        assertTrue(final.results.single().localPath.endsWith("req-1_1.png"))
         assertEquals(1, sink.items.single().images.size)
+    }
+
+    @Test
+    fun identicalRemotePromptIdsKeepSeparateLocalTaskHistoryAndMedia() = runBlocking {
+        val sink = FakeHistorySink()
+        val first = task()
+        // A second ComfyUI server may legitimately issue the same prompt ID.
+        val second = task(request().copy(id = "req-2", serverUrl = "http://server-two:8188"))
+        val firstBackend = FakeBackend(history = mutableListOf(successEntry("a.png")))
+        val secondBackend = FakeBackend(history = mutableListOf(successEntry("b.png")))
+
+        val one = GenerationRunner(firstBackend, sink, pollDelayMs = 1, timeoutMs = 100).run(first) {}
+        val two = GenerationRunner(secondBackend, sink, pollDelayMs = 1, timeoutMs = 100).run(second) {}
+
+        assertEquals(listOf("req-1", "req-2"), sink.items.map { it.id })
+        assertNotEquals(one.results.single().localPath, two.results.single().localPath)
     }
 
     @Test

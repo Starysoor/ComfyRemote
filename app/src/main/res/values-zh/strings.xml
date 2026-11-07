@@ -67,4 +67,5 @@
     <string name="price_per_run">%1$s / 次</string>
     <string name="price_range_per_run">%1$s–%2$s / 次</string>
     <string name="price_platform">按平台计费</string>
+    <string name="board_err_missing_task">关联任务已从任务中心消失，请先确认厂商任务状态再手动重试，以免重复计费。</string>
 </resources>

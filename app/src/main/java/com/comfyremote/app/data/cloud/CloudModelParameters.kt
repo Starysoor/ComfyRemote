@@ -1,5 +1,7 @@
 package com.comfyremote.app.data.cloud
 
+import org.json.JSONObject
+
 /**
  * The editable parameters a specific model really exposes. Model capabilities
  * differ inside one vendor family, so rules are derived from the model id rather
@@ -30,9 +32,55 @@ object CloudModelParameters {
         return referenceImagePatterns.any { it in lower }
     }
 
+    /**
+     * Number of reference-image slots exposed for a model. This is an app-side
+     * practical cap; vendor hard limits are higher (GPT Image 16, Gemini Pro 14).
+     */
+    fun referenceImageLimit(model: String): Int {
+        val lower = model.lowercase()
+        if (!supportsReferenceImage(model)) return 0
+        if (lower.contains("qwen-image-edit-2509")) return 3
+        if (lower.startsWith("gpt-image") || lower.startsWith("chatgpt-image")) return 4
+        if (lower.startsWith("gemini") && "image" in lower) return 4
+        if (lower.contains("nano-banana") || lower.contains("seedream")) return 4
+        return 1
+    }
+
+    /** Ordered reference image values from a built request body (`image`, `image2`, ...). */
+    fun referenceImageInputs(body: JSONObject): List<Pair<String, String>> =
+        body.keys().asSequence()
+            .filter { key -> key == "image" || Regex("image\\d+").matches(key) }
+            .sortedBy { key ->
+                if (key == "image") 0 else key.removePrefix("image").toIntOrNull() ?: Int.MAX_VALUE
+            }
+            .mapNotNull { key ->
+                body.optString(key).takeIf(String::isNotBlank)?.let { key to it }
+            }
+            .toList()
+
     fun kindOf(model: String): String {
         val lower = model.lowercase()
-        return if (listOf("t2v", "i2v", "video", "wan2").any { it in lower }) "video" else "image"
+        return if (listOf(
+                "t2v", "i2v", "video", "wan2", "wan3", "seedance", "kling",
+                "hailuo", "minimax-h3",
+            ).any { it in lower }
+        ) "video" else "image"
+    }
+
+    /**
+     * `/models` endpoints also return text/LLM entries. Keep only entries that
+     * can actually be used by the image/video generation adapters.
+     */
+    fun looksLikeMediaModel(model: String): Boolean {
+        val lower = model.lowercase()
+        return listOf(
+            "image", "gpt-image", "dall-e", "seedream", "seededit", "flux", "banana",
+            "kolors", "stable", "sdxl", "sd3", "z-image", "hunyuanimage",
+            "hunyuan-image", "hunyuanvideo", "hunyuan-video", "video",
+            "wan2", "wan3", "wan-", "seedance", "kling", "hailuo",
+            "minimax-h3", "minimax_h3", "veo", "runway", "luma",
+            "recraft", "ideogram", "imagen",
+        ).any { it in lower }
     }
 
     /**
@@ -43,8 +91,12 @@ object CloudModelParameters {
         val gptImage = model.startsWith("gpt-image") || model.startsWith("chatgpt-image")
         val dallE = model.startsWith("dall-e")
         val rules = mutableListOf(CloudInputRule("prompt", "prompt", required = true))
-        if (supportsReferenceImage(model)) {
-            rules += CloudInputRule("image", "image", required = false)
+        repeat(referenceImageLimit(model)) { index ->
+            rules += CloudInputRule(
+                name = if (index == 0) "image" else "image${index + 1}",
+                type = "image",
+                required = false,
+            )
         }
         if (!gptImage && !dallE) {
             rules += CloudInputRule(
@@ -56,11 +108,13 @@ object CloudModelParameters {
         }
         val sizes = if (dallE) {
             listOf("1024x1024", "1792x1024", "1024x1792")
-        } else {
+        } else if (model.contains("2.5")) {
             listOf(
                 "1024x1024", "1536x1024", "1024x1536",
                 "2048x2048", "2048x1152", "1152x2048", "auto",
             )
+        } else {
+            listOf("1024x1024", "1536x1024", "1024x1536", "auto")
         }
         rules += CloudInputRule("size", "enum", required = false, defaultValue = sizes.first(), options = sizes)
         val qualities = if (dallE) {
@@ -103,23 +157,43 @@ object CloudModelParameters {
      * documented default instead of showing an option the API would ignore.
      */
     fun geminiRules(model: String): List<CloudInputRule> {
+        val isFlash = model.contains("flash-image") && !model.contains("flash-lite-image")
+        val ratios = if (isFlash) {
+            // Gemini 3.1 Flash Image adds the extreme wide/tall ratios.
+            listOf(
+                "1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9",
+                "1:4", "4:1", "1:8", "8:1",
+            )
+        } else {
+            listOf("1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9")
+        }
         val rules = mutableListOf(
             CloudInputRule("prompt", "prompt", required = true),
             CloudInputRule(
                 "aspect_ratio", "enum", required = false, defaultValue = "1:1",
-                options = listOf("1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "21:9"),
+                options = ratios,
             ),
         )
-        if (supportsReferenceImage(model)) {
-            rules += CloudInputRule("image", "image", required = false)
-        }
-        if (model.contains("3-pro-image")) {
+        repeat(referenceImageLimit(model)) { index ->
             rules += CloudInputRule(
-                "image_size", "enum", required = false, defaultValue = "1K",
-                options = listOf("1K", "2K", "4K"),
+                name = if (index == 0) "image" else "image${index + 1}",
+                type = "image",
+                required = false,
             )
         }
-        rules += CloudInputRule("seed", "integer", required = false)
+        val imageSizes = when {
+            model.contains("3-pro-image") -> listOf("1K", "2K", "4K")
+            isFlash -> listOf("0.5K", "1K", "2K", "4K")
+            model.contains("flash-lite-image") -> listOf("0.5K", "1K")
+            else -> emptyList()
+        }
+        if (imageSizes.isNotEmpty()) {
+            rules += CloudInputRule(
+                "image_size", "enum", required = false, defaultValue = "1K",
+                options = imageSizes,
+            )
+        }
+        rules += CloudInputRule("seed", "integer", required = false, max = 2_147_483_647.0)
         return rules
     }
 
@@ -130,6 +204,23 @@ object CloudModelParameters {
         val editModel = supportsReferenceImage(model)
         val rules = mutableListOf(CloudInputRule("prompt", "prompt", required = kind != "image" || !editModel))
         if (kind == "video") {
+            if (lower.contains("minimax-h3")) {
+                rules += CloudInputRule(
+                    "duration", "integer", required = false, defaultValue = "5",
+                    min = 5.0, max = 15.0,
+                )
+                rules += CloudInputRule(
+                    "resolution", "enum", required = false, defaultValue = "768p",
+                    options = listOf("480p", "768p"),
+                )
+                rules += CloudInputRule(
+                    "ratio", "enum", required = false, defaultValue = "16:9",
+                    options = listOf("1:1", "3:4", "4:3", "9:16", "16:9", "21:9"),
+                )
+                rules += CloudInputRule("first_frame_image", "image", required = false)
+                rules += CloudInputRule("last_frame_image", "image", required = false)
+                return rules
+            }
             rules += CloudInputRule(
                 "image_size", "enum", required = false, defaultValue = "1280x720",
                 options = listOf("1280x720", "720x1280", "960x960"),
@@ -138,28 +229,46 @@ object CloudModelParameters {
                 rules += CloudInputRule("image", "image", required = true)
             }
             rules += CloudInputRule("negative_prompt", "string", required = false)
-            rules += CloudInputRule("seed", "integer", required = false)
+            rules += CloudInputRule(
+                "seed", "integer", required = false, max = SILICON_FLOW_SEED_MAX,
+            )
             return rules
         }
         if (editModel) {
-            rules += CloudInputRule("image", "image", required = true)
+            // Qwen-Image-Edit-2509 accepts image, image2 and image3; older edit
+            // endpoints take a single source image. Edit models do not accept
+            // image_size, so it must not be offered.
+            repeat(referenceImageLimit(model)) { index ->
+                rules += CloudInputRule(
+                    name = if (index == 0) "image" else "image${index + 1}",
+                    type = "image",
+                    required = index == 0,
+                )
+            }
+        } else {
+            rules += CloudInputRule(
+                "image_size", "enum", required = false, defaultValue = "1024x1024",
+                options = listOf("1024x1024", "768x1024", "1024x768", "512x512", "1280x720", "720x1280"),
+            )
+        }
+        rules += CloudInputRule("negative_prompt", "string", required = false)
+        // SiliconFlow removed image batch_size; multi-image runs use Iris' own batch queue.
+        rules += CloudInputRule(
+            "num_inference_steps", "integer", required = false, defaultValue = "20",
+            min = 1.0, max = if (editModel) 20.0 else 50.0,
+        )
+        if (!editModel) {
+            rules += CloudInputRule(
+                "guidance_scale", "number", required = false, defaultValue = "7.5", min = 1.0, max = 20.0,
+            )
         }
         rules += CloudInputRule(
-            "image_size", "enum", required = false, defaultValue = "1024x1024",
-            options = listOf("1024x1024", "768x1024", "1024x768", "512x512", "1280x720", "720x1280"),
+            "seed", "integer", required = false, max = SILICON_FLOW_SEED_MAX,
         )
-        rules += CloudInputRule("negative_prompt", "string", required = false)
-        rules += CloudInputRule(
-            "batch_size", "integer", required = false, defaultValue = "1", min = 1.0, max = 4.0,
-        )
-        rules += CloudInputRule(
-            "num_inference_steps", "integer", required = false, defaultValue = "20", min = 20.0, max = 50.0,
-        )
-        rules += CloudInputRule(
-            "guidance_scale", "number", required = false, defaultValue = "7.5", min = 1.0, max = 20.0,
-        )
-        rules += CloudInputRule("seed", "integer", required = false)
         rules += CloudInputRule("prompt_enhancement", "boolean", required = false, defaultValue = "false")
         return rules
     }
+
+    /** SiliconFlow rejects seeds above 9.999999999e9. */
+    private const val SILICON_FLOW_SEED_MAX = 9_999_999_999.0
 }

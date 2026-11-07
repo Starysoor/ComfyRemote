@@ -126,8 +126,13 @@ class CustomTemplateRepository(
         val taskId = TemplateValues.pathValue(response, config.taskIdPath)?.toString()
             ?.takeIf { it.isNotBlank() }
             ?: throw ComfyException(CloudHttp.errorMessage(response, "Template response has no task id"))
+        taskStore.saveAcceptedTask(
+            id,
+            taskId,
+            JSONObject().put("config", settings.extra(id)),
+            label,
+        )
         pending[taskId] = Pending(config, taskId)
-        taskStore.savePending(id, taskId, JSONObject().put("config", settings.extra(id)))
         return taskId
     }
 

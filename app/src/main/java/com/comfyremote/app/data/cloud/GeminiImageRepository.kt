@@ -96,21 +96,9 @@ class GeminiImageRepository(
         body.optString("image_size").takeIf { it.isNotBlank() }?.let {
             imageConfig.put("imageSize", it)
         }
-        val parts = JSONArray()
-        val reference = body.optString("image").takeIf { it.isNotBlank() }
-        if (reference != null && CloudModelParameters.supportsReferenceImage(model)) {
-            val payload = CloudHttp.imagePayload(reference, headers)
-                ?: throw ComfyException("The reference image could not be read")
-            parts.put(
-                JSONObject().put(
-                    "inlineData",
-                    JSONObject()
-                        .put("mimeType", payload.first)
-                        .put("data", java.util.Base64.getEncoder().encodeToString(payload.second)),
-                )
-            )
+        val parts = buildGeminiImageParts(model, prompt, body) { value ->
+            CloudHttp.imagePayload(value)
         }
-        parts.put(JSONObject().put("text", prompt))
         val generationConfig = JSONObject()
             .put("responseModalities", JSONArray().put("IMAGE"))
             .put("imageConfig", imageConfig)
@@ -177,4 +165,30 @@ class GeminiImageRepository(
         const val PROVIDER = "gemini"
         const val DEFAULT_BASE = "https://generativelanguage.googleapis.com/v1beta"
     }
+}
+
+/** Pure part builder so multi-image Gemini requests can be regression-tested. */
+internal fun buildGeminiImageParts(
+    model: String,
+    prompt: String,
+    body: JSONObject,
+    resolveImage: (String) -> Pair<String, ByteArray>?,
+): JSONArray {
+    val parts = JSONArray()
+    if (CloudModelParameters.supportsReferenceImage(model)) {
+        CloudModelParameters.referenceImageInputs(body).forEach { (_, value) ->
+            val payload = resolveImage(value)
+                ?: throw ComfyException("The reference image could not be read")
+            parts.put(
+                JSONObject().put(
+                    "inlineData",
+                    JSONObject()
+                        .put("mimeType", payload.first)
+                        .put("data", java.util.Base64.getEncoder().encodeToString(payload.second)),
+                )
+            )
+        }
+    }
+    parts.put(JSONObject().put("text", prompt))
+    return parts
 }
