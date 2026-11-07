@@ -164,6 +164,21 @@ class GenerationRunnerTest {
     }
 
     @Test
+    fun identicalRemotePromptIdsKeepSeparateLocalTaskHistoryAndMedia() = runBlocking {
+        val sink = FakeHistorySink()
+        val first = task()
+        val second = task(request().copy(id = "req-2", provider = "custom-openai", serverUrl = "https://custom.example"))
+        val firstBackend = FakeBackend(history = mutableListOf(successEntry("a.png")))
+        val secondBackend = FakeBackend(history = mutableListOf(successEntry("b.png")))
+
+        val one = GenerationRunner(firstBackend, sink, pollDelayMs = 1, timeoutMs = 100).run(first) {}
+        val two = GenerationRunner(secondBackend, sink, pollDelayMs = 1, timeoutMs = 100).run(second) {}
+
+        assertEquals(listOf("req-1", "req-2"), sink.items.map { it.id })
+        assertNotEquals(one.results.single().localPath, two.results.single().localPath)
+    }
+
+    @Test
     fun allOutputDownloadsFailProducesDownloadFailureAndNoHistory() = runBlocking {
         val backend = FakeBackend(history = mutableListOf(successEntry("a.png")))
         backend.downloads["a.png"] = Result.failure(IllegalStateException("broken"))

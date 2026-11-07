@@ -23,6 +23,15 @@ data class CloudSpendEntry(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
+/** Identity includes provider and endpoint: two providers may issue the same job number. */
+internal fun isSameBilledTask(
+    entry: CloudSpendEntry,
+    remoteTaskId: String,
+    providerId: String?,
+    endpoint: String?,
+): Boolean = entry.remoteTaskId == remoteTaskId &&
+    entry.providerId == providerId && entry.endpoint == endpoint
+
 /** Local, best-effort ledger of submitted cloud jobs. Never represents a bill. */
 class CloudSpendStore(private val prefs: SharedPreferences) {
     private val lock = Any()
@@ -39,7 +48,7 @@ class CloudSpendStore(private val prefs: SharedPreferences) {
         endpoint: String? = null,
     ) = synchronized(lock) {
         if (remoteTaskId != null && _entries.value.any {
-                it.remoteTaskId == remoteTaskId && it.providerId == providerId && it.endpoint == endpoint
+                isSameBilledTask(it, remoteTaskId, providerId, endpoint)
             }) {
             return@synchronized
         }
