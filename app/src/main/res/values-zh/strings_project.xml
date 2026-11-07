@@ -117,4 +117,14 @@
     <string name="proj_director_continuity_loading">正在抽帧…</string>
     <string name="proj_director_continuity_empty">先生成镜头；每个已完成的镜头会在这里显示逐秒帧条。</string>
     <string name="proj_director_seam_hint">左为上一镜尾帧，右为本镜首帧。差异过大建议重新生成或切镜。</string>
+    <string name="proj_director_plan">AI 镜头计划</string>
+    <string name="proj_director_plan_hint">根据简介、风格、目标时长与素材生成镜头建议。仅提供建议——在你自行准备生成之前不会发生任何生成。</string>
+    <string name="proj_director_plan_generate">生成镜头建议</string>
+    <string name="proj_director_plan_loading">思考中…</string>
+    <string name="proj_director_plan_empty">还没有建议。点击按钮让 AI 出一份计划。</string>
+    <string name="proj_director_plan_select_all">全选</string>
+    <string name="proj_director_plan_apply">将选中项应用为草稿镜头</string>
+    <string name="proj_director_plan_applied">已向工作台添加 %1$d 个草稿镜头</string>
+    <string name="proj_director_plan_seconds">约 %1$d 秒</string>
+    <string name="proj_director_plan_unconfigured">请先在 设置 → AI 中配置 AI 端点。</string>
 </resources>

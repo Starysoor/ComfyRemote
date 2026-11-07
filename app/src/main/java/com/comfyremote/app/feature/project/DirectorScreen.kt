@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -30,6 +31,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
 import com.comfyremote.app.data.project.DirectorChecks
@@ -40,6 +42,7 @@ import com.comfyremote.app.ui.components.ChipTone
 import com.comfyremote.app.ui.components.DetailTopBar
 import com.comfyremote.app.ui.components.EmptyState
 import com.comfyremote.app.ui.components.IrisCard
+import com.comfyremote.app.ui.components.IrisPrimaryButton
 import com.comfyremote.app.ui.components.IrisScaffold
 import com.comfyremote.app.ui.components.StatusChip
 
@@ -64,6 +67,7 @@ fun DirectorScreen(
     }
 
     val continuity by viewModel.continuity.collectAsState()
+    val planState by viewModel.planState.collectAsState()
     LaunchedEffect(projectId) { viewModel.loadContinuity(projectId) }
 
     IrisScaffold(
@@ -213,6 +217,104 @@ fun DirectorScreen(
                             }
                         }
                     }
+                }
+            }
+            item("plan-heading") {
+                SectionTitle(stringResource(R.string.proj_director_plan))
+            }
+            item("plan-hint") {
+                Text(
+                    stringResource(R.string.proj_director_plan_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            item("plan-generate") {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                    IrisPrimaryButton(
+                        text = stringResource(
+                            if (planState.loading) R.string.proj_director_plan_loading else R.string.proj_director_plan_generate,
+                        ),
+                        onClick = { viewModel.suggestShotPlan(projectId) },
+                        enabled = !planState.loading,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (planState.suggestions.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = planState.selected.size == planState.suggestions.size,
+                                onCheckedChange = { viewModel.selectAllPlanSuggestions(it) },
+                            )
+                            Text(
+                                stringResource(R.string.proj_director_plan_select_all),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                    }
+                }
+            }
+            if (planState.loading) {
+                item("plan-loading") {
+                    Text(
+                        stringResource(R.string.proj_director_plan_loading),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else if (planState.suggestions.isEmpty()) {
+                item("plan-empty") {
+                    Text(
+                        stringResource(R.string.proj_director_plan_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                items(planState.suggestions.size, key = { "plan-$it" }) { index ->
+                    val suggestion = planState.suggestions[index]
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    ) {
+                        Checkbox(
+                            checked = index in planState.selected,
+                            onCheckedChange = { viewModel.togglePlanSuggestion(index) },
+                        )
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                suggestion.prompt,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (suggestion.cameraNotes.isNotBlank()) {
+                                    StatusChip(suggestion.cameraNotes, tone = ChipTone.Neutral)
+                                }
+                                suggestion.suggestedSeconds?.let {
+                                    StatusChip(
+                                        stringResource(R.string.proj_director_plan_seconds, it),
+                                        tone = ChipTone.Accent,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                item("plan-apply") {
+                    IrisPrimaryButton(
+                        text = stringResource(R.string.proj_director_plan_apply),
+                        onClick = { viewModel.applyPlanSuggestions(projectId) },
+                        enabled = planState.selected.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        stringResource(R.string.proj_director_plan_hint),
+                        style = IrisType.metaSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = Spacing.xs),
+                    )
                 }
             }
         }
