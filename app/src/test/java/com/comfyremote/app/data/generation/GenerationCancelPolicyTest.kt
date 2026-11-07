@@ -1,6 +1,10 @@
 package com.comfyremote.app.data.generation
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
+import org.json.JSONObject
 import org.junit.Test
 
 class GenerationCancelPolicyTest {
@@ -48,4 +52,32 @@ class GenerationCancelPolicyTest {
             cancelActionFor(GenerationPhase.SUCCEEDED, cloud = false, localPending = false),
         )
     }
+    @Test
+    fun localCancelRejectsAnyTaskAlreadyDispatchedToTheServer() {
+        val request = GenerationRequest(
+            serverUrl = "http://server:8188",
+            workflowPath = "work.json",
+            workflowName = "Test",
+            fieldValues = emptyMap(),
+            randomSeed = true,
+            nodeTitles = emptyMap(),
+            fields = emptyList(),
+            convertedPrompt = JSONObject(),
+        )
+        val pending = GenerationTask(
+            taskId = request.id,
+            request = request,
+            phase = GenerationPhase.PREPARING,
+            localPending = true,
+        )
+        val cancelled = pending.cancelIfStillLocalPending(100L)
+        assertNotNull(cancelled)
+        assertEquals(GenerationPhase.CANCELLED, cancelled?.phase)
+        assertFalse(cancelled?.localPending ?: true)
+        assertNull(pending.copy(localPending = false, phase = GenerationPhase.QUEUEING)
+            .cancelIfStillLocalPending(100L))
+        assertNull(pending.copy(localPending = false, phase = GenerationPhase.RUNNING)
+            .cancelIfStillLocalPending(100L))
+    }
+
 }

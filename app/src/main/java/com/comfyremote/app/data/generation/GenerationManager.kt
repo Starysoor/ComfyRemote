@@ -135,23 +135,11 @@ class GenerationManager(
                 // Only treat this as a not-yet-submitted cancellation when the
                 // *current* persisted task still belongs to the local queue.
                 val committed = mutateTasks { list ->
-                    val current = list.firstOrNull { it.taskId == taskId }
-                    if (current == null || !current.localPending || !current.isActive) {
-                        list
-                    } else {
+                    val updated = list.firstOrNull { it.taskId == taskId }
+                        ?.cancelIfStillLocalPending(System.currentTimeMillis())
+                    if (updated == null) list else {
                         cancelledWhilePending = true
-                        prune(list.map {
-                            if (it.taskId != taskId) it
-                            else it.copy(
-                                localPending = false,
-                                phase = GenerationPhase.CANCELLED,
-                                completedAt = System.currentTimeMillis(),
-                                recoveryNote = "Removed from local queue",
-                                queuePosition = null,
-                                progress = null,
-                                preview = null,
-                            )
-                        })
+                        prune(list.map { if (it.taskId == taskId) updated else it })
                     }
                 }
                 when {

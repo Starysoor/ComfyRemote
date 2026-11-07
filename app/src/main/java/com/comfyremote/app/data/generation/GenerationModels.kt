@@ -65,6 +65,19 @@ fun cancelActionFor(phase: GenerationPhase, cloud: Boolean, localPending: Boolea
 
 data class CancelOutcome(val taskId: String, val cancelled: Boolean, val error: String? = null)
 
+/** Atomically applicable only while a task is still pending locally. */
+internal fun GenerationTask.cancelIfStillLocalPending(now: Long): GenerationTask? =
+    if (!localPending || !isActive) null else copy(
+        localPending = false,
+        phase = GenerationPhase.CANCELLED,
+        completedAt = now,
+        recoveryNote = "Removed from local queue",
+        queuePosition = null,
+        progress = null,
+        preview = null,
+    )
+
+
 data class GenerationTask(
     val taskId: String,
     val request: GenerationRequest,
