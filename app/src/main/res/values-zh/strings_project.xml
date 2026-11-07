@@ -108,7 +108,10 @@
     <string name="proj_export_share">分享</string>
     <string name="proj_export_save_gallery">保存到相册</string>
     <string name="proj_export_no_clips">时间线上没有可导出的视频片段</string>
-    <string name="proj_export_skipped">已跳过缺失媒体的片段：%1$s</string>
+    <string name="proj_export_skipped">导出已阻止：以下片段的源文件丢失：%1$s</string>
+    <string name="proj_export_unreadable">导出已阻止：以下源文件无法解码：%1$s</string>
+    <string name="proj_export_invalid_trim">导出已阻止：以下片段的出点超过源时长：%1$s</string>
+    <string name="proj_export_commit_failed">无法安全提交最终视频文件；未添加到结果页，请重试。</string>
     <string name="proj_export_history_name">%1$s · 成片</string>
     <string name="proj_open_director">AI 导演</string>
     <string name="proj_director_title">AI 导演</string>

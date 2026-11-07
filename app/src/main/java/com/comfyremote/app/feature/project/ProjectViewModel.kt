@@ -591,12 +591,35 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
             val available = withContext(Dispatchers.IO) {
                 timeline.videoTrack.map { it.sourcePath }.filter { File(it).isFile }.toSet()
             }
-            val plan = ExportPlanBuilder.build(timeline, available)
-            if (plan.skippedMissing.isNotEmpty()) {
-                _message.value = AppStrings.get(
+            val missing = timeline.videoTrack.filter { it.sourcePath !in available }
+            if (missing.isNotEmpty()) {
+                _exportState.value = ExportState.Failed(AppStrings.get(
                     R.string.proj_export_skipped,
-                    plan.skippedMissing.joinToString(", "),
-                )
+                    missing.joinToString(", ") { it.sourceLabel.ifBlank { label -> it.sourcePath.substringAfterLast('/') } },
+                ))
+                return@launch
+            }
+            // Validate actual media metadata before invoking the encoder. An existing file
+            // may be corrupt or have a clip out-point past its playable duration.
+            val durationByPath = withContext(Dispatchers.IO) {
+                available.associateWith { mediaDurationMs(it) }
+            }
+            val unreadable = durationByPath.filterValues { it == null || it <= 0L }.keys
+            if (unreadable.isNotEmpty()) {
+                _exportState.value = ExportState.Failed(AppStrings.get(
+                    R.string.proj_export_unreadable,
+                    unreadable.joinToString(", ") { it.substringAfterLast('/') },
+                ))
+                return@launch
+            }
+            val plan = ExportPlanBuilder.build(
+                timeline, available, durationByPath.mapValues { it.value!! },
+            )
+            if (plan.invalidTrims.isNotEmpty()) {
+                _exportState.value = ExportState.Failed(AppStrings.get(
+                    R.string.proj_export_invalid_trim, plan.invalidTrims.joinToString(", "),
+                ))
+                return@launch
             }
             if (plan.isEmpty) {
                 _exportState.value = ExportState.Failed(AppStrings.get(R.string.proj_export_no_clips))
@@ -617,11 +640,16 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
                         _exportState.value = ExportState.Idle
                     }
                     is VideoExporter.Result.Success -> {
+                        // Same-directory rename is atomic; never copy directly into a
+                        // final .mp4 name, because an interrupted copy leaves a partial movie.
                         if (!tmp.renameTo(target)) {
-                            tmp.copyTo(target, overwrite = true)
                             tmp.delete()
+                            _exportState.value = ExportState.Failed(
+                                AppStrings.get(R.string.proj_export_commit_failed),
+                            )
+                            return@onSuccess
                         }
-                        container.historyRepository.add(
+                        val saved = runCatching { container.historyRepository.add(
                             HistoryItem(
                                 id = "project-export-${project.id}-$stamp",
                                 wfPath = project.workflowPath,
@@ -636,9 +664,14 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
                                 seeds = "",
                                 serverUrl = "",
                                 tags = listOf("project-export"),
-                            ),
-                        )
-                        _exportState.value = ExportState.Succeeded(target.absolutePath)
+                            ))
+                        }
+                        saved.onSuccess {
+                            _exportState.value = ExportState.Succeeded(target.absolutePath)
+                        }.onFailure { error ->
+                            target.delete()
+                            _exportState.value = ExportState.Failed(error.message ?: error.javaClass.simpleName)
+                        }
                     }
                 }
             }.onFailure { error ->

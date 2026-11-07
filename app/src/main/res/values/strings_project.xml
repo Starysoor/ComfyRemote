@@ -108,7 +108,10 @@
     <string name="proj_export_share">Share</string>
     <string name="proj_export_save_gallery">Save to gallery</string>
     <string name="proj_export_no_clips">No exportable video clips on the timeline</string>
-    <string name="proj_export_skipped">Skipped clips with missing media: %1$s</string>
+    <string name="proj_export_skipped">Export blocked: missing source media for %1$s</string>
+    <string name="proj_export_unreadable">Export blocked: source media unreadable for %1$s</string>
+    <string name="proj_export_invalid_trim">Export blocked: trim ends past source duration for %1$s</string>
+    <string name="proj_export_commit_failed">Cannot atomically commit the completed video; nothing was added to Results. Retry.</string>
     <string name="proj_export_history_name">%1$s · Final cut</string>
     <string name="proj_open_director">AI director</string>
     <string name="proj_director_title">AI director</string>
