@@ -20,4 +20,27 @@
     <!-- Dialogs -->
     <string name="proj_field_synopsis">Synopsis / script (optional)</string>
     <string name="proj_field_duration">Target duration (seconds, optional)</string>
+
+    <!-- Asset library -->
+    <string name="proj_assets_manage">Manage</string>
+    <string name="proj_assets_title">Project assets</string>
+    <string name="proj_assets_empty_hint">Import images, videos or audio. Tag them and bundle them into character/scene profiles for reuse across shots.</string>
+    <string name="proj_asset_kind_all">All</string>
+    <string name="proj_asset_kind_image">Images</string>
+    <string name="proj_asset_kind_video">Videos</string>
+    <string name="proj_asset_kind_audio">Audio</string>
+    <string name="proj_asset_edit">Edit asset</string>
+    <string name="proj_asset_label">Label</string>
+    <string name="proj_asset_tags">Tags</string>
+    <string name="proj_asset_tags_hint">Comma separated, e.g. hero, main, v2</string>
+    <string name="proj_profiles">Consistency profiles</string>
+    <string name="proj_profile_new">New profile</string>
+    <string name="proj_profile_edit">Edit profile</string>
+    <string name="proj_profile_character">Character</string>
+    <string name="proj_profile_scene">Scene</string>
+    <string name="proj_profile_name">Profile name</string>
+    <string name="proj_profile_summary">Identity / consistency notes</string>
+    <string name="proj_profile_assets_hint">Pick the assets that belong to this profile; applying it assigns them to a shot in this order.</string>
+    <string name="proj_profile_apply">Apply to shot</string>
+    <string name="proj_profile_unnamed">Unnamed profile</string>
 </resources>

@@ -139,6 +139,49 @@ class ProjectCodecTest {
     }
 
     @Test
+    fun profilesRoundTripAndTolerateDamagedRows() {
+        val project = VideoProject(
+            id = "project-profiles",
+            title = "Profiles",
+            workflowId = "m",
+            profiles = listOf(
+                AssetProfile(
+                    id = "profile-1",
+                    name = "女主",
+                    summary = "银发红瞳 20 岁左右",
+                    kind = com.comfyremote.app.data.project.ProfileKind.CHARACTER,
+                    assetIds = listOf("a-front", "a-side", "a-back"),
+                    createdAt = 7L,
+                ),
+                AssetProfile(id = "profile-2", name = "旧城", kind = com.comfyremote.app.data.project.ProfileKind.SCENE),
+            ),
+        )
+
+        val restored = ProjectCodec.decode(ProjectCodec.encode(listOf(project))).single()
+
+        assertEquals(project.profiles, restored.profiles)
+
+        val damaged = """{"version":2,"projects":[{"id":"p1","title":"P","workflowId":"m",
+          "profiles":[
+            {"id":"ok","name":"A"},
+            {"name":"no id"},
+            "not-an-object"
+          ]}]}"""
+        val profiles = ProjectCodec.decode(damaged).single().profiles
+        assertEquals(1, profiles.size)
+        assertEquals("A", profiles.single().name)
+    }
+
+    @Test
+    fun legacyProjectsDecodeWithoutProfilesField() {
+        val raw = """{"version":2,"projects":[{"id":"p1","title":"Old","workflowId":"m"}]}"""
+
+        val project = ProjectCodec.decode(raw).single()
+
+        assertTrue(project.profiles.isEmpty())
+    }
+
+    @Test
     fun malformedJsonDecodesToEmptyListInsteadOfCrashing() {
         assertTrue(ProjectCodec.decode("not json").isEmpty())
         assertTrue(ProjectCodec.decode("""{"version":2}""").isEmpty())

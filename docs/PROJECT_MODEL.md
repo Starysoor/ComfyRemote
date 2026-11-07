@@ -9,9 +9,10 @@ Iris v2.4 起，创作工作台的持久化中心从「分镜」（`storyboards.
 | 实体 | 模型 | 说明 |
 |---|---|---|
 | 项目 | `VideoProject`（`data/project/ProjectModels.kt`） | 一个自包含的视频创作工作 |
-| 镜头 | `ProjectShot` | 项目内有序创作单元；live 字段（status/taskId/resultPath/lastFramePath）镜像最近一次生成 |
-| 版本 | `ShotTake` | 一次生成尝试的完整快照（模型/参数/参考/结果/费用），P0 每次生成自动记录一条，A/B 多版本 UI 在 P1 |
-| 素材 | `ProjectAsset`（`data/reference/ReferenceModels.kt`） | 项目级可复用媒体；P0 新增可选 `kind`（IMAGE/VIDEO/AUDIO/SUBTITLE）与 `tags` |
+| 镜头 | `ProjectShot` | 项目内有序创作单元；live 字段（status/taskId/resultPath/lastFramePath）镜像当前主版本 Take |
+| 版本 | `ShotTake` | 一次生成尝试的完整快照（模型/参数/参考/结果/费用），每次提交自动记录；P1 支持设主版本/收藏/弃用/删除 |
+| 素材 | `ProjectAsset`（`data/reference/ReferenceModels.kt`） | 项目级可复用媒体；`kind`（IMAGE/VIDEO/AUDIO/SUBTITLE）与 `tags`；导入经 `ProjectAssetStore`（图片 JPEG 规范化，视频/音频原样拷贝，统一 32MiB 上限） |
+| 一致性档案 | `AssetProfile` | 一个角色/场景的命名档案（名称+描述+有序素材列表）；应用到镜头 = 按档案内顺序展开为镜头多参考 |
 | 生成任务 | `GenerationTask.taskId` | 复用现有任务引擎 ID，通过 `shot.taskId` 与 `GenerationRequest.storyboardProjectId/storyboardShotId` 弱关联（纯字符串，无外键） |
 
 **为 P2 时间线预留的 ID 方案**：`Timeline` / `TimelineClip` / `Track` / `ProjectTask` / `ExportJob` 届时同样使用 UUID，且 clip 前缀将保留 `tlc:` 命名空间用于调试。P0 不实现时间线数据结构。
@@ -20,7 +21,10 @@ Iris v2.4 起，创作工作台的持久化中心从「分镜」（`storyboards.
 
 - **时间线片段 ≠ 镜头 ≠ 生成任务 ≠ 文件**。未来一个 Take 的结果文件可被多个时间线片段引用；删除镜头绝不能误删仍被引用的媒体文件。
 - Take 是历史记录：重复生成同一镜头会产生多条 Take，`selectedTakeId` 指向产生当前 live 结果的那条；复制镜头会重置生成历史（不复制 Take）。
-- 素材文件为 app-owned（`filesDir/storyboards/` 目录沿用旧媒体根目录，存量文件不迁移不失效），索引只存路径与元数据。
+- **Take 生命周期**：`running → done | failed | cancelled`；P1 增加 `discarded`（弃用，仅标记，不删文件）。切换主版本（`selectTake`）只允许 done 的 Take；删除 Take 若删的是主版本，镜头 live 字段清空回 draft，其结果文件在确认无其他引用后才会被删除。
+- **镜头参考语义**：`referenceAssetIds` 是**有序**列表，提交时按顺序映射到工作流的 IMAGE 字段（首字段通常是 first_frame）；ReferenceRole（START_FRAME/END_FRAME 等）作为语义徽章随列表头部/尾部标注，暂不参与提交映射。
+- **cameraNotes（动作/运镜）**：生成时按 `风格提示 + 镜头提示 + cameraNotes` 顺序拼接进 prompt，UI 中独立展示。
+- 素材文件为 app-owned（`filesDir/storyboards/assets`，与旧媒体根一致，存量文件不迁移不失效），索引只存路径/类型/标签与元数据；一致性档案按 id 引用素材，删除素材会同步从档案中摘除，删除档案不影响素材。
 
 ## 存储
 

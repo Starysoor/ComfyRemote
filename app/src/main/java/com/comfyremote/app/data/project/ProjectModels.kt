@@ -69,6 +69,31 @@ data class ProjectShot(
     val updatedAt: Long = System.currentTimeMillis(),
 )
 
+/** Scope of a consistency profile: one reusable character or scene identity. */
+enum class ProfileKind {
+    CHARACTER,
+    SCENE;
+
+    companion object {
+        fun fromStorage(raw: String?): ProfileKind =
+            entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: CHARACTER
+    }
+}
+
+/**
+ * A consistency profile: one named character or scene bundling several
+ * reference assets (e.g. a character's three views) plus a short description
+ * so shots can reuse the same identity across the project.
+ */
+data class AssetProfile(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val summary: String = "",
+    val kind: ProfileKind = ProfileKind.CHARACTER,
+    val assetIds: List<String> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
 /**
  * The Studio-era project: one self-contained video work carrying its shots,
  * assets, default workflow and (stored-only, not yet enforced) budget.
@@ -94,6 +119,8 @@ data class VideoProject(
     val budget: Double? = null,
     val shots: List<ProjectShot> = emptyList(),
     val assets: List<com.comfyremote.app.data.reference.ProjectAsset> = emptyList(),
+    /** Consistency profiles (characters/scenes); optional and always safe to omit. */
+    val profiles: List<AssetProfile> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 )

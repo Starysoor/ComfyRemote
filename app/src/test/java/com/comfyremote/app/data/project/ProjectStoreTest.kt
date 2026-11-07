@@ -341,4 +341,48 @@ class ProjectStoreTest {
         assertNull(cleared.referencePath)
         assertFalse(cleared.referenceManual)
     }
+
+    @Test
+    fun profilesUpsertAndDeletingAnAssetCleansProfileReferences() {
+        val store = store()
+        val project = store.create("Studio", "wf")!!
+        val asset = ProjectAsset(id = "asset-hero", role = ReferenceRole.CHARACTER_REFERENCE, path = "/tmp/hero.png")
+
+        assertTrue(
+            store.addProfile(
+                project.id,
+                AssetProfile(id = "profile-1", name = "女主", assetIds = listOf("asset-hero", "asset-gone")),
+            ),
+        )
+        // Upsert by id: a second add with the same id replaces the profile.
+        assertTrue(
+            store.addProfile(
+                project.id,
+                AssetProfile(id = "profile-1", name = "女主 v2", assetIds = listOf("asset-hero")),
+            ),
+        )
+        assertEquals("女主 v2", store.project(project.id)!!.profiles.single().name)
+
+        assertTrue(store.updateProfile(project.id, "profile-1") { it.copy(summary = "银发") })
+        assertEquals("银发", store.project(project.id)!!.profiles.single().summary)
+
+        store.addAsset(project.id, asset)
+        assertTrue(store.removeAsset(project.id, "asset-hero"))
+        assertTrue(store.project(project.id)!!.profiles.single().assetIds.isEmpty())
+
+        // Deleting a profile never touches assets.
+        store.addAsset(project.id, asset)
+        assertTrue(store.deleteProfile(project.id, "profile-1"))
+        assertFalse(store.deleteProfile(project.id, "profile-1"))
+        assertEquals("asset-hero", store.project(project.id)!!.assets.single().id)
+        assertTrue(store.project(project.id)!!.profiles.isEmpty())
+    }
+
+    @Test
+    fun updateProfileOnMissingProfileIsRejected() {
+        val store = store()
+        val project = store.create("Studio", "wf")!!
+        assertFalse(store.updateProfile(project.id, "missing") { it.copy(name = "x") })
+        assertTrue(store.project(project.id)!!.profiles.isEmpty())
+    }
 }

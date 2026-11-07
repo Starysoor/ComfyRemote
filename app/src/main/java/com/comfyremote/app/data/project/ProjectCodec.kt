@@ -55,6 +55,7 @@ object ProjectCodec {
         .put("updatedAt", project.updatedAt)
         .put("shots", JSONArray().apply { project.shots.forEach { put(shotToJson(it)) } })
         .put("assets", JSONArray().apply { project.assets.forEach { put(assetToJson(it)) } })
+        .put("profiles", JSONArray().apply { project.profiles.forEach { put(profileToJson(it)) } })
 
     private fun projectFromJson(o: JSONObject): VideoProject? {
         val id = o.optString("id").takeIf { it.isNotBlank() } ?: return null
@@ -67,6 +68,12 @@ object ProjectCodec {
         o.optJSONArray("assets")?.let { array ->
             for (i in 0 until array.length()) {
                 array.optJSONObject(i)?.let { assets += assetFromJson(it) }
+            }
+        }
+        val profiles = mutableListOf<AssetProfile>()
+        o.optJSONArray("profiles")?.let { array ->
+            for (i in 0 until array.length()) {
+                array.optJSONObject(i)?.let { json -> profileFromJson(json)?.let { profiles += it } }
             }
         }
         return VideoProject(
@@ -84,6 +91,7 @@ object ProjectCodec {
             budget = nullableDouble(o, "budget"),
             shots = shots,
             assets = assets,
+            profiles = profiles,
             createdAt = o.optLong("createdAt"),
             updatedAt = o.optLong("updatedAt"),
         )
@@ -205,6 +213,26 @@ object ProjectCodec {
                 AssetKind.fromPath(path)
             },
             tags = stringList(o.optJSONArray("tags")),
+        )
+    }
+
+    private fun profileToJson(profile: AssetProfile): JSONObject = JSONObject()
+        .put("id", profile.id)
+        .put("name", profile.name)
+        .put("summary", profile.summary)
+        .put("kind", profile.kind.name)
+        .put("assetIds", JSONArray().apply { profile.assetIds.forEach { put(it) } })
+        .put("createdAt", profile.createdAt)
+
+    private fun profileFromJson(o: JSONObject): AssetProfile? {
+        val id = o.optString("id").takeIf { it.isNotBlank() } ?: return null
+        return AssetProfile(
+            id = id,
+            name = o.optString("name"),
+            summary = o.optString("summary"),
+            kind = ProfileKind.fromStorage(o.optString("kind")),
+            assetIds = stringList(o.optJSONArray("assetIds")),
+            createdAt = o.optLong("createdAt"),
         )
     }
 
