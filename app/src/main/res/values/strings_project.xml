@@ -94,4 +94,17 @@
     <string name="proj_timeline_preview">Preview</string>
     <string name="proj_timeline_preview_note">Preview plays the video track in order with trims applied; speed, volume and mute take full effect in the export.</string>
     <string name="proj_timeline_unreadable">Cannot read that media file</string>
+    <string name="proj_export_start">Export MP4</string>
+    <string name="proj_export_title">Export movie</string>
+    <string name="proj_export_running">Exporting… %1$d%%</string>
+    <string name="proj_export_running_note">Keep this screen open; closing the app stops the export (the project and sources are never affected).</string>
+    <string name="proj_export_done">Export finished. The movie was added to Results.</string>
+    <string name="proj_export_done_note">Saving to gallery copies the file to Movies/Iris; sharing opens the system share sheet.</string>
+    <string name="proj_export_failed_note">Nothing was written to Results; sources are untouched. You can retry.</string>
+    <string name="proj_export_retry">Retry</string>
+    <string name="proj_export_share">Share</string>
+    <string name="proj_export_save_gallery">Save to gallery</string>
+    <string name="proj_export_no_clips">No exportable video clips on the timeline</string>
+    <string name="proj_export_skipped">Skipped clips with missing media: %1$s</string>
+    <string name="proj_export_history_name">%1$s · Final cut</string>
 </resources>

@@ -52,6 +52,17 @@ Iris v2.4 起，创作工作台的持久化中心从「分镜」（`storyboards.
 - 删除规则：**先提交索引、再删文件**；仅清理「未被引用 **且** `lastModified` 早于 10 分钟宽限期」的文件（宽限防止清理仍在生成流程中的文件）。
 - 跨 Store 保护：`AppContainer` 将 legacy store 与 project store 的引用集**并集**注入 `HistoryStore` 的 protectedMedia 钩子，结果页 History 的媒体清理永不破坏任一侧仍在引用的文件。
 
+## 时间线与成片导出（P2）
+
+- `Timeline`（视频轨 + 音频轨）/ `TimelineClip`（`tlc:` ID 前缀）：**按路径引用媒体**，同一文件可被多个片段引用；`referencedMediaPaths` 并入片段 sourcePath，删除镜头/Take/素材时仍被时间线引用的文件受保护。
+- **预览与导出共用同一份 timeline 数据**；预览保真度差异：ExoPlayer 顺序 playlist 应用裁剪，速度/音量/静音预览为 1x（对话框内明示），导出完整生效。
+- **导出能力矩阵（media3 1.4.1，compileSdk 34 兼容的最终版本线）**：
+  - ✅ 视频轨顺序导出：裁剪、0.25-4x 速度、0-200% 音量、静音、片段自带音频音画同步
+  - ✅ 完整文件验证（可播放 + 时长 ±10%）；.tmp → 验证 → 原子 rename，中断不留半成品
+  - ❌ 音频轨（配乐）混音导出——需 compileSdk 35 + media3 1.5 升级后补；UI 固定提示，不承诺
+- **导出生命周期**：ViewModel 作用域，关闭应用中止导出（tmp 不入结果页），需手动重试；前台服务化属后续增强。
+- 成片入库：`HistoryRepository.newMediaFile + add`（tags: `project-export`），结果页可见/可分享/可存相册。
+
 ## 预算字段语义（P1）
 
 `VideoProject.budget` 是项目级软预算上限（平台点数，非货币）。P1 行为：项目主页任务区汇总本项目任务的 `estimatedCloudCost`，超过预算时显示警示横幅；**提交不受阻断**——预算达标自动阻止批量提交是 P3（AI 导演阶段）的交付项，需要用户在设置中明确开启后才生效。

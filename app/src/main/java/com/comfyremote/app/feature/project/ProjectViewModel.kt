@@ -12,10 +12,12 @@ import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
 import com.comfyremote.app.data.project.AssetProfile
+import com.comfyremote.app.data.project.ExportPlanBuilder
 import com.comfyremote.app.data.project.ProfileKind
 import com.comfyremote.app.data.project.ProjectShot
 import com.comfyremote.app.data.project.TimelineClip
 import com.comfyremote.app.data.project.TrackKind
+import com.comfyremote.app.data.project.VideoExporter
 import com.comfyremote.app.data.project.VideoProject
 import com.comfyremote.app.data.project.isOrphanedRunningShot
 import com.comfyremote.app.data.reference.ProjectAsset
@@ -541,6 +543,109 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
             retriever.release()
         }
     }.getOrNull()
+
+    // ---- MP4 export ----
+
+    sealed interface ExportState {
+        data object Idle : ExportState
+        data class Running(val progress: Float) : ExportState
+        data class Succeeded(val outputPath: String) : ExportState
+        data class Failed(val message: String) : ExportState
+    }
+
+    private val exporter by lazy { VideoExporter(container.app) }
+    private val _exportState = MutableStateFlow<ExportState>(ExportState.Idle)
+    val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
+
+    /**
+     * Exports the video track to MP4 and registers the result in History.
+     * Export runs in the ViewModel scope: leaving the app kills it (the tmp
+     * file never becomes a finished result); the user retries manually.
+     */
+    fun startExport(projectId: String) {
+        if (_exportState.value is ExportState.Running) return
+        val project = container.projectStore.project(projectId) ?: return
+        val timeline = project.timeline
+        if (timeline == null || timeline.videoTrack.isEmpty()) {
+            _exportState.value = ExportState.Failed(AppStrings.get(R.string.proj_export_no_clips))
+            return
+        }
+        viewModelScope.launch {
+            val available = withContext(Dispatchers.IO) {
+                timeline.videoTrack.map { it.sourcePath }.filter { File(it).isFile }.toSet()
+            }
+            val plan = ExportPlanBuilder.build(timeline, available)
+            if (plan.skippedMissing.isNotEmpty()) {
+                _message.value = AppStrings.get(
+                    R.string.proj_export_skipped,
+                    plan.skippedMissing.joinToString(", "),
+                )
+            }
+            if (plan.isEmpty) {
+                _exportState.value = ExportState.Failed(AppStrings.get(R.string.proj_export_no_clips))
+                return@launch
+            }
+            _exportState.value = ExportState.Running(0f)
+            val stamp = System.currentTimeMillis()
+            val target = container.historyRepository.newMediaFile("project-export-$stamp", 0, "mp4")
+            val tmp = File(target.parentFile, target.name + ".tmp")
+            runCatching {
+                exporter.export(plan, tmp) { progress ->
+                    _exportState.value = ExportState.Running(progress)
+                }
+            }.onSuccess { result ->
+                when (result) {
+                    is VideoExporter.Result.Cancelled -> {
+                        tmp.delete()
+                        _exportState.value = ExportState.Idle
+                    }
+                    is VideoExporter.Result.Success -> {
+                        if (!tmp.renameTo(target)) {
+                            tmp.copyTo(target, overwrite = true)
+                            tmp.delete()
+                        }
+                        container.historyRepository.add(
+                            HistoryItem(
+                                id = "project-export-${project.id}-$stamp",
+                                wfPath = project.workflowPath,
+                                wfName = AppStrings.get(R.string.proj_export_history_name, project.title),
+                                time = System.currentTimeMillis(),
+                                values = emptyMap(),
+                                fields = emptyList(),
+                                randomSeed = false,
+                                images = listOf(target.absolutePath),
+                                summary = project.title.take(50),
+                                prompts = emptyList(),
+                                seeds = "",
+                                serverUrl = "",
+                                tags = listOf("project-export"),
+                            ),
+                        )
+                        _exportState.value = ExportState.Succeeded(target.absolutePath)
+                    }
+                }
+            }.onFailure { error ->
+                tmp.delete()
+                _exportState.value = ExportState.Failed(error.message ?: error.javaClass.simpleName)
+            }
+        }
+    }
+
+    fun cancelExport() {
+        if (_exportState.value is ExportState.Running) exporter.cancel()
+    }
+
+    fun dismissExport() {
+        if (_exportState.value !is ExportState.Running) _exportState.value = ExportState.Idle
+    }
+
+    fun saveExportToGallery(path: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { container.galleryExporter.saveMediaFile(path) }
+                .onSuccess { _message.value = AppStrings.get(R.string.gallery_saved) }
+                .onFailure { _message.value = AppStrings.get(R.string.gallery_save_failed) }
+        }
+    }
 
     private fun syncTasks(tasks: List<GenerationTask>) {
         val byId = tasks.associateBy { it.taskId }
