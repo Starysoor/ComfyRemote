@@ -1,0 +1,101 @@
+package com.comfyremote.app.feature.project
+
+import com.comfyremote.app.data.project.ProjectShot
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class DirectorPromptsTest {
+
+    @Test
+    fun parsePlanReadsTheContractFormat() {
+        val raw = """
+            1 | 城市清晨，阳光穿过高楼，主角独自走过空旷街道 | 缓慢推近 | 3
+            2 | 主角停下脚步回头，风吹起外套 | 横摇跟随 | 4
+        """.trimIndent()
+
+        val plan = DirectorPrompts.parsePlan(raw)
+
+        assertEquals(2, plan.size)
+        assertEquals("城市清晨，阳光穿过高楼，主角独自走过空旷街道", plan[0].prompt)
+        assertEquals("缓慢推近", plan[0].cameraNotes)
+        assertEquals(3, plan[0].suggestedSeconds)
+        assertEquals("主角停下脚步回头，风吹起外套", plan[1].prompt)
+        assertEquals(4, plan[1].suggestedSeconds)
+    }
+
+    @Test
+    fun parsePlanToleratesMarkdownAndMissingColumns() {
+        val raw = """
+            ## 镜头计划
+            - 1 | 夜色中的霓虹街道，雨后反光 | 固定机位 | 5s
+            * 2 | 特写主角眼神变化 | | 3秒
+            3 | 无运镜列的行也算
+            这不是有效行
+        """.trimIndent()
+
+        val plan = DirectorPrompts.parsePlan(raw)
+
+        // The third numbered row (no camera column) is still a valid prompt row.
+        assertEquals(3, plan.size)
+        assertEquals("夜色中的霓虹街道，雨后反光", plan[0].prompt)
+        assertEquals(5, plan[0].suggestedSeconds)
+        assertEquals("特写主角眼神变化", plan[1].prompt)
+        assertEquals("", plan[1].cameraNotes)
+        assertEquals(3, plan[1].suggestedSeconds)
+        assertEquals("无运镜列的行也算", plan[2].prompt)
+        assertEquals("", plan[2].cameraNotes)
+        assertNull(plan[2].suggestedSeconds)
+    }
+
+    @Test
+    fun parsePlanSkipsShortPromptsAndOutOfRangeSeconds() {
+        val raw = """
+            1 | ok | push | 2
+            2 | 短 | push | 1
+            3 | 这行提示词足够长了所以会被保留 | push | 999
+            4 | 这行提示词足够长了所以会被保留 | push | abc
+        """.trimIndent()
+
+        val plan = DirectorPrompts.parsePlan(raw)
+
+        // Row 1 prompt "ok" too short; row 2 prompt "短" too short; rows 3-4 keep
+        // with null seconds (out of range / not numeric).
+        assertEquals(2, plan.size)
+        assertNull(plan[0].suggestedSeconds)
+        assertNull(plan[1].suggestedSeconds)
+    }
+
+    @Test
+    fun parsePlanHandlesGarbageWithoutThrowing() {
+        assertTrue(DirectorPrompts.parsePlan("").isEmpty())
+        assertTrue(DirectorPrompts.parsePlan("绝对没有管道的一行").isEmpty())
+        assertTrue(DirectorPrompts.parsePlan("|||").isEmpty())
+    }
+
+    @Test
+    fun userPromptCarriesProjectContext() {
+        val project = com.comfyremote.app.data.project.VideoProject(
+            id = "p1",
+            title = "雨夜追逐",
+            workflowId = "model",
+            synopsis = "一个外卖员在雨夜穿梭送餐",
+            stylePrompt = "赛博朋克 霓虹",
+            aspectRatio = "9:16",
+            targetDurationSeconds = 30,
+            shots = listOf(ProjectShot(id = "s1", prompt = "已有镜头")),
+        )
+
+        val user = DirectorPrompts.user(project)
+
+        assertTrue("雨夜追逐" in user)
+        assertTrue("外卖员" in user)
+        assertTrue("赛博朋克" in user)
+        assertTrue("9:16" in user)
+        assertTrue("30" in user)
+        assertTrue("已有镜头" in user)
+        // With a 30s target and one existing shot the plan asks for ~5 more.
+        assertTrue("5 个新镜头" in user)
+    }
+}

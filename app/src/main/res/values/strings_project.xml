@@ -117,4 +117,14 @@
     <string name="proj_director_continuity_loading">Extracting frames…</string>
     <string name="proj_director_continuity_empty">Generate shots first; each finished shot shows a per-second frame strip here.</string>
     <string name="proj_director_seam_hint">Last frame of the previous shot vs first frame of this shot. Big jumps suggest a re-generate or a cut.</string>
+    <string name="proj_director_plan">AI shot plan</string>
+    <string name="proj_director_plan_hint">Suggests a shot list from the synopsis, style, target duration and assets. Suggestions only — nothing is generated until you prepare shots yourself.</string>
+    <string name="proj_director_plan_generate">Suggest shot plan</string>
+    <string name="proj_director_plan_loading">Thinking…</string>
+    <string name="proj_director_plan_empty">No suggestions yet. Tap the button to ask for a plan.</string>
+    <string name="proj_director_plan_select_all">Select all</string>
+    <string name="proj_director_plan_apply">Apply selected as draft shots</string>
+    <string name="proj_director_plan_applied">Added %1$d draft shots to the workspace</string>
+    <string name="proj_director_plan_seconds">~%1$d s</string>
+    <string name="proj_director_plan_unconfigured">Configure an AI endpoint in Settings → AI first.</string>
 </resources>

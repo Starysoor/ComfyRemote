@@ -22,6 +22,7 @@ import com.comfyremote.app.data.project.TrackKind
 import com.comfyremote.app.data.project.VideoExporter
 import com.comfyremote.app.data.project.VideoProject
 import com.comfyremote.app.data.project.isOrphanedRunningShot
+import com.comfyremote.app.feature.project.DirectorPrompts
 import com.comfyremote.app.data.reference.ProjectAsset
 import com.comfyremote.app.data.reference.ReferenceRole
 import com.comfyremote.app.data.repository.DraftTransfer
@@ -717,6 +718,78 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
             }
             _continuity.value = result
         }
+    }
+
+    // ---- AI shot plan (P3-3, advice only) ----
+
+    data class PlanState(
+        val loading: Boolean = false,
+        val suggestions: List<DirectorPrompts.SuggestedShot> = emptyList(),
+        val selected: Set<Int> = emptySet(),
+    )
+
+    private val _planState = MutableStateFlow(PlanState())
+    val planState: StateFlow<PlanState> = _planState.asStateFlow()
+
+    fun togglePlanSuggestion(index: Int) {
+        val current = _planState.value
+        val selected = current.selected.toMutableSet()
+        if (!selected.add(index)) selected.remove(index)
+        _planState.value = current.copy(selected = selected)
+    }
+
+    fun selectAllPlanSuggestions(selected: Boolean) {
+        val current = _planState.value
+        _planState.value = current.copy(
+            selected = if (selected) current.suggestions.indices.toSet() else emptySet(),
+        )
+    }
+
+    fun clearPlanSuggestions() {
+        _planState.value = PlanState()
+    }
+
+    /** Suggests a shot plan via the configured AI; advice only, no side effects. */
+    fun suggestShotPlan(projectId: String) {
+        val project = container.projectStore.project(projectId) ?: return
+        val settings = container.aiSettingsStore.load()
+        if (!settings.configured) {
+            _message.value = AppStrings.get(R.string.gen_vm_ai_not_configured)
+            return
+        }
+        if (_planState.value.loading) return
+        viewModelScope.launch {
+            _planState.value = PlanState(loading = true)
+            val suggestions = withContext(Dispatchers.IO) {
+                runCatching {
+                    val text = container.aiRepository.chat(
+                        DirectorPrompts.system(),
+                        DirectorPrompts.user(project),
+                    )
+                    DirectorPrompts.parsePlan(text)
+                }.getOrElse {
+                    _message.value = it.message ?: it.javaClass.simpleName
+                    emptyList()
+                }
+            }
+            _planState.value = PlanState(
+                loading = false,
+                suggestions = suggestions,
+                selected = suggestions.indices.toSet(),
+            )
+        }
+    }
+
+    /** Applies the selected suggestions as local draft shots; never generates. */
+    fun applyPlanSuggestions(projectId: String) {
+        val state = _planState.value
+        val chosen = state.suggestions.filterIndexed { index, _ -> index in state.selected }
+        if (chosen.isEmpty()) return
+        chosen.forEach { suggestion ->
+            container.projectStore.addShot(projectId, suggestion.prompt, suggestion.cameraNotes)
+        }
+        _message.value = AppStrings.get(R.string.proj_director_plan_applied, chosen.size)
+        _planState.value = PlanState()
     }
 
     /** The seam frame of a shot: its own tail frame, else the media edge. */
