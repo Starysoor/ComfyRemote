@@ -1,0 +1,529 @@
+package com.comfyremote.app.feature.project
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
+import com.comfyremote.app.R
+import com.comfyremote.app.data.project.Timeline
+import com.comfyremote.app.data.project.TimelineClip
+import com.comfyremote.app.data.project.TrackKind
+import com.comfyremote.app.data.project.VideoProject
+import com.comfyremote.app.data.reference.AssetKind
+import com.comfyremote.app.feature.generate.MediaThumbnail
+import com.comfyremote.app.ui.IrisType
+import com.comfyremote.app.ui.Spacing
+import com.comfyremote.app.ui.components.BannerTone
+import com.comfyremote.app.ui.components.ChipTone
+import com.comfyremote.app.ui.components.DetailTopBar
+import com.comfyremote.app.ui.components.EmptyState
+import com.comfyremote.app.ui.components.InfoBanner
+import com.comfyremote.app.ui.components.IrisCard
+import com.comfyremote.app.ui.components.IrisPrimaryButton
+import com.comfyremote.app.ui.components.IrisScaffold
+import com.comfyremote.app.ui.components.IrisSwitch
+import com.comfyremote.app.ui.components.IrisTextField
+import com.comfyremote.app.ui.components.SectionHeader
+import com.comfyremote.app.ui.components.SegmentedControl
+import com.comfyremote.app.ui.components.StatusChip
+import com.comfyremote.app.ui.components.TextAction
+import java.io.File
+import java.util.Locale
+
+private val SPEED_STEPS = listOf(0.5f, 1f, 1.5f, 2f)
+
+@Composable
+fun TimelineScreen(
+    viewModel: ProjectViewModel,
+    projectId: String,
+    onBack: () -> Unit,
+) {
+    val projects by viewModel.projects.collectAsState()
+    val message by viewModel.message.collectAsState()
+    val project = projects.firstOrNull { it.id == projectId }
+    val snackbar = remember { SnackbarHostState() }
+    var addingFor by remember { mutableStateOf<TrackKind?>(null) }
+    var editing by remember { mutableStateOf<Pair<TrackKind, TimelineClip>?>(null) }
+    var previewing by remember { mutableStateOf(false) }
+
+    LaunchedEffect(project?.id) {
+        if (project != null && project.timeline == null) viewModel.ensureTimeline(projectId)
+    }
+    LaunchedEffect(message) {
+        message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() }
+    }
+
+    IrisScaffold(
+        snackbarHostState = snackbar,
+        topBar = {
+            DetailTopBar(
+                title = stringResource(R.string.proj_timeline_title),
+                onBack = onBack,
+                actions = {
+                    IconButton(
+                        onClick = { previewing = true },
+                        enabled = project?.timeline?.videoTrack?.isNotEmpty() == true,
+                    ) {
+                        Icon(Icons.Outlined.PlayArrow, stringResource(R.string.proj_timeline_preview))
+                    }
+                },
+            )
+        },
+    ) { pad ->
+        if (project == null) {
+            Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) {
+                EmptyState(stringResource(R.string.proj_not_found), icon = Icons.Outlined.PlayArrow)
+            }
+            return@IrisScaffold
+        }
+        val timeline = project.timeline ?: Timeline()
+        // LazyListScope blocks are not composable: resolve strings up front.
+        val videoTrackTitle = stringResource(R.string.proj_timeline_video_track)
+        val videoTrackEmpty = stringResource(R.string.proj_timeline_video_empty)
+        val audioTrackTitle = stringResource(R.string.proj_timeline_audio_track)
+        val audioTrackEmpty = stringResource(R.string.proj_timeline_audio_empty)
+        LazyColumn(
+            Modifier.padding(pad).fillMaxSize(),
+            contentPadding = PaddingValues(start = Spacing.gutter, end = Spacing.gutter, top = Spacing.sm, bottom = Spacing.xl),
+            verticalArrangement = Arrangement.spacedBy(Spacing.md),
+        ) {
+            item("summary") {
+                IrisCard {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        Text(
+                            stringResource(R.string.proj_timeline_duration, formatSeconds(timeline.totalDurationMs)),
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                        StatusChip(
+                            stringResource(R.string.proj_timeline_video_clips, timeline.videoTrack.size),
+                            tone = ChipTone.Neutral,
+                        )
+                        StatusChip(
+                            stringResource(R.string.proj_timeline_audio_clips, timeline.audioTrack.size),
+                            tone = ChipTone.Neutral,
+                        )
+                    }
+                }
+            }
+            if (timeline.audioTrack.isNotEmpty()) {
+                item("audio-note") {
+                    InfoBanner(
+                        text = stringResource(R.string.proj_timeline_audio_export_note),
+                        tone = BannerTone.Info,
+                    )
+                }
+            }
+            item("video-add") {
+                IrisPrimaryButton(
+                    text = stringResource(R.string.proj_timeline_add_video),
+                    icon = Icons.Outlined.Add,
+                    onClick = { addingFor = TrackKind.VIDEO },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            trackSection(
+                key = "video",
+                title = videoTrackTitle,
+                clips = timeline.videoTrack,
+                emptyHint = videoTrackEmpty,
+                onAdd = { addingFor = TrackKind.VIDEO },
+                onEdit = { editing = TrackKind.VIDEO to it },
+                onMove = { clipId, delta -> viewModel.moveTimelineClip(projectId, TrackKind.VIDEO, clipId, delta) },
+                onRemove = { viewModel.removeTimelineClip(projectId, TrackKind.VIDEO, it) },
+            )
+            item("audio-add") {
+                TextAction(stringResource(R.string.proj_timeline_add_audio), onClick = { addingFor = TrackKind.AUDIO })
+            }
+            trackSection(
+                key = "audio",
+                title = audioTrackTitle,
+                clips = timeline.audioTrack,
+                emptyHint = audioTrackEmpty,
+                onAdd = { addingFor = TrackKind.AUDIO },
+                onEdit = { editing = TrackKind.AUDIO to it },
+                onMove = { clipId, delta -> viewModel.moveTimelineClip(projectId, TrackKind.AUDIO, clipId, delta) },
+                onRemove = { viewModel.removeTimelineClip(projectId, TrackKind.AUDIO, it) },
+            )
+        }
+    }
+
+    addingFor?.let { kind ->
+        if (project == null) {
+            addingFor = null
+        } else {
+            ClipSourcePickerDialog(
+                project = project,
+                kind = kind,
+                onDismiss = { addingFor = null },
+                onPick = { path, label ->
+                    viewModel.addTimelineClip(projectId, kind, path, label)
+                    addingFor = null
+                },
+            )
+        }
+    }
+    editing?.let { (kind, clip) ->
+        EditClipDialog(
+            clip = clip,
+            onDismiss = { editing = null },
+            onSave = { inMs, outMs, speed, volume, muted ->
+                viewModel.updateTimelineClip(projectId, kind, clip.id, inMs, outMs, speed, volume, muted)
+                editing = null
+            },
+            onDelete = {
+                viewModel.removeTimelineClip(projectId, kind, clip.id)
+                editing = null
+            },
+        )
+    }
+    if (previewing && project != null) {
+        PreviewDialog(
+            timeline = project.timeline ?: Timeline(),
+            onDismiss = { previewing = false },
+        )
+    }
+}
+
+private fun LazyListScope.trackSection(
+    key: String,
+    title: String,
+    clips: List<TimelineClip>,
+    emptyHint: String,
+    onAdd: () -> Unit,
+    onEdit: (TimelineClip) -> Unit,
+    onMove: (String, Int) -> Unit,
+    onRemove: (String) -> Unit,
+) {
+    item("$key-heading") {
+        SectionHeader(title) {
+            TextAction(stringResource(R.string.proj_timeline_add), onClick = onAdd)
+        }
+    }
+    if (clips.isEmpty()) {
+        item("$key-empty") {
+            Text(
+                emptyHint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    } else {
+        items(clips.size, key = { "$key-" + clips[it].id }) { index ->
+            val clip = clips[index]
+            var menu by remember { mutableStateOf(false) }
+            IrisCard(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    MediaThumbnail(clip.sourcePath, 56.dp, Modifier.clip(MaterialTheme.shapes.medium))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            clip.sourceLabel.ifBlank { clip.sourcePath.substringAfterLast('/') },
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            StatusChip(formatSeconds(clip.durationMs), tone = ChipTone.Neutral)
+                            if (clip.speed != 1f) {
+                                StatusChip("${clip.speed}x", tone = ChipTone.Accent)
+                            }
+                            if (clip.muted) {
+                                StatusChip(stringResource(R.string.proj_timeline_muted), tone = ChipTone.Warning)
+                            } else if (clip.volume != 1f) {
+                                StatusChip("${(clip.volume * 100).toInt()}%", tone = ChipTone.Neutral)
+                            }
+                        }
+                    }
+                    Box {
+                        IconButton(onClick = { menu = true }) {
+                            Icon(Icons.Outlined.MoreVert, stringResource(R.string.action_more))
+                        }
+                        DropdownMenu(menu, { menu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.proj_timeline_edit_clip)) },
+                                onClick = { menu = false; onEdit(clip) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.board_move_up)) },
+                                onClick = { menu = false; onMove(clip.id, -1) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.board_move_down)) },
+                                onClick = { menu = false; onMove(clip.id, 1) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error) },
+                                leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                                onClick = { menu = false; onRemove(clip.id) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Ordered list of media sources eligible for the requested track. */
+internal fun clipSources(project: VideoProject, kind: TrackKind): List<Pair<String, String>> {
+    val sources = LinkedHashMap<String, String>()
+    if (kind == TrackKind.VIDEO) {
+        project.shots.forEachIndexed { index, shot ->
+            shot.resultPath?.takeIf { it.isNotBlank() }?.let { path ->
+                sources[path] = "镜头 ${index + 1}"
+            }
+        }
+    }
+    project.assets
+        .filter {
+            if (kind == TrackKind.AUDIO) it.kind == AssetKind.AUDIO else it.kind == AssetKind.VIDEO
+        }
+        .forEach { asset ->
+            sources.putIfAbsent(asset.path, asset.label.ifBlank { asset.path.substringAfterLast('/') })
+        }
+    return sources.map { it.key to it.value }
+}
+
+@Composable
+private fun ClipSourcePickerDialog(
+    project: VideoProject,
+    kind: TrackKind,
+    onDismiss: () -> Unit,
+    onPick: (path: String, label: String) -> Unit,
+) {
+    val sources = clipSources(project, kind)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                stringResource(
+                    if (kind == TrackKind.VIDEO) R.string.proj_timeline_add_video else R.string.proj_timeline_add_audio,
+                ),
+            )
+        },
+        text = {
+            if (sources.isEmpty()) {
+                Text(
+                    stringResource(
+                        if (kind == TrackKind.VIDEO) R.string.proj_timeline_no_video_sources else R.string.proj_timeline_no_audio_sources,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    sources.forEach { (path, label) ->
+                        TextButton(onClick = { onPick(path, label) }) {
+                            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun EditClipDialog(
+    clip: TimelineClip,
+    onDismiss: () -> Unit,
+    onSave: (inMs: Long, outMs: Long, speed: Float, volume: Float, muted: Boolean) -> Unit,
+    onDelete: () -> Unit,
+) {
+    var inText by remember(clip.id) { mutableStateOf(clip.sourceInMs.toString()) }
+    var outText by remember(clip.id) { mutableStateOf(clip.sourceOutMs.toString()) }
+    var speedIndex by remember(clip.id) { mutableStateOf(SPEED_STEPS.indexOfFirst { it == clip.speed }.takeIf { it >= 0 } ?: 1) }
+    var volume by remember(clip.id) { mutableStateOf(if (clip.muted) 0f else clip.volume) }
+    var muted by remember(clip.id) { mutableStateOf(clip.muted) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.proj_timeline_edit_clip)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    IrisTextField(
+                        value = inText,
+                        onValueChange = { inText = it.filter(Char::isDigit).take(8) },
+                        label = stringResource(R.string.proj_timeline_in_ms),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IrisTextField(
+                        value = outText,
+                        onValueChange = { outText = it.filter(Char::isDigit).take(8) },
+                        label = stringResource(R.string.proj_timeline_out_ms),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Text(
+                    stringResource(R.string.proj_timeline_trim_hint, formatSeconds(clip.trimmedMs)),
+                    style = IrisType.metaSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(stringResource(R.string.proj_timeline_speed), style = MaterialTheme.typography.titleSmall)
+                SegmentedControl(
+                    options = SPEED_STEPS.map { "${it}x" },
+                    selectedIndex = speedIndex,
+                    onSelect = { speedIndex = it },
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.proj_timeline_volume), style = MaterialTheme.typography.titleSmall)
+                        Slider(
+                            value = volume,
+                            onValueChange = { volume = it },
+                            valueRange = 0f..2f,
+                            enabled = !muted,
+                        )
+                    }
+                    Text("${(volume * 100).toInt()}%", style = IrisType.metaSmall)
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.proj_timeline_mute), style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            stringResource(R.string.proj_timeline_mute_hint),
+                            style = IrisType.metaSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IrisSwitch(checked = muted, onCheckedChange = { muted = it })
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val inMs = inText.toLongOrNull() ?: 0L
+                val outMs = outText.toLongOrNull() ?: (inMs + 1)
+                onSave(inMs, outMs.coerceAtLeast(inMs + 1), SPEED_STEPS[speedIndex], volume, muted)
+            }) { Text(stringResource(R.string.board_save)) }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onDelete) {
+                    Text(stringResource(R.string.action_delete), color = MaterialTheme.colorScheme.error)
+                }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            }
+        },
+    )
+}
+
+/**
+ * Sequential preview of the video track: trims apply through clipping; speed,
+ * volume and mute are previewed at 1x (the export is authoritative).
+ */
+@Composable
+private fun PreviewDialog(timeline: Timeline, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val player = remember(timeline.videoTrack) {
+        ExoPlayer.Builder(context).build().apply {
+            timeline.videoTrack.forEach { clip ->
+                addMediaItem(
+                    MediaItem.Builder()
+                        .setUri(android.net.Uri.fromFile(File(clip.sourcePath)))
+                        .setClippingConfiguration(
+                            MediaItem.ClippingConfiguration.Builder()
+                                .setStartPositionMs(clip.sourceInMs)
+                                .setEndPositionMs(clip.sourceOutMs)
+                                .build(),
+                        )
+                        .build(),
+                )
+            }
+            prepare()
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { player.release() }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.proj_timeline_preview)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                AndroidView(
+                    factory = { ctx -> PlayerView(ctx).apply { this.player = player } },
+                    modifier = Modifier.fillMaxWidth().height(220.dp),
+                )
+                Text(
+                    stringResource(R.string.proj_timeline_preview_note),
+                    style = IrisType.metaSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
+    )
+}
+
+internal fun formatSeconds(ms: Long): String {
+    val totalSeconds = ms / 1000.0
+    return if (totalSeconds >= 60) {
+        String.format(Locale.US, "%d:%04.1f", totalSeconds.toLong() / 60, totalSeconds % 60)
+    } else {
+        String.format(Locale.US, "%.1fs", totalSeconds)
+    }
+}

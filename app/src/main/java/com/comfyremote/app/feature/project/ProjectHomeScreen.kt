@@ -77,6 +77,7 @@ fun ProjectHomeScreen(
     onBack: () -> Unit,
     onOpenWorkspace: () -> Unit,
     onOpenLibrary: () -> Unit,
+    onOpenTimeline: () -> Unit,
     onOpenTask: (String) -> Unit,
 ) {
     val projects by viewModel.projects.collectAsState()
@@ -160,6 +161,9 @@ fun ProjectHomeScreen(
                     onClick = onOpenWorkspace,
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            item("timeline") {
+                TextAction(stringResource(R.string.proj_open_timeline), onClick = onOpenTimeline)
             }
             item("assets-heading") {
                 SectionHeader(stringResource(R.string.board_assets)) {
