@@ -167,7 +167,8 @@ class GenerationRunnerTest {
     fun identicalRemotePromptIdsKeepSeparateLocalTaskHistoryAndMedia() = runBlocking {
         val sink = FakeHistorySink()
         val first = task()
-        val second = task(request().copy(id = "req-2", provider = "custom-openai", serverUrl = "https://custom.example"))
+        // A second ComfyUI server may legitimately issue the same prompt ID.
+        val second = task(request().copy(id = "req-2", serverUrl = "http://server-two:8188"))
         val firstBackend = FakeBackend(history = mutableListOf(successEntry("a.png")))
         val secondBackend = FakeBackend(history = mutableListOf(successEntry("b.png")))
 
