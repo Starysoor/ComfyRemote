@@ -1,4 +1,4 @@
-package com.comfyremote.app.feature.storyboard
+package com.comfyremote.app.feature.project
 
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
@@ -11,12 +11,12 @@ import com.comfyremote.app.LabeledText
 import com.comfyremote.app.data.cloud.AutoDlConfig
 import com.comfyremote.app.data.generation.GenerationPhase
 import com.comfyremote.app.data.generation.GenerationTask
+import com.comfyremote.app.data.project.ProjectShot
+import com.comfyremote.app.data.project.VideoProject
+import com.comfyremote.app.data.project.isOrphanedRunningShot
 import com.comfyremote.app.data.reference.ProjectAsset
 import com.comfyremote.app.data.reference.ReferenceRole
 import com.comfyremote.app.data.repository.DraftTransfer
-import com.comfyremote.app.data.storyboard.StoryboardProject
-import com.comfyremote.app.data.storyboard.StoryboardShot
-import com.comfyremote.app.data.storyboard.isOrphanedRunningShot
 import com.comfyremote.app.feature.generate.isVideoPath
 import com.comfyremote.app.R
 import com.comfyremote.app.ui.AppStrings
@@ -24,12 +24,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-data class StoryboardWorkflowOption(
+data class ProjectWorkflowOption(
     val path: String,
     val workflowId: String,
     val name: String,
@@ -38,10 +37,14 @@ data class StoryboardWorkflowOption(
     val kind: String,
 )
 
-class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
-    val projects: StateFlow<List<StoryboardProject>> = container.storyboardStore.projects
-    private val _workflows = MutableStateFlow<List<StoryboardWorkflowOption>>(emptyList())
-    val workflows: StateFlow<List<StoryboardWorkflowOption>> = _workflows.asStateFlow()
+/** Studio-side ViewModel: projects, shots, assets and generation-task sync. */
+class ProjectViewModel(private val container: AppContainer) : ViewModel() {
+    val projects: StateFlow<List<VideoProject>> = container.projectStore.projects
+
+    /** Read-only engine feed for the in-project task view; submission stays on the create page. */
+    val tasks: StateFlow<List<GenerationTask>> = container.generationManager.tasks
+    private val _workflows = MutableStateFlow<List<ProjectWorkflowOption>>(emptyList())
+    val workflows: StateFlow<List<ProjectWorkflowOption>> = _workflows.asStateFlow()
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
     private val syncing = mutableSetOf<String>()
@@ -53,10 +56,10 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         refreshWorkflows()
         migrateLegacyTailFrames()
         viewModelScope.launch {
-            container.storyboardStore.persistenceError.collect { error ->
+            container.projectStore.persistenceError.collect { error ->
                 if (error != null) {
                     _message.value = error
-                    container.storyboardStore.clearPersistenceError()
+                    container.projectStore.clearPersistenceError()
                 }
             }
         }
@@ -79,7 +82,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             catalogReadyProviders.clear()
             val (options, errors, ready) = withContext(Dispatchers.IO) {
-                val options = mutableListOf<StoryboardWorkflowOption>()
+                val options = mutableListOf<ProjectWorkflowOption>()
                 val errors = mutableListOf<String>()
                 val ready = mutableSetOf<String>()
                 container.cloudProviders.enabled.forEach { provider ->
@@ -89,7 +92,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                         .onSuccess { list ->
                             ready += provider.id
                             options += list.filter { it.kind == "video" }.map { summary ->
-                                StoryboardWorkflowOption(
+                                ProjectWorkflowOption(
                                     path = provider.pathPrefix + summary.id,
                                     workflowId = summary.id,
                                     name = summary.name,
@@ -110,7 +113,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
             }
             catalogReadyProviders += ready
             _workflows.value = options.distinctBy { it.path }.sortedWith(
-                compareBy<StoryboardWorkflowOption> { it.providerLabel.lowercase() }
+                compareBy<ProjectWorkflowOption> { it.providerLabel.lowercase() }
                     .thenBy { it.name.lowercase() }
             )
             if (options.isEmpty() && errors.isNotEmpty()) _message.value = errors.first()
@@ -121,18 +124,20 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         title: String,
         workflowPath: String,
         stylePrompt: String,
+        synopsis: String = "",
         chainFrames: Boolean = true,
-    ): StoryboardProject? {
+    ): VideoProject? {
         val option = _workflows.value.firstOrNull { it.path == workflowPath }
         if (option == null) {
             _message.value = AppStrings.get(R.string.board_err_choose_workflow)
             return null
         }
-        return container.storyboardStore.create(
+        return container.projectStore.create(
             title = title,
             chainFrames = chainFrames,
             workflowId = option.workflowId,
             stylePrompt = stylePrompt,
+            synopsis = synopsis,
             workflowPath = option.path,
             providerId = option.providerId,
         ).also { created ->
@@ -141,32 +146,32 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun deleteProject(id: String): Boolean {
-        val project = container.storyboardStore.project(id) ?: return false
+        val project = container.projectStore.project(id) ?: return false
         if (project.shots.any(::shotRunning)) {
             _message.value = AppStrings.get(R.string.board_err_delete_running_project)
             return false
         }
-        return container.storyboardStore.delete(id)
+        return container.projectStore.delete(id)
     }
 
-    fun setStyle(projectId: String, style: String) = container.storyboardStore.setStyle(projectId, style)
-
-    fun setAspectRatio(projectId: String, ratio: String) =
-        container.storyboardStore.setAspectRatio(projectId, ratio)
+    fun setStyle(projectId: String, style: String) = container.projectStore.setStyle(projectId, style)
 
     fun setChainFrames(projectId: String, enabled: Boolean) =
-        container.storyboardStore.setChainFrames(projectId, enabled)
+        container.projectStore.setChainFrames(projectId, enabled)
 
     fun updateProjectSettings(
         projectId: String,
         title: String,
+        synopsis: String,
         workflowPath: String,
         aspectRatio: String,
         defaultValues: Map<String, String>,
+        targetDurationSeconds: Int?,
     ) {
         val providerId = container.cloudProviders.forPath(workflowPath)?.id.orEmpty()
-        container.storyboardStore.updateSettings(
-            projectId, title, workflowPath, providerId, aspectRatio, defaultValues,
+        container.projectStore.updateSettings(
+            projectId, title, synopsis, workflowPath, providerId, aspectRatio, defaultValues,
+            targetDurationSeconds = targetDurationSeconds,
         )
     }
 
@@ -175,45 +180,42 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
             _message.value = AppStrings.get(R.string.board_err_empty_prompt)
             return
         }
-        container.storyboardStore.addShot(projectId, prompt)
+        container.projectStore.addShot(projectId, prompt)
     }
 
     fun deleteShot(projectId: String, shotId: String) {
-        val shot = container.storyboardStore.project(projectId)
+        val shot = container.projectStore.project(projectId)
             ?.shots?.firstOrNull { it.id == shotId } ?: return
         if (shotRunning(shot)) {
             _message.value = AppStrings.get(R.string.board_err_delete_running_shot)
             return
         }
-        container.storyboardStore.deleteShot(projectId, shotId)
+        container.projectStore.deleteShot(projectId, shotId)
     }
 
-    private fun shotRunning(shot: StoryboardShot): Boolean =
+    private fun shotRunning(shot: ProjectShot): Boolean =
         shot.status == "running" || shot.taskId?.let { taskId ->
             container.generationManager.tasks.value.firstOrNull { it.taskId == taskId }?.isActive
         } == true
 
     fun updateShot(projectId: String, shotId: String, prompt: String) =
-        container.storyboardStore.updateShot(projectId, shotId) {
+        container.projectStore.updateShot(projectId, shotId) {
             it.copy(prompt = prompt.trim())
         }
 
     fun moveShot(projectId: String, shotId: String, delta: Int) =
-        container.storyboardStore.moveShot(projectId, shotId, delta)
+        container.projectStore.moveShot(projectId, shotId, delta)
 
     fun duplicateShot(projectId: String, shotId: String) =
-        container.storyboardStore.duplicateShot(projectId, shotId)
+        container.projectStore.duplicateShot(projectId, shotId)
 
     fun insertShotAfter(projectId: String, shotId: String, prompt: String) =
-        container.storyboardStore.insertShotAfter(projectId, shotId, prompt)
-
-    fun assignAssetToShot(projectId: String, shotId: String, assetId: String) =
-        assignAssetsToShot(projectId, shotId, listOf(assetId))
+        container.projectStore.insertShotAfter(projectId, shotId, prompt)
 
     fun assignAssetsToShot(projectId: String, shotId: String, assetIds: List<String>) {
-        val project = container.storyboardStore.project(projectId) ?: return
+        val project = container.projectStore.project(projectId) ?: return
         val assets = assetIds.mapNotNull { id -> project.assets.firstOrNull { it.id == id } }
-        container.storyboardStore.updateShot(projectId, shotId) {
+        container.projectStore.updateShot(projectId, shotId) {
             it.copy(
                 referenceAssetIds = assetIds,
                 referencePath = assets.firstOrNull()?.path,
@@ -224,7 +226,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun clearShotReference(projectId: String, shotId: String) =
-        container.storyboardStore.updateShot(projectId, shotId) {
+        container.projectStore.updateShot(projectId, shotId) {
             it.copy(
                 referencePath = null,
                 referenceAssetIds = emptyList(),
@@ -241,7 +243,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         val shot = shot(projectId, shotId) ?: return
         if (shot.workflowPath == workflowPath?.takeIf { it.isNotBlank() }) return
         if (workflowPath.isNullOrBlank()) {
-            container.storyboardStore.updateShot(projectId, shotId) {
+            container.projectStore.updateShot(projectId, shotId) {
                 it.copy(workflowId = null, workflowPath = null, providerId = null, values = emptyMap())
             }
             return
@@ -251,7 +253,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
             _message.value = AppStrings.get(R.string.board_err_choose_workflow)
             return
         }
-        container.storyboardStore.updateShot(projectId, shotId) {
+        container.projectStore.updateShot(projectId, shotId) {
             it.copy(
                 workflowId = option.workflowId,
                 workflowPath = option.path,
@@ -265,7 +267,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     fun addAsset(projectId: String, role: ReferenceRole, uri: Uri) {
         viewModelScope.launch {
             runCatching { container.storyboardAssetStore.importUri(uri, role) }
-                .onSuccess { asset -> container.storyboardStore.addAsset(projectId, asset) }
+                .onSuccess { asset -> container.projectStore.addAsset(projectId, asset) }
                 .onFailure { e ->
                     _message.value = AppStrings.get(R.string.board_err_add_asset, e.message ?: "error")
                 }
@@ -273,13 +275,13 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun removeAsset(projectId: String, assetId: String) {
-        container.storyboardStore.removeAsset(projectId, assetId)
+        container.projectStore.removeAsset(projectId, assetId)
     }
 
-    fun project(projectId: String): StoryboardProject? =
+    fun project(projectId: String): VideoProject? =
         projects.value.firstOrNull { it.id == projectId }
 
-    fun shot(projectId: String, shotId: String): StoryboardShot? =
+    fun shot(projectId: String, shotId: String): ProjectShot? =
         project(projectId)?.shots?.firstOrNull { it.id == shotId }
 
     /**
@@ -320,7 +322,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         }
         val values = project.defaultValues + shot.values +
             (if (prompt.isBlank()) emptyMap() else mapOf("prompt" to prompt))
-        container.storyboardStore.updateShot(projectId, shotId) {
+        container.projectStore.updateShot(projectId, shotId) {
             it.copy(status = if (it.status == "running") it.status else "draft", error = null)
         }
         container.draftTransferRepository.put(
@@ -339,15 +341,15 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
         return workflowPath to name
     }
 
-    fun nextShot(projectId: String): StoryboardShot? = container.storyboardStore.nextShot(projectId)
+    fun nextShot(projectId: String): ProjectShot? = container.projectStore.nextShot(projectId)
 
     fun setReference(projectId: String, shotId: String, path: String?, manual: Boolean = true) =
-        container.storyboardStore.setReference(projectId, shotId, path, manual)
+        container.projectStore.setReference(projectId, shotId, path, manual)
 
     /** Explicitly reuses the previous shot's tail frame, even when auto relay is off. */
     fun usePreviousFrame(projectId: String, shotId: String, path: String?) {
         if (path.isNullOrBlank()) return
-        container.storyboardStore.updateShot(projectId, shotId) {
+        container.projectStore.updateShot(projectId, shotId) {
             it.copy(
                 referencePath = path,
                 referenceAssetIds = emptyList(),
@@ -367,7 +369,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                 if (isOrphanedRunningShot(shot, byId.keys)) {
                     // The remote job may still exist: unlock for manual recovery,
                     // but never automatically create another paid generation.
-                    container.storyboardStore.markFailed(
+                    container.projectStore.markFailed(
                         project.id,
                         shot.id,
                         AppStrings.get(R.string.board_err_missing_task),
@@ -377,7 +379,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                 val task = shot.taskId?.let(byId::get) ?: return@forEach
                 if (task.isActive) {
                     if (shot.status != "running") {
-                        container.storyboardStore.updateShot(project.id, shot.id) {
+                        container.projectStore.updateShot(project.id, shot.id) {
                             it.copy(status = "running", error = null)
                         }
                     }
@@ -411,7 +413,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                     }
                     val resultPath = task.results.firstOrNull()?.localPath
                     if (resultPath == null) {
-                        container.storyboardStore.markFailed(project.id, shot.id, AppStrings.get(R.string.board_err_no_result))
+                        container.projectStore.markFailed(project.id, shot.id, AppStrings.get(R.string.board_err_no_result))
                         return@forEach
                     }
                     if (!syncing.add(shot.id)) return@forEach
@@ -419,7 +421,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                         try {
                             val index = project.shots.indexOfFirst { it.id == shot.id }
                             val lastFrame = extractLastFrame(shot.id, resultPath)
-                            val done = container.storyboardStore.markDone(
+                            val done = container.projectStore.markDone(
                                 project.id,
                                 shot.id,
                                 resultPath,
@@ -436,21 +438,20 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
                         }
                     }
                 } else if (task.phase == GenerationPhase.FAILED) {
-                    container.storyboardStore.markFailed(
+                    container.projectStore.markFailed(
                         project.id,
                         shot.id,
                         task.error?.message ?: AppStrings.get(R.string.board_err_generation_failed),
                     )
                 } else if (task.phase == GenerationPhase.CANCELLED) {
-                    container.storyboardStore.updateShot(project.id, shot.id) {
-                        it.copy(status = "draft", error = AppStrings.get(R.string.phase_cancelled))
-                    }
+                    // Closes the running take as cancelled and returns the shot to draft.
+                    container.projectStore.markTaskCancelled(project.id, shot.id, shot.taskId.orEmpty())
                 }
             }
         }
     }
 
-    /** Imports already-extracted tail frames once, including projects from older builds. */
+    /** Imports already-extracted tail frames once, including migrated projects. */
     private fun migrateLegacyTailFrames() {
         val pending = projects.value.flatMap { project ->
             project.shots.mapIndexed { index, shot -> Triple(project, index, shot) }
@@ -476,20 +477,20 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     private fun tailAssetId(shotId: String): String = "tail:$shotId"
 
     private fun markTailFrameStored(projectId: String, shotId: String) =
-        container.storyboardStore.updateShot(projectId, shotId) {
+        container.projectStore.updateShot(projectId, shotId) {
             it.copy(tailFrameStored = true)
         }
 
     /** One stable tail-frame asset per shot, plus a separate History result for videos. */
     private suspend fun addTailFrameArtifacts(
-        project: StoryboardProject,
-        shot: StoryboardShot,
+        project: VideoProject,
+        shot: ProjectShot,
         index: Int,
         resultPath: String,
         lastFramePath: String,
     ): Boolean {
         if (!File(lastFramePath).isFile) return false
-        val current = container.storyboardStore.project(project.id) ?: project
+        val current = container.projectStore.project(project.id) ?: project
         val existing = current.assets.firstOrNull { it.id == tailAssetId(shot.id) }
         val asset = ProjectAsset(
             id = tailAssetId(shot.id),
@@ -500,7 +501,7 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
             createdAt = existing?.createdAt ?: System.currentTimeMillis(),
         )
         if (existing?.path != asset.path || existing?.label != asset.label) {
-            if (!container.storyboardStore.addAsset(project.id, asset)) return false
+            if (!container.projectStore.addAsset(project.id, asset)) return false
         }
         // An image result is already in History; only a video needs its tail frame added.
         return lastFramePath == resultPath ||
@@ -508,15 +509,15 @@ class StoryboardViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private suspend fun addTailFrameToHistory(
-        project: StoryboardProject,
-        shot: StoryboardShot,
+        project: VideoProject,
+        shot: ProjectShot,
         index: Int,
         lastFramePath: String,
     ): Boolean {
         val sourceName = File(lastFramePath).nameWithoutExtension
         val historyId = "storyboard-tail:${shot.id}:$sourceName"
         if (container.historyRepository.find(historyId) != null) return true
-        // History owns its copy, so Storyboard GC can never delete an old result.
+        // History owns its copy, so project GC can never delete an old result.
         val historyImage = withContext(Dispatchers.IO) {
             runCatching {
                 val target = container.historyRepository.newImageFile(

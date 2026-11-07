@@ -7,7 +7,7 @@ object Routes {
     const val CREATE = "create"
     const val TASKS = "tasks"
     const val HISTORY = "history"
-    const val STORYBOARD = "storyboard"
+    const val PROJECTS = "projects"
     const val SETTINGS = "settings"
     const val APP_SETTINGS = "app-settings"
     const val CLOUD_SETTINGS = "cloud-settings"
@@ -19,14 +19,17 @@ object Routes {
 
     const val GENERATE_PATTERN = "generate?path={path}&name={name}"
     const val TASK_PATTERN = "task/{taskId}"
-    const val STORYBOARD_DETAIL_PATTERN = "storyboard/{projectId}"
+    const val PROJECT_PATTERN = "project/{projectId}"
+    const val PROJECT_SHOTS_PATTERN = "project/{projectId}/shots"
 
     fun generate(path: String, name: String): String =
         "generate?path=${Uri.encode(path)}&name=${Uri.encode(name)}"
 
     fun task(taskId: String): String = "task/${Uri.encode(taskId)}"
 
-    fun storyboard(projectId: String): String = "storyboard/${Uri.encode(projectId)}"
+    fun project(projectId: String): String = "project/${Uri.encode(projectId)}"
+
+    fun projectShots(projectId: String): String = "project/${Uri.encode(projectId)}/shots"
 
     fun cloudProvider(providerId: String): String = "cloud-provider/${Uri.encode(providerId)}"
 }

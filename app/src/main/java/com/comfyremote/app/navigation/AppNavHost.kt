@@ -73,9 +73,10 @@ import com.comfyremote.app.feature.settings.AppSettingsViewModel
 import com.comfyremote.app.feature.settings.CloudSettingsScreen
 import com.comfyremote.app.feature.settings.CloudSettingsViewModel
 import com.comfyremote.app.feature.settings.SettingsScreen
-import com.comfyremote.app.feature.storyboard.StoryboardDetailScreen
-import com.comfyremote.app.feature.storyboard.StoryboardScreen
-import com.comfyremote.app.feature.storyboard.StoryboardViewModel
+import com.comfyremote.app.feature.project.ProjectHomeScreen
+import com.comfyremote.app.feature.project.ProjectListScreen
+import com.comfyremote.app.feature.project.ProjectViewModel
+import com.comfyremote.app.feature.project.ShotsWorkspaceScreen
 import com.comfyremote.app.feature.tasks.TaskDetailScreen
 import com.comfyremote.app.feature.tasks.TasksScreen
 import com.comfyremote.app.feature.tasks.TasksViewModel
@@ -126,7 +127,7 @@ private fun AppNavHost(
     val scope = rememberCoroutineScope()
     val backStack by navController.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
-    val showBottom = route in setOf(Routes.CREATE, Routes.TASKS, Routes.HISTORY, Routes.STORYBOARD)
+    val showBottom = route in setOf(Routes.CREATE, Routes.TASKS, Routes.HISTORY, Routes.PROJECTS)
 
     fun openTransfer(transfer: DraftTransfer) {
         scope.launch {
@@ -207,19 +208,36 @@ private fun AppNavHost(
                 val vm: HistoryViewModel = viewModel(factory = factory)
                 HistoryScreen(vm, onReuse = ::openTransfer)
             }
-            composable(Routes.STORYBOARD) {
-                val vm: StoryboardViewModel = viewModel(factory = factory)
-                StoryboardScreen(
+            composable(Routes.PROJECTS) {
+                val vm: ProjectViewModel = viewModel(factory = factory)
+                ProjectListScreen(
                     viewModel = vm,
-                    onOpenProject = { projectId -> navController.navigate(Routes.storyboard(projectId)) },
+                    onOpenProject = { projectId -> navController.navigate(Routes.project(projectId)) },
                 )
             }
             composable(
-                Routes.STORYBOARD_DETAIL_PATTERN,
+                Routes.PROJECT_PATTERN,
                 arguments = listOf(navArgument("projectId") { type = NavType.StringType })
             ) { entry ->
-                val vm: StoryboardViewModel = viewModel(factory = factory)
-                StoryboardDetailScreen(
+                val vm: ProjectViewModel = viewModel(factory = factory)
+                ProjectHomeScreen(
+                    viewModel = vm,
+                    projectId = entry.arguments?.getString("projectId").orEmpty(),
+                    onBack = { navController.popBackStack() },
+                    onOpenWorkspace = {
+                        navController.navigate(
+                            Routes.projectShots(entry.arguments?.getString("projectId").orEmpty()),
+                        )
+                    },
+                    onOpenTask = { taskId -> navController.navigate(Routes.task(taskId)) },
+                )
+            }
+            composable(
+                Routes.PROJECT_SHOTS_PATTERN,
+                arguments = listOf(navArgument("projectId") { type = NavType.StringType })
+            ) { entry ->
+                val vm: ProjectViewModel = viewModel(factory = factory)
+                ShotsWorkspaceScreen(
                     viewModel = vm,
                     projectId = entry.arguments?.getString("projectId").orEmpty(),
                     onBack = { navController.popBackStack() },
@@ -255,7 +273,7 @@ private fun AppNavHost(
                     taskId = entry.arguments?.getString("taskId").orEmpty(),
                     onBack = { navController.popBackStack() },
                     onReuse = ::openTransfer,
-                    onOpenStoryboard = { projectId -> navController.navigate(Routes.storyboard(projectId)) },
+                    onOpenProject = { projectId -> navController.navigate(Routes.project(projectId)) },
                 )
             }
             composable(Routes.SETTINGS) {
@@ -345,7 +363,7 @@ private val TopLevelDestinations = listOf(
     TopLevelDestination(Routes.CREATE, R.string.nav_create, Icons.Outlined.AutoAwesome, Icons.Filled.AutoAwesome),
     TopLevelDestination(Routes.TASKS, R.string.nav_tasks, Icons.Outlined.Pending, Icons.Filled.Pending),
     TopLevelDestination(Routes.HISTORY, R.string.nav_results, Icons.Outlined.PhotoLibrary, Icons.Filled.PhotoLibrary),
-    TopLevelDestination(Routes.STORYBOARD, R.string.nav_board, Icons.Outlined.Movie, Icons.Filled.Movie),
+    TopLevelDestination(Routes.PROJECTS, R.string.nav_projects, Icons.Outlined.Movie, Icons.Filled.Movie),
 )
 
 @Composable

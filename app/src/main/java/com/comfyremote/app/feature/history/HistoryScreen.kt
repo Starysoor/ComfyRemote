@@ -46,7 +46,7 @@ import com.comfyremote.app.data.reference.ReferenceRole
 import com.comfyremote.app.data.repository.DraftTransfer
 import com.comfyremote.app.feature.generate.MediaViewerDialog
 import com.comfyremote.app.feature.generate.shareMedia
-import com.comfyremote.app.feature.storyboard.referenceRoleLabel
+import com.comfyremote.app.feature.project.referenceRoleLabel
 import com.comfyremote.app.ui.Spacing
 import com.comfyremote.app.ui.components.EmptyState
 import com.comfyremote.app.ui.components.IrisChip

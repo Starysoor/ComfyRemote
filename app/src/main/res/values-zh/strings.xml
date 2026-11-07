@@ -21,7 +21,7 @@
     <string name="nav_create">创作</string>
     <string name="nav_tasks">任务</string>
     <string name="nav_results">结果</string>
-    <string name="nav_board">分镜</string>
+    <string name="nav_projects">项目</string>
 
     <!-- 生成阶段 -->
     <string name="phase_local_pending">本地等待</string>

@@ -81,7 +81,7 @@ fun TaskDetailScreen(
     taskId: String,
     onBack: () -> Unit,
     onReuse: (DraftTransfer) -> Unit,
-    onOpenStoryboard: (String) -> Unit = {},
+    onOpenProject: (String) -> Unit = {},
 ) {
     val tasks by viewModel.tasks.collectAsState()
     val message by viewModel.message.collectAsState()
@@ -167,7 +167,7 @@ fun TaskDetailScreen(
                             )
                             TextAction(
                                 text = stringResource(R.string.tasks_open_storyboard),
-                                onClick = { onOpenStoryboard(projectId) },
+                                onClick = { onOpenProject(projectId) },
                             )
                         }
                     }
