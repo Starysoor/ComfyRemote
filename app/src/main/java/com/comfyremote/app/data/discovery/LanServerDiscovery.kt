@@ -59,6 +59,25 @@ internal fun savedComfyProbeUrls(saved: List<String>): List<String> =
         ) null else raw
     }.distinct().take(8)
 
+/** Generates a bounded plan: local /24 targets plus direct saved hosts on any subnet. */
+internal data class DiscoveryProbe(val host: String, val url: String, val remembered: Boolean)
+
+internal fun discoveryProbePlan(
+    savedUrls: List<String>,
+    prefixes: List<String>,
+    port: Int,
+): List<DiscoveryProbe> =
+    (
+        savedComfyProbeUrls(savedUrls).map { url ->
+            DiscoveryProbe(URI(url).host, url, remembered = true)
+        } + prefixes.distinct().flatMap { prefix ->
+            (1..254).map { n ->
+                val host = "$prefix$n"
+                DiscoveryProbe(host, "http://$host:$port", remembered = false)
+            }
+        }
+    ).distinctBy { it.url }
+
 /**
  * Discovers nearby LAN ComfyUI as well as explicitly remembered servers.
  * Tailnet peers can be on arbitrary CGNAT subnets, so remembered IP/MagicDNS
@@ -76,7 +95,6 @@ class LanServerDiscovery(
         .build()
 
     private data class Subnet(val prefix: String, val vpn: Boolean)
-    private data class Probe(val host: String, val url: String, val remembered: Boolean)
 
     fun discover(): Flow<DiscoveryEvent> = channelFlow {
         val subnets = withContext(Dispatchers.IO) { localSubnets() }
@@ -89,16 +107,7 @@ class LanServerDiscovery(
         // Even when VPN is connected, the subnet scanner cannot enumerate
         // unknown peers on arbitrary Tailnet IP ranges.
         if (subnets.any { it.vpn }) send(DiscoveryEvent.Warning("vpn-only"))
-        val probes = (
-            remembered.map { url ->
-                Probe(URI(url).host, url, remembered = true)
-            } + subnets.flatMap { subnet ->
-                (1..254).map { n ->
-                    val host = "${subnet.prefix}$n"
-                    Probe(host, "http://$host:$port", remembered = false)
-                }
-            }
-        ).distinctBy { it.url }
+        val probes = discoveryProbePlan(remembered, subnets.map { it.prefix }, port)
         var scanned = 0
         // Bound concurrency; 508 simultaneous connections can exhaust sockets.
         coroutineScope {

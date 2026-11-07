@@ -10,15 +10,15 @@
     <string name="connect_connecting">Connecting…</string>
     <string name="connect_saved">Saved</string>
     <string name="connect_cloud_only">Skip local server, use cloud models only</string>
-    <string name="connect_find_nearby">Find nearby ComfyUI</string>
-    <string name="connect_scanning">Scanning LAN…</string>
+    <string name="connect_find_nearby">Find ComfyUI (LAN / VPN / saved)</string>
+    <string name="connect_scanning">Scanning network and saved servers…</string>
     <string name="connect_found">ComfyUI found</string>
     <string name="connect_manage_server">Manage server</string>
     <string name="connect_alias">Alias</string>
 
     <!-- Messages -->
     <string name="connect_failed">Connection failed: %1$s</string>
-    <string name="connect_scan_none">No ComfyUI found - check that both devices are on the same Wi-Fi</string>
+    <string name="connect_scan_none">No server found in scanned LAN/VPN ranges or saved addresses. Other Tailscale peers may still be reachable by IP or MagicDNS.</string>
     <string name="connect_not_on_wifi">Unknown subnet - not on Wi-Fi</string>
-    <string name="connect_scan_vpn_hint">Only the local /24 was scanned. For Tailscale/VPN, enter the device IP or MagicDNS name manually.</string>
+    <string name="connect_scan_vpn_hint">Scans LAN/VPN /24 ranges and saved servers, not the entire Tailnet. Unknown Tailscale peers may be reachable: enter their IP or MagicDNS name.</string>
 </resources>

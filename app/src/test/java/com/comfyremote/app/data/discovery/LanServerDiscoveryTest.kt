@@ -51,4 +51,17 @@ class LanServerDiscoveryTest {
         )
     }
 
+    @Test
+    fun savedTailnetHostsOutsideThePhoneVpnSubnetAreAlwaysIncluded() {
+        val peers = listOf(
+            "http://100.124.90.22:8188",
+            "http://laptop.my-tailnet.ts.net:8188",
+        )
+        val probes = discoveryProbePlan(peers, listOf("192.168.2.", "100.65.10."), 8188)
+        assertEquals(2 + 254 * 2, probes.size)
+        assertTrue(probes.any { it.remembered && it.url == peers[0] })
+        assertTrue(probes.any { it.remembered && it.url == peers[1] })
+        assertFalse(probes.any { it.url == "http://100.64.0.1:8188" })
+    }
+
 }
