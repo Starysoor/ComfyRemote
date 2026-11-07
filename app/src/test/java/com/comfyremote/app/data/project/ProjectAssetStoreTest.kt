@@ -59,11 +59,13 @@ class ProjectAssetStoreTest {
     }
 
     @Test
-    fun oversizedMediaIsRejectedBeforeAnyCopy() {
+    fun oversizedVideoIsRejectedBeforeAnyCopy() {
         val store = store()
-        // Inflate the length without writing 32 MiB of actual data.
+        // Sparse large file: exceeds the video-specific 1 GiB cap without allocating memory.
         val oversized = temp.newFile("huge.mp4")
-        java.io.RandomAccessFile(oversized, "rw").use { raf -> raf.setLength(32L * 1024 * 1024 + 1) }
+        java.io.RandomAccessFile(oversized, "rw").use { raf ->
+            raf.setLength(ProjectAssetStore.MAX_VIDEO_BYTES + 1)
+        }
 
         assertThrows(IllegalArgumentException::class.java) {
             runBlocking {
@@ -71,6 +73,15 @@ class ProjectAssetStoreTest {
             }
         }
         assertEquals(0, store.listImportedFiles().size)
+    }
+
+
+    @Test
+    fun mediaLimitsArePerKindAndVideosCanExceedOldImageLimit() {
+        assertEquals(32L * 1024 * 1024, ProjectAssetStore.limitFor(AssetKind.IMAGE))
+        assertTrue(ProjectAssetStore.limitFor(AssetKind.VIDEO) > 32L * 1024 * 1024)
+        assertTrue(ProjectAssetStore.limitFor(AssetKind.AUDIO) > 32L * 1024 * 1024)
+        assertTrue(ProjectAssetStore.limitFor(AssetKind.SUBTITLE) < 32L * 1024 * 1024)
     }
 
     @Test

@@ -23,7 +23,7 @@ import kotlinx.coroutines.withContext
  *
  * Images keep the cloud-friendly normalization (bounded read + JPEG re-encode
  * at 1536px); video/audio/subtitle files are copied verbatim after the same
- * 32 MiB bound so untrusted sources can never exhaust memory.
+ * per-kind streaming limits so untrusted sources cannot exhaust memory.
  */
 class ProjectAssetStore private constructor(
     private val context: Context?,
@@ -73,10 +73,13 @@ class ProjectAssetStore private constructor(
     ): ProjectAsset = withContext(Dispatchers.IO) {
         val source = File(path)
         if (!source.isFile) throw IllegalStateException("Media file does not exist")
-        if (source.length() > BoundedMediaInput.MAX_IMAGE_BYTES) {
-            throw IllegalArgumentException("Media source exceeds 32 MiB")
+        val kind = resolveAssetKind(null, source.name)
+        val limit = limitFor(kind)
+        if (source.length() > limit) {
+            throw IllegalArgumentException("Media source exceeds ${limit / (1024 * 1024)} MiB")
         }
-        when (val kind = resolveAssetKind(null, source.name)) {
+        // Stream long videos; never load their entire contents into the heap.
+        when (kind) {
             AssetKind.IMAGE -> saveImage(source.readBytes(), null, role, label, tags)
             else -> source.inputStream().use {
                 copyBounded(it, source.extension.ifBlank { "bin" }, role, label, tags, kind)
@@ -112,7 +115,7 @@ class ProjectAssetStore private constructor(
         val tmp = File(file.parentFile, file.name + ".tmp")
         try {
             withContext(Dispatchers.IO) {
-                FileOutputStream(tmp).use { out -> BoundedMediaInput.copy(input, out, BoundedMediaInput.MAX_IMAGE_BYTES) }
+                FileOutputStream(tmp).use { out -> BoundedMediaInput.copy(input, out, limitFor(kind)) }
                 if (!tmp.renameTo(file) || !file.isFile) {
                     throw IOException("Cannot save media asset")
                 }
@@ -153,6 +156,17 @@ class ProjectAssetStore private constructor(
     private fun String.extension(): String = substringAfterLast('.', "").takeIf { it.isNotBlank() }.orEmpty()
 
     companion object {
+        internal const val MAX_VIDEO_BYTES = 1024L * 1024 * 1024
+        internal const val MAX_PROJECT_AUDIO_BYTES = 512L * 1024 * 1024
+        internal const val MAX_SUBTITLE_BYTES = 8L * 1024 * 1024
+
+        internal fun limitFor(kind: AssetKind): Long = when (kind) {
+            AssetKind.IMAGE -> BoundedMediaInput.MAX_IMAGE_BYTES
+            AssetKind.VIDEO -> MAX_VIDEO_BYTES
+            AssetKind.AUDIO -> MAX_PROJECT_AUDIO_BYTES
+            AssetKind.SUBTITLE -> MAX_SUBTITLE_BYTES
+        }
+
         /**
          * Explicit video/audio/subtitle mimes win over extensions; otherwise the
          * file name decides (unknown extensions stay images, matching AssetKind).

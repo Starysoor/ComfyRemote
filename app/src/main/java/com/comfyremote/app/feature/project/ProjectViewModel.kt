@@ -808,7 +808,17 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
         val side = if (seamAtEnd) shot.lastFramePath else null
         if (side != null && File(side).isFile) {
             runCatching {
-                val bitmap = BitmapFactory.decodeFile(side)
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(side, bounds)
+                val longest = maxOf(bounds.outWidth, bounds.outHeight)
+                val sample = if (longest > FrameStrip.THUMBNAIL_WIDTH) {
+                    var factor = 1
+                    while (longest / factor > FrameStrip.THUMBNAIL_WIDTH) factor *= 2
+                    factor
+                } else 1
+                val bitmap = BitmapFactory.decodeFile(side, BitmapFactory.Options().apply {
+                    inSampleSize = sample
+                })
                 if (bitmap != null) return bitmap
             }
         }
@@ -819,12 +829,17 @@ class ProjectViewModel(private val container: AppContainer) : ViewModel() {
                 if (seamAtEnd) {
                     val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                         ?.toLongOrNull() ?: 0L
-                    retriever.getFrameAtTime(
+                    retriever.getScaledFrameAtTime(
                         (durationMs * 1000L - 1000L).coerceAtLeast(0L),
                         MediaMetadataRetriever.OPTION_CLOSEST,
+                        FrameStrip.THUMBNAIL_WIDTH,
+                        FrameStrip.THUMBNAIL_HEIGHT,
                     )
                 } else {
-                    retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    retriever.getScaledFrameAtTime(
+                        0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                        FrameStrip.THUMBNAIL_WIDTH, FrameStrip.THUMBNAIL_HEIGHT,
+                    )
                 }
             } finally {
                 retriever.release()
