@@ -4,12 +4,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Movie
@@ -24,6 +26,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.comfyremote.app.R
@@ -57,6 +62,9 @@ fun DirectorScreen(
     LaunchedEffect(message) {
         message?.let { snackbar.showSnackbar(it); viewModel.clearMessage() }
     }
+
+    val continuity by viewModel.continuity.collectAsState()
+    LaunchedEffect(projectId) { viewModel.loadContinuity(projectId) }
 
     IrisScaffold(
         snackbarHostState = snackbar,
@@ -126,7 +134,87 @@ fun DirectorScreen(
                     }
                 }
             }
-            // P3-2 (frame strips) and P3-3 (AI shot plan) add their sections here.
+            item("continuity-heading") {
+                SectionTitle(stringResource(R.string.proj_director_continuity))
+            }
+            if (continuity.loading) {
+                item("continuity-loading") {
+                    Text(
+                        stringResource(R.string.proj_director_continuity_loading),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else if (continuity.strips.isEmpty()) {
+                item("continuity-empty") {
+                    Text(
+                        stringResource(R.string.proj_director_continuity_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                items(continuity.strips.size, key = { "strip-" + continuity.strips[it].shotId }) { index ->
+                    val strip = continuity.strips[index]
+                    IrisCard(Modifier.fillMaxWidth()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                            Text(strip.label, style = MaterialTheme.typography.titleSmall)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                                items(strip.frames.size, key = { index * 1000 + it }) { frameIndex ->
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Image(
+                                            bitmap = strip.frames[frameIndex].asImageBitmap(),
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(64.dp)
+                                                .clip(MaterialTheme.shapes.small),
+                                        )
+                                        Text(
+                                            formatStripSeconds(strip.durationMs, frameIndex, strip.frames.size),
+                                            style = IrisType.metaSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                items(continuity.seams.size, key = { "seam-" + continuity.seams[it].fromShotId }) { index ->
+                    val seam = continuity.seams[index]
+                    IrisCard(Modifier.fillMaxWidth()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                Text(
+                                    seam.fromLabel + " → " + seam.toLabel,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                StatusChip(seamBadge(seam.diff), tone = seamTone(seam.diff))
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                                Image(
+                                    bitmap = seam.frameA.asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(56.dp).clip(MaterialTheme.shapes.small),
+                                )
+                                Text("→", style = MaterialTheme.typography.titleMedium)
+                                Image(
+                                    bitmap = seam.frameB.asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(56.dp).clip(MaterialTheme.shapes.small),
+                                )
+                                Text(
+                                    stringResource(R.string.proj_director_seam_hint),
+                                    style = IrisType.metaSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -137,4 +225,22 @@ private fun SectionTitle(text: String) {
         Icon(Icons.Outlined.Build, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
         Text(text, style = MaterialTheme.typography.titleMedium)
     }
+}
+
+private fun formatStripSeconds(durationMs: Long, frameIndex: Int, frameCount: Int): String {
+    if (durationMs <= 0 || frameCount <= 0) return ""
+    val second = durationMs * frameIndex / frameCount / 1000
+    return "${second + 1}s"
+}
+
+private fun seamBadge(diff: Double): String = when {
+    diff < DirectorChecks.CONTINUITY_DIFF_THRESHOLD -> "连续"
+    diff < DirectorChecks.CONTINUITY_DIFF_THRESHOLD * 2 -> "可能切镜"
+    else -> "不连续"
+}
+
+private fun seamTone(diff: Double): ChipTone = when {
+    diff < DirectorChecks.CONTINUITY_DIFF_THRESHOLD -> ChipTone.Success
+    diff < DirectorChecks.CONTINUITY_DIFF_THRESHOLD * 2 -> ChipTone.Warning
+    else -> ChipTone.Error
 }

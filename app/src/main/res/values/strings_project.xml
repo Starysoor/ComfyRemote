@@ -113,4 +113,8 @@
     <string name="proj_director_checks_clean">No issues found. Keep going!</string>
     <string name="proj_director_warning">WARN</string>
     <string name="proj_director_info">INFO</string>
+    <string name="proj_director_continuity">Continuity strips</string>
+    <string name="proj_director_continuity_loading">Extracting frames…</string>
+    <string name="proj_director_continuity_empty">Generate shots first; each finished shot shows a per-second frame strip here.</string>
+    <string name="proj_director_seam_hint">Last frame of the previous shot vs first frame of this shot. Big jumps suggest a re-generate or a cut.</string>
 </resources>
