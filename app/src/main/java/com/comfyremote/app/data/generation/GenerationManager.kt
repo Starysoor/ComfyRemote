@@ -130,22 +130,37 @@ class GenerationManager(
         val cloud = task.request.provider != "comfyui"
         return when (cancelActionFor(task.phase, cloud, task.localPending)) {
             CancelAction.LOCAL_PENDING -> {
-                val committed = patch(taskId) {
-                    it.copy(
-                        localPending = false,
-                        phase = GenerationPhase.CANCELLED,
-                        completedAt = System.currentTimeMillis(),
-                        recoveryNote = "Removed from local queue",
-                        queuePosition = null,
-                        progress = null,
-                        preview = null,
-                    )
+                var cancelledWhilePending = false
+                // Queue pumping and cancellation compete for the same lock.
+                // Only treat this as a not-yet-submitted cancellation when the
+                // *current* persisted task still belongs to the local queue.
+                val committed = mutateTasks { list ->
+                    val current = list.firstOrNull { it.taskId == taskId }
+                    if (current == null || !current.localPending || !current.isActive) {
+                        list
+                    } else {
+                        cancelledWhilePending = true
+                        prune(list.map {
+                            if (it.taskId != taskId) it
+                            else it.copy(
+                                localPending = false,
+                                phase = GenerationPhase.CANCELLED,
+                                completedAt = System.currentTimeMillis(),
+                                recoveryNote = "Removed from local queue",
+                                queuePosition = null,
+                                progress = null,
+                                preview = null,
+                            )
+                        })
+                    }
                 }
-                if (!committed) {
-                    CancelOutcome(taskId, false, persistenceMessage("cancel was not saved; task may still run"))
-                } else {
-                    pumpLocalQueue()
-                    CancelOutcome(taskId, true)
+                when {
+                    !committed -> CancelOutcome(taskId, false, persistenceMessage("cancel was not saved; task may still run"))
+                    !cancelledWhilePending -> cancel(taskId) // It left the queue: apply remote cancellation semantics.
+                    else -> {
+                        pumpLocalQueue()
+                        CancelOutcome(taskId, true)
+                    }
                 }
             }
             CancelAction.CANCEL_JOB -> {
